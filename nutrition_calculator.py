@@ -13,7 +13,7 @@ Features:
 
 import math
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Dict, List, Tuple
 
 
 # ─────────────────────────────────────────────
@@ -57,7 +57,7 @@ class MetabolicCondition:
     requires_consult: bool
 
 
-CONDITIONS: dict[str, MetabolicCondition] = {
+CONDITIONS: Dict[str, MetabolicCondition] = {
     "hypothyroidism_untreated": MetabolicCondition(
         name="Hypothyroidism (untreated)",
         bmr_multiplier=0.75,
@@ -338,7 +338,7 @@ def calc_bmr(
 #  METABOLIC CONDITION ADJUSTMENT
 # ─────────────────────────────────────────────
 
-def apply_metabolic_conditions(bmr: float, condition_keys: list[str]) -> dict:
+def apply_metabolic_conditions(bmr: float, condition_keys: List[str]) -> Dict:
     """
     Apply metabolic condition adjustments to a base BMR.
     Multiplier-eligible conditions stack sequentially.
@@ -395,7 +395,7 @@ def calc_tdee(bmr: float, activity_level: str) -> float:
 def calc_goal_adjustment(
     goal: str,
     pace_kg_per_week: float,
-) -> tuple[float, str]:
+) -> Tuple[float, str]:
     """
     Convert a desired pace (kg/week) into a daily kcal adjustment.
 
