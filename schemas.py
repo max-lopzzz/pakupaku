@@ -70,6 +70,7 @@ class NutritionProfileRequest(BaseModel):
     weight_kg: float = Field(..., gt=0, le=500)
     height_cm: float = Field(..., gt=0, le=300)
     age:        int  = Field(..., gt=0, le=120)
+    birthday:   Optional[date] = None   # stored for future age recalculation
 
     # Hormonal profile
     hormonal_profile: str = Field(..., description=(
@@ -158,7 +159,15 @@ class UserResponse(BaseModel):
     email:      str
     username:   str
     created_at: datetime
-    safe_mode:  bool
+    safe_mode:      bool
+    email_verified: bool
+
+    # Biometrics (set during onboarding)
+    weight_kg:    Optional[float]
+    height_cm:    Optional[float]
+    age:          Optional[int]
+    birthday:     Optional[date]
+    body_fat_pct: Optional[float]
 
     # Nutrition targets (None if onboarding not completed)
     target_kcal:  Optional[float]
@@ -202,13 +211,7 @@ class FoodLogCreateRequest(BaseModel):
 
     meal:     Optional[str]  = Field(None, max_length=50)
     log_date: Optional[date] = None   # defaults to today if not provided
-
-    @validator("fdc_id", "recipe_id", always=True)
-    def at_least_one_source(cls, v, values):
-        # Only validate on recipe_id (second field) once fdc_id is known
-        if "fdc_id" in values and values["fdc_id"] is None and v is None:
-            raise ValueError("Either fdc_id or recipe_id must be provided.")
-        return v
+    # fdc_id and recipe_id are both optional — custom foods have neither
 
 
 class FoodLogResponse(BaseModel):
@@ -318,6 +321,44 @@ class RecipeResponse(BaseModel):
     total_fiber_g:   Optional[float]
 
     ingredients: List[RecipeIngredientResponse]
+
+    class Config:
+        from_attributes = True
+
+
+# ─────────────────────────────────────────────
+#  BODY MEASUREMENTS
+# ─────────────────────────────────────────────
+
+class BodyMeasurementCreate(BaseModel):
+    measured_at: Optional[date]  = None
+    weight_kg:   Optional[float] = Field(None, gt=0)
+    height_cm:   Optional[float] = Field(None, gt=0)
+    waist_cm:    Optional[float] = Field(None, gt=0)
+    neck_cm:     Optional[float] = Field(None, gt=0)
+    hip_cm:      Optional[float] = Field(None, gt=0)
+
+    @validator("weight_kg", "waist_cm", "neck_cm", "hip_cm", pre=True, always=True)
+    def at_least_one_field(cls, v, values):
+        return v  # individual field validation only; cross-field check below
+
+    @validator("hip_cm", always=True)
+    def require_at_least_one(cls, v, values):
+        if all(values.get(f) is None for f in ("weight_kg", "waist_cm", "neck_cm")) and v is None:
+            raise ValueError("Provide at least one measurement.")
+        return v
+
+
+class BodyMeasurementResponse(BaseModel):
+    id:           uuid.UUID
+    user_id:      uuid.UUID
+    measured_at:  date
+    weight_kg:    Optional[float]
+    height_cm:    Optional[float]
+    waist_cm:     Optional[float]
+    neck_cm:      Optional[float]
+    hip_cm:       Optional[float]
+    body_fat_pct: Optional[float]
 
     class Config:
         from_attributes = True

@@ -14,23 +14,32 @@ Route groups:
 from datetime import date
 from typing import Optional, List
 import uuid
+import secrets
+import logging
 
 from fastapi import FastAPI, Depends, HTTPException, status, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func, cast, Date
+from sqlalchemy.orm import selectinload
 
 from database import get_db
-from models import User, FoodLog, Recipe, RecipeIngredient
+from models import User, FoodLog, Recipe, RecipeIngredient, BodyMeasurement
 from schemas import (
     RegisterRequest, LoginRequest, TokenResponse,
     UserResponse, UserUpdateRequest,
     NutritionProfileRequest, NutritionProfileResponse, CustomGoalsRequest,
     FoodLogCreateRequest, FoodLogResponse, DailySummaryResponse,
     RecipeCreateRequest, RecipeUpdateRequest, RecipeResponse,
+    BodyMeasurementCreate, BodyMeasurementResponse,
 )
 from auth import hash_password, verify_password, create_access_token, get_current_user
+from email_utils import send_verification_email
+from config import FRONTEND_URL
+
+logger = logging.getLogger(__name__)
 from usda import search_foods, get_food, get_foods_bulk, extract_nutrients
 from nutrition_calculator import (
     calc_body_fat_navy, calc_bmr, interpolate_bmr_hrt,
@@ -84,13 +93,24 @@ async def register(payload: RegisterRequest, db: AsyncSession = Depends(get_db))
     if existing_username.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Username already taken.")
 
+    verification_token = secrets.token_hex(32)
+
     user = User(
         email=payload.email,
         username=payload.username,
         hashed_password=hash_password(payload.password),
+        verification_token=verification_token,
     )
     db.add(user)
-    await db.flush()   # assigns user.id without committing
+    await db.flush()
+    await db.commit()
+
+    # Send verification email — non-fatal if SMTP is not configured
+    try:
+        await send_verification_email(payload.email, verification_token)
+        logger.info("Verification email sent to %s", payload.email)
+    except Exception as exc:
+        logger.warning("Could not send verification email to %s: %r", payload.email, exc)
 
     token = create_access_token({"sub": str(user.id)})
     return TokenResponse(access_token=token)
@@ -113,6 +133,43 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
     return TokenResponse(access_token=token)
 
 
+@app.get("/auth/verify-email")
+async def verify_email(token: str, db: AsyncSession = Depends(get_db)):
+    """Consume a verification token, mark the user verified, redirect to frontend."""
+    result = await db.execute(
+        select(User).where(User.verification_token == token)
+    )
+    user = result.scalar_one_or_none()
+
+    if not user:
+        return RedirectResponse(f"{FRONTEND_URL}?verified=invalid")
+
+    user.email_verified     = True
+    user.verification_token = None
+    await db.flush()
+    return RedirectResponse(f"{FRONTEND_URL}?verified=true")
+
+
+@app.post("/auth/resend-verification", status_code=status.HTTP_204_NO_CONTENT)
+async def resend_verification(
+    current_user: User         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+):
+    """Regenerate and resend the verification email for the current user."""
+    if current_user.email_verified:
+        raise HTTPException(status_code=400, detail="Email already verified.")
+
+    new_token = secrets.token_hex(32)
+    current_user.verification_token = new_token
+    await db.flush()
+
+    try:
+        await send_verification_email(current_user.email, new_token)
+    except Exception as exc:
+        logger.warning("Could not send verification email: %s", exc)
+        raise HTTPException(status_code=503, detail="Could not send email. Please try again later.")
+
+
 # ─────────────────────────────────────────────
 #  USER ROUTES
 # ─────────────────────────────────────────────
@@ -121,6 +178,15 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
 async def get_me(current_user: User = Depends(get_current_user)):
     """Return the current user's profile."""
     return current_user
+
+
+@app.delete("/users/me", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_me(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Permanently delete the current user and all their data."""
+    await db.delete(current_user)
 
 
 @app.patch("/users/me", response_model=UserResponse)
@@ -181,6 +247,18 @@ async def onboarding_calculate(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    # Sanity-check the result — the Navy formula can produce nonsensical
+    # values when measurements are entered in the wrong units or are implausible.
+    if not (3.0 <= body_fat_pct <= 70.0):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"The body fat estimate ({body_fat_pct:.1f}%) is outside a physiologically "
+                "plausible range (3–70%). Please double-check that all measurements "
+                "are entered in centimetres and try again."
+            ),
+        )
+
     # BMR
     if payload.hormonal_profile == "hrt" and payload.hrt_type and payload.hrt_months is not None:
         bmr = interpolate_bmr_hrt(
@@ -214,12 +292,23 @@ async def onboarding_calculate(
     goal_kcal, pace_warning = calc_goal_adjustment(goal, pace)
     target_kcal             = tdee + goal_kcal
 
+    # Safety floor: target calories must be at least BMR.
+    # A deficit that pushes intake below BMR would starve organs.
+    if target_kcal < adjusted_bmr:
+        target_kcal  = float(adjusted_bmr)
+        floor_warning = (
+            f"The requested deficit would have dropped your target below your BMR "
+            f"({adjusted_bmr} kcal/day). Target has been raised to your BMR."
+        )
+        pace_warning = (pace_warning + " " + floor_warning).strip() if pace_warning else floor_warning
+
     macros = calc_macros(target_kcal, payload.weight_kg, body_fat_pct, goal)
 
     # Persist to user profile
     current_user.weight_kg           = payload.weight_kg
     current_user.height_cm           = payload.height_cm
     current_user.age                  = payload.age
+    current_user.birthday             = payload.birthday
     current_user.hormonal_profile     = payload.hormonal_profile
     current_user.hrt_type             = payload.hrt_type
     current_user.hrt_months           = payload.hrt_months
@@ -279,9 +368,10 @@ async def onboarding_custom(
 @app.get("/foods/search")
 async def food_search(
     query:       str,
-    page_size:   int          = Query(10,  ge=1, le=50),
-    page_number: int          = Query(1,   ge=1),
+    page_size:   int           = Query(10,  ge=1, le=200),
+    page_number: int           = Query(1,   ge=1),
     data_types:  Optional[str] = Query(None, description="Comma-separated data types"),
+    brand_owner: Optional[str] = Query(None, description="Filter branded foods by brand owner name"),
     _: User = Depends(get_current_user),   # require auth
 ):
     """
@@ -289,13 +379,13 @@ async def food_search(
     Returns raw USDA results — nutrients are per 100g.
     """
     dt_list = [d.strip() for d in data_types.split(",")] if data_types else None
-    return await search_foods(query, page_size, page_number, dt_list)
+    return await search_foods(query, page_size, page_number, dt_list, brand_owner)
 
 
 @app.get("/foods/{fdc_id}")
 async def food_detail(
     fdc_id:   int,
-    format:   str = Query("abridged", description="abridged or full"),
+    format:   str = Query("full", description="abridged or full"),
     _: User = Depends(get_current_user),
 ):
     """Get full details for a single food item by FDC ID."""
@@ -503,7 +593,14 @@ async def create_recipe(
     recipe.total_fiber_g   = totals["total_fiber_g"]
 
     await db.flush()
-    return recipe
+
+    # Re-fetch with ingredients eagerly loaded to avoid async lazy-load error
+    result = await db.execute(
+        select(Recipe)
+        .where(Recipe.id == recipe.id)
+        .options(selectinload(Recipe.ingredients))
+    )
+    return result.scalar_one()
 
 
 @app.get("/recipes", response_model=List[RecipeResponse])
@@ -513,8 +610,10 @@ async def list_recipes(
 ):
     """Return all recipes created by the current user."""
     result = await db.execute(
-        select(Recipe).where(Recipe.user_id == current_user.id)
+        select(Recipe)
+        .where(Recipe.user_id == current_user.id)
         .order_by(Recipe.created_at.desc())
+        .options(selectinload(Recipe.ingredients))
     )
     return result.scalars().all()
 
@@ -527,10 +626,9 @@ async def get_recipe(
 ):
     """Get a single recipe by ID."""
     result = await db.execute(
-        select(Recipe).where(
-            Recipe.id      == recipe_id,
-            Recipe.user_id == current_user.id,
-        )
+        select(Recipe)
+        .where(Recipe.id == recipe_id, Recipe.user_id == current_user.id)
+        .options(selectinload(Recipe.ingredients))
     )
     recipe = result.scalar_one_or_none()
     if not recipe:
@@ -547,10 +645,9 @@ async def update_recipe(
 ):
     """Update a recipe's name, description, servings, or ingredients."""
     result = await db.execute(
-        select(Recipe).where(
-            Recipe.id      == recipe_id,
-            Recipe.user_id == current_user.id,
-        )
+        select(Recipe)
+        .where(Recipe.id == recipe_id, Recipe.user_id == current_user.id)
+        .options(selectinload(Recipe.ingredients))
     )
     recipe = result.scalar_one_or_none()
     if not recipe:
@@ -597,7 +694,14 @@ async def update_recipe(
         recipe.total_fiber_g   = totals["total_fiber_g"]
 
     await db.flush()
-    return recipe
+
+    # Re-fetch with ingredients eagerly loaded (relationship may be stale after edits)
+    result = await db.execute(
+        select(Recipe)
+        .where(Recipe.id == recipe.id)
+        .options(selectinload(Recipe.ingredients))
+    )
+    return result.scalar_one()
 
 
 @app.delete("/recipes/{recipe_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -617,3 +721,64 @@ async def delete_recipe(
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found.")
     await db.delete(recipe)
+
+
+# ─────────────────────────────────────────────
+#  BODY MEASUREMENT ROUTES
+# ─────────────────────────────────────────────
+
+@app.post("/measurements", response_model=BodyMeasurementResponse, status_code=status.HTTP_201_CREATED)
+async def create_measurement(
+    payload:      BodyMeasurementCreate,
+    current_user: User           = Depends(get_current_user),
+    db:           AsyncSession   = Depends(get_db),
+):
+    """Log a body measurement entry for the current user."""
+    # Use the provided height, or fall back to the user's onboarding height
+    height = payload.height_cm or current_user.height_cm
+
+    # Calculate body fat if we have the minimum required measurements
+    body_fat = None
+    waist  = payload.waist_cm
+    neck   = payload.neck_cm
+    hip    = payload.hip_cm
+    profile = current_user.navy_profile.value if current_user.navy_profile else None
+    if height and waist and neck and profile:
+        try:
+            body_fat = round(calc_body_fat_navy(
+                height_cm = height,
+                waist_cm  = waist,
+                neck_cm   = neck,
+                hip_cm    = hip,
+                profile   = profile,
+            ), 1)
+        except Exception:
+            body_fat = None
+
+    m = BodyMeasurement(
+        user_id      = current_user.id,
+        measured_at  = payload.measured_at or date.today(),
+        weight_kg    = payload.weight_kg,
+        height_cm    = payload.height_cm,
+        waist_cm     = waist,
+        neck_cm      = neck,
+        hip_cm       = hip,
+        body_fat_pct = body_fat,
+    )
+    db.add(m)
+    await db.flush()
+    return m
+
+
+@app.get("/measurements", response_model=List[BodyMeasurementResponse])
+async def list_measurements(
+    current_user: User         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+):
+    """Return all body measurement entries for the current user, oldest first."""
+    result = await db.execute(
+        select(BodyMeasurement)
+        .where(BodyMeasurement.user_id == current_user.id)
+        .order_by(BodyMeasurement.measured_at)
+    )
+    return result.scalars().all()

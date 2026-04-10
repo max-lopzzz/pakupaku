@@ -29,10 +29,10 @@ interface FormState {
   customCarbs:     string;
   weightKg:        string;
   heightCm:        string;
-  age:             string;
+  birthday:        string;   // ISO date string, e.g. "1998-03-12"
   hormonalProfile: string;
   hrtType:         string;
-  hrtMonths:       string;
+  hrtStartDate:    string;   // ISO date string, approximate is fine
   navyProfile:     string;
   waistCm:         string;
   neckCm:          string;
@@ -43,9 +43,29 @@ interface FormState {
   conditions:      string[];
 }
 
+function calcAge(birthday: string): number {
+  if (!birthday) return 0;
+  const today = new Date();
+  const dob   = new Date(birthday);
+  let age     = today.getFullYear() - dob.getFullYear();
+  const m     = today.getMonth() - dob.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
+  return age;
+}
+
+function calcHrtMonths(startDate: string): number {
+  if (!startDate) return 0;
+  const today = new Date();
+  const start = new Date(startDate);
+  return Math.max(0, Math.round(
+    (today.getFullYear() - start.getFullYear()) * 12 +
+    (today.getMonth()   - start.getMonth())
+  ));
+}
+
 type Errors = Partial<Record<
   keyof FormState | "submit" | "hormonalProfile" | "navyProfile" |
-  "activityLevel" | "hrtType" | "hrtMonths",
+  "activityLevel" | "hrtType" | "hrtMonths" | "age",
   string
 >>;
 
@@ -96,9 +116,9 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
   const [form, setForm]       = useState<FormState>({
     usesCustom: false,
     customKcal: "", customProtein: "", customFat: "", customCarbs: "",
-    weightKg: "", heightCm: "", age: "",
+    weightKg: "", heightCm: "", birthday: "",
     hormonalProfile: "",
-    hrtType: "", hrtMonths: "",
+    hrtType: "", hrtStartDate: "",
     navyProfile: "",
     waistCm: "", neckCm: "", hipCm: "",
     activityLevel: "",
@@ -126,12 +146,18 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
     if (step === "biometrics") {
       if (!form.weightKg || isNaN(Number(form.weightKg))) e.weightKg = "Enter a valid weight";
       if (!form.heightCm || isNaN(Number(form.heightCm))) e.heightCm = "Enter a valid height";
-      if (!form.age      || isNaN(Number(form.age)))      e.age      = "Enter a valid age";
+      if (!form.birthday) {
+        e.age = "Enter your date of birth";
+      } else {
+        const age = calcAge(form.birthday);
+        if (age < 10 || age > 120) e.age = "Enter a valid date of birth";
+      }
     }
     if (step === "hormonal" && !form.hormonalProfile) e.hormonalProfile = "Please choose one";
     if (step === "hrt") {
-      if (!form.hrtType)                                     e.hrtType   = "Please choose one";
-      if (!form.hrtMonths || isNaN(Number(form.hrtMonths))) e.hrtMonths = "Enter months on HRT";
+      if (!form.hrtType)       e.hrtType      = "Please choose one";
+      if (!form.hrtStartDate)  e.hrtMonths    = "Enter your HRT start date";
+      else if (new Date(form.hrtStartDate) > new Date()) e.hrtMonths = "Start date can't be in the future";
     }
     if (step === "bodyshape"    && !form.navyProfile)    e.navyProfile    = "Please choose one";
     if (step === "measurements") {
@@ -194,9 +220,10 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
   const submitCustom = async () => {
     if (!validate()) return;
     setLoading(true);
+    setErrors({});
     try {
       const token = localStorage.getItem("token");
-      await fetch("/users/me/onboarding/custom", {
+      const res = await fetch("/users/me/onboarding/custom", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
@@ -206,8 +233,17 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
           custom_carbs:   parseFloat(form.customCarbs),
         }),
       });
+      
+      if (!res.ok) {
+        const errorData = await res.json();
+        console.error("Custom goals error:", errorData);
+        setErrors({ submit: errorData.detail || "Failed to save custom goals." });
+        return;
+      }
+      
       setStep("done");
-    } catch {
+    } catch (error) {
+      console.error("Custom goals submission error:", error);
       setErrors({ submit: "Something went wrong. Please try again." });
     } finally {
       setLoading(false);
@@ -216,6 +252,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
 
   const submitCalculated = async () => {
     setLoading(true);
+    setErrors({});
     try {
       const token = localStorage.getItem("token");
       const res = await fetch("/users/me/onboarding/calculate", {
@@ -224,10 +261,11 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
         body: JSON.stringify({
           weight_kg:            parseFloat(form.weightKg),
           height_cm:            parseFloat(form.heightCm),
-          age:                  parseInt(form.age),
+          age:                  calcAge(form.birthday),
+          birthday:             form.birthday || undefined,
           hormonal_profile:     form.hormonalProfile,
-          hrt_type:             form.hrtType   || null,
-          hrt_months:           form.hrtMonths ? parseInt(form.hrtMonths) : null,
+          hrt_type:             form.hrtType       || null,
+          hrt_months:           form.hrtStartDate ? calcHrtMonths(form.hrtStartDate) : null,
           navy_profile:         form.navyProfile,
           waist_cm:             parseFloat(form.waistCm),
           neck_cm:              parseFloat(form.neckCm),
@@ -238,10 +276,19 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
           metabolic_conditions: form.conditions,
         }),
       });
+      
+      if (!res.ok) {
+        const errorData = await res.json();
+        console.error("Calculation error:", errorData);
+        setErrors({ submit: errorData.detail || "Failed to calculate goals. Please check your inputs." });
+        return;
+      }
+      
       const data = await res.json();
       setStep("done");
       if (onComplete) onComplete(data);
-    } catch {
+    } catch (error) {
+      console.error("Submission error:", error);
       setErrors({ submit: "Something went wrong. Please try again." });
     } finally {
       setLoading(false);
@@ -367,6 +414,9 @@ function StepDietitian({ form, set, errors, onNext, onBack }: StepProps) {
 }
 
 function StepBiometrics({ form, set, errors, onNext, onBack }: StepProps) {
+  const age = form.birthday ? calcAge(form.birthday) : null;
+  // Max date = today (can't be born in the future)
+  const maxDate = new Date().toISOString().slice(0, 10);
   return (
     <div className="step-content">
       <StepTitle>tell us about yourself</StepTitle>
@@ -382,9 +432,9 @@ function StepBiometrics({ form, set, errors, onNext, onBack }: StepProps) {
               onChange={e => set("heightCm", e.target.value)} />
           </Field>
         </div>
-        <Field label="age" error={errors.age}>
-          <input type="number" placeholder="e.g. 22" value={form.age}
-            onChange={e => set("age", e.target.value)} />
+        <Field label={age !== null ? `date of birth (age: ${age})` : "date of birth"} error={errors.age}>
+          <input type="date" value={form.birthday} max={maxDate}
+            onChange={e => set("birthday", e.target.value)} />
         </Field>
       </div>
       <NavButtons onBack={onBack} onNext={onNext} />
@@ -422,6 +472,8 @@ function StepHormonal({ form, set, errors, onNext, onBack }: StepProps) {
 }
 
 function StepHRT({ form, set, errors, onNext, onBack }: StepProps) {
+  const months = form.hrtStartDate ? calcHrtMonths(form.hrtStartDate) : null;
+  const maxDate = new Date().toISOString().slice(0, 10);
   return (
     <div className="step-content">
       <StepTitle>HRT details</StepTitle>
@@ -435,10 +487,16 @@ function StepHRT({ form, set, errors, onNext, onBack }: StepProps) {
           onClick={() => set("hrtType", "testosterone")}>testosterone</HeartBtn>
       </div>
       <ErrorMsg msg={errors.hrtType} />
-      <Field label="how many months on HRT?" error={errors.hrtMonths}>
-        <input type="number" placeholder="e.g. 9" value={form.hrtMonths}
-          onChange={e => set("hrtMonths", e.target.value)} />
+      <Field
+        label={months !== null ? `HRT start date (${months} month${months !== 1 ? "s" : ""} ago)` : "HRT start date"}
+        error={errors.hrtMonths}
+      >
+        <input type="date" value={form.hrtStartDate} max={maxDate}
+          onChange={e => set("hrtStartDate", e.target.value)} />
       </Field>
+      <p className="step-desc" style={{ fontSize: "0.85rem", marginTop: "0.25rem" }}>
+        an approximate date is fine.
+      </p>
       <NavButtons onBack={onBack} onNext={onNext} />
     </div>
   );

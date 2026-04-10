@@ -1,0 +1,10 @@
+<svg width="200" height="80" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .label-text { font-family: "MorningBreeze", cursive; font-size: 24px; font-weight: bold; fill: #3a2a2a; }
+      .label-bg { fill: #ffbdbd; }
+    </style>
+  </defs>
+  <rect class="label-bg" x="10" y="10" width="180" height="60" rx="10" ry="10" opacity="0.5"/>
+  <text class="label-text" x="100" y="50" text-anchor="middle">Label 2</text>
+</svg>

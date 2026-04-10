@@ -425,4 +425,149 @@ def extract_nutrients(food: dict) -> dict:
             key, _ = NUTRIENT_MAP[nutrient_id]
             result[key] = value
 
+    # ── Food-specific portions (volume/unit → grams) ──────────
+    # Two very different structures exist in FoodData Central:
+    #
+    # Foundation / SR Legacy foods:
+    #   measureUnit.id is a real ID (e.g. 1006 = cup).
+    #   measureUnit.name / .abbreviation carries the unit text.
+    #   amount holds how many of that unit the gramWeight covers.
+    #
+    # Survey (FNDDS) foods (measure_unit_id = 9999):
+    #   measureUnit.name / .abbreviation is "undetermined" — useless.
+    #   The actual serving description ("1 cup", "2 tbsp", …) lives in
+    #   portionDescription as free text, and gramWeight is the weight for
+    #   that whole description (amount is blank / null → treat as 1).
+    #
+    # We handle both paths below.
+
+    import re as _re
+
+    UNIT_ALIASES = {
+        "c":              "cup",
+        "cup":            "cup",
+        "cups":           "cup",
+        "tbs":            "tbsp",
+        "tbsp":           "tbsp",
+        "tablespoon":     "tbsp",
+        "tablespoons":    "tbsp",
+        "tsp":            "tsp",
+        "teaspoon":       "tsp",
+        "teaspoons":      "tsp",
+        "oz":             "oz",
+        "ounce":          "oz",
+        "ounces":         "oz",
+        "g":              "g",
+        "gram":           "g",
+        "grams":          "g",
+        "ml":             "ml",
+        "milliliter":     "ml",
+        "milliliters":    "ml",
+        "millilitre":     "ml",
+        "millilitres":    "ml",
+    }
+    # Words that appear in USDA portion descriptions but are not meaningful
+    # serving units (e.g. "1 individual school container").
+    UNIT_DENYLIST = {
+        "individual", "school", "guideline", "specified",
+        "container", "quantity", "amount", "serving",
+    }
+
+    def _unit_and_grams(p: dict):
+        """
+        Return (unit_key, grams_per_unit) or (None, None).
+
+        USDA uses three distinct structures depending on data type:
+
+        Path A — Foundation foods with real measureUnit IDs:
+            measureUnit.id != 9999 → use measureUnit.name
+
+        Path B — Survey (FNDDS) foods:
+            measureUnit.id == 9999, portionDescription is a free-text
+            string starting with a number, e.g. "1 cup", "1 banana".
+
+        Path C — SR Legacy foods:
+            measureUnit.id == 9999, portionDescription is empty.
+            The unit is in the modifier field as plain text,
+            e.g. "large", "tbsp", "cup (4.86 large eggs)".
+        """
+        gram_weight = p.get("gramWeight")
+        if not gram_weight:
+            return None, None
+
+        unit_info = p.get("measureUnit") or {}
+        unit_id   = unit_info.get("id")
+        amount    = float(p.get("amount") or 1)
+
+        def _normalise(raw: str):
+            """Alias → known key, then denylist + length check."""
+            key = UNIT_ALIASES.get(raw, raw)
+            if key and key not in UNIT_DENYLIST and len(key) <= 20:
+                return key
+            return None
+
+        # ── Path A: Foundation (real measureUnit ID) ───────────
+        if unit_id and unit_id != 9999:
+            raw = (
+                unit_info.get("name") or unit_info.get("abbreviation") or ""
+            ).strip().lower()
+            key = _normalise(raw)
+            if key and amount > 0:
+                return key, round(gram_weight / max(amount, 0.001), 2)
+
+        # ── Path B: Survey (FNDDS) — portionDescription ────────
+        desc = (p.get("portionDescription") or "").strip()
+        if desc:
+            m = _re.match(
+                r'^(\d+(?:/\d+)?(?:\.\d+)?)\s+(fl\s+oz|[a-z]+)',
+                desc,
+                _re.IGNORECASE,
+            )
+            if m:
+                num_str, raw = m.group(1), m.group(2).strip().lower()
+                try:
+                    if "/" in num_str:
+                        n, d = num_str.split("/")
+                        amt = float(n) / float(d)
+                    else:
+                        amt = float(num_str)
+                    key = _normalise(raw)
+                    if key and amt > 0:
+                        return key, round(gram_weight / amt, 2)
+                except (ValueError, ZeroDivisionError):
+                    pass
+
+        # ── Path C: SR Legacy — modifier is the unit name ──────
+        # portionDescription is empty; modifier holds plain text
+        # like "large", "tbsp", "cup (4.86 large eggs)".
+        modifier = (p.get("modifier") or "").strip()
+        if modifier and not _re.match(r'^\d+$', modifier):
+            # Strip parenthetical notes: "cup (4.86 large eggs)" → "cup"
+            clean = _re.sub(r'\s*\(.*\)', '', modifier).strip().lower()
+            # Try the full cleaned string first, then just the first word
+            for candidate in (clean, clean.split()[0] if clean.split() else ""):
+                key = _normalise(candidate)
+                if key and amount > 0:
+                    return key, round(gram_weight / max(amount, 0.001), 2)
+
+        return None, None
+
+    portions = []
+    seen_units = set()
+    for p in food.get("foodPortions", []):
+        unit_key, grams_per_unit = _unit_and_grams(p)
+        if unit_key and unit_key not in seen_units:
+            portions.append({"unit": unit_key, "grams_per_unit": grams_per_unit})
+            seen_units.add(unit_key)
+
+    # Branded foods use a single servingSize field instead
+    serving_size = food.get("servingSize")
+    serving_unit = (food.get("servingSizeUnit") or "").strip().lower()
+    if serving_size and serving_unit and serving_unit != "g":
+        portions.append({
+            "unit":           serving_unit,
+            "grams_per_unit": round(float(serving_size), 2),
+        })
+
+    result["portions"] = portions
     return result

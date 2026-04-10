@@ -83,6 +83,13 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False
     )
+    email_verified: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    verification_token: Mapped[Optional[str]] = mapped_column(
+        String(64), nullable=True, unique=True, index=True
+    )
+    birthday: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
 
     # ── Preferences ───────────────────────────
     safe_mode: Mapped[bool] = mapped_column(
@@ -145,10 +152,13 @@ class User(Base):
     )
 
     # ── Relationships ─────────────────────────
-    food_logs: Mapped[List["FoodLog"]]   = relationship(
+    food_logs: Mapped[List["FoodLog"]]         = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
-    recipes: Mapped[List["Recipe"]]      = relationship(
+    recipes: Mapped[List["Recipe"]]            = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    measurements: Mapped[List["BodyMeasurement"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
 
@@ -292,3 +302,35 @@ class RecipeIngredient(Base):
 
     def __repr__(self) -> str:
         return f"<RecipeIngredient {self.food_name} {self.amount_g}g>"
+
+
+# ─────────────────────────────────────────────
+#  BODY MEASUREMENTS
+# ─────────────────────────────────────────────
+
+class BodyMeasurement(Base):
+    __tablename__ = "body_measurements"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    measured_at: Mapped[date] = mapped_column(
+        Date, default=date.today, nullable=False, index=True
+    )
+
+    weight_kg:    Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    height_cm:    Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    waist_cm:     Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    neck_cm:      Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    hip_cm:       Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    body_fat_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    # ── Relationship ──────────────────────────
+    user: Mapped["User"] = relationship(back_populates="measurements")
+
+    def __repr__(self) -> str:
+        return f"<BodyMeasurement {self.measured_at} {self.weight_kg}kg>"
