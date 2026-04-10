@@ -5,6 +5,11 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background-color: #fcf9ea;
+  background-image: url('./assets/polka_dots.png');
+  background-size: 280px 280px;
+  background-repeat: repeat;
+  background-attachment: fixed;
 }
 
 /* ── Email verification banners ─────────────────────────── */

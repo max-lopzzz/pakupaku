@@ -34,12 +34,8 @@
 }
 
 /* ── Root ────────────────────────────────────────────────── */
-/* background-image is set inline via style prop in TSX      */
 .onboarding-root {
   min-height: 100vh;
-  background-color: var(--paku-bg);
-  background-size: 280px 280px;
-  background-repeat: repeat;
   display: flex;
   align-items: center;
   justify-content: center;

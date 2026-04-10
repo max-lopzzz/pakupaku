@@ -36,7 +36,6 @@
 /* ── Root ────────────────────────────────────────────────── */
 .dashboard-root {
   min-height: 100vh;
-  background-color: var(--paku-bg);
   font-family: "MorningBreeze";
   padding: 2rem 1rem;
 }
@@ -108,6 +107,12 @@
 
 .date-nav-today:hover { opacity: 0.85; }
 
+.header-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
 .secondary-button {
   border: none;
   background: #ffbdbd;
@@ -119,8 +124,22 @@
   cursor: pointer;
 }
 
-.secondary-button:hover {
-  opacity: 0.95;
+.secondary-button:hover { opacity: 0.95; }
+
+.logout-button {
+  border: 1.5px solid var(--paku-mint);
+  background: transparent;
+  color: var(--paku-muted);
+  font-family: "MorningBreeze";
+  font-weight: 700;
+  padding: 0.9rem 1.1rem;
+  border-radius: 14px;
+  cursor: pointer;
+}
+
+.logout-button:hover {
+  border-color: #e57373;
+  color: #e57373;
 }
 
 .dashboard-title {
@@ -858,7 +877,7 @@
 .meal-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   margin-bottom: 1rem;
 }
 
@@ -871,11 +890,31 @@
   flex: 1;
 }
 
+.meal-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.meal-delete-btn {
+  background: none;
+  border: none;
+  font-size: 1rem;
+  color: var(--paku-muted);
+  cursor: pointer;
+  line-height: 1;
+  padding: 0.1rem 0.25rem;
+  border-radius: 4px;
+}
+
+.meal-delete-btn:hover { color: #e57373; }
+
 .meal-time {
   font-family: "MorningBreeze";
   font-size: 0.85rem;
   color: var(--paku-muted);
-  margin-left: 1rem;
+  margin-left: 0;
   white-space: nowrap;
 }
 
@@ -932,4 +971,157 @@
   .meal-macros {
     gap: 0.75rem;
   }
+}
+/* ── Calorie burned tag ──────────────────────────────────── */
+.calorie-burned-tag {
+  font-size: 0.85rem;
+  color: var(--paku-muted);
+  font-weight: 400;
+}
+
+/* ── Workout section ─────────────────────────────────────── */
+.workout-section {
+  margin-bottom: 2rem;
+}
+
+.workout-empty {
+  font-family: "MorningBreeze";
+  font-size: 0.9rem;
+  color: var(--paku-muted);
+  margin-bottom: 1rem;
+}
+
+.workout-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.workout-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  background: var(--paku-white);
+  border-radius: var(--paku-radius-sm);
+  padding: 0.65rem 1rem;
+  border: 1.5px solid var(--paku-mint);
+}
+
+.workout-card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  flex: 1;
+}
+
+.workout-card-name {
+  font-family: "MorningBreeze";
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--paku-text);
+  text-transform: capitalize;
+}
+
+.workout-card-type {
+  font-weight: 400;
+  color: var(--paku-muted);
+}
+
+.workout-card-detail {
+  font-family: "MorningBreeze";
+  font-size: 0.8rem;
+  color: var(--paku-muted);
+  text-transform: capitalize;
+}
+
+.workout-card-badge {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.1rem 0.4rem;
+  background: var(--paku-mint);
+  border-radius: 4px;
+  font-size: 0.72rem;
+  color: var(--paku-text);
+}
+
+.workout-delete-btn {
+  background: none;
+  border: none;
+  font-size: 1.1rem;
+  color: var(--paku-muted);
+  cursor: pointer;
+  line-height: 1;
+  padding: 0.2rem 0.3rem;
+  border-radius: 4px;
+}
+
+.workout-delete-btn:hover { color: #e57373; }
+
+/* ── Workout log form ────────────────────────────────────── */
+.workout-log-form {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--paku-mint);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.workout-tracker-form,
+.workout-estimate-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.workout-estimate-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.workout-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.5rem;
+  border: 1px solid var(--paku-mint);
+  border-radius: var(--paku-radius-sm);
+  font-family: "MorningBreeze";
+  font-size: 0.85rem;
+  color: var(--paku-text);
+  background: transparent;
+  outline: none;
+}
+
+.workout-input:focus { border-color: var(--paku-pink); }
+
+.workout-input--short {
+  width: auto;
+  flex: 1;
+  min-width: 100px;
+}
+
+.workout-select {
+  flex: 1;
+  min-width: 120px;
+  padding: 0.5rem;
+  border: 1px solid var(--paku-mint);
+  border-radius: var(--paku-radius-sm);
+  font-family: "MorningBreeze";
+  font-size: 0.85rem;
+  color: var(--paku-text);
+  background: transparent;
+  outline: none;
+  text-transform: capitalize;
+}
+
+.workout-select:focus { border-color: var(--paku-pink); }
+
+.workout-estimate-preview {
+  font-family: "MorningBreeze";
+  font-size: 0.85rem;
+  color: var(--paku-muted);
+  margin: 0;
 }

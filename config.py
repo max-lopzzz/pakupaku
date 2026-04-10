@@ -10,11 +10,22 @@ import os
 
 load_dotenv()
 
+# ── Desktop mode flag ─────────────────────────
+# Set PAKUPAKU_DESKTOP=1 to run in fully offline / SQLite mode.
+# This is used by the Electron desktop build.
+DESKTOP_MODE: bool = os.getenv("PAKUPAKU_DESKTOP", "0") == "1"
+
 # ── USDA ──────────────────────────────────────
 USDA_API_KEY = os.getenv("USDA_API_KEY")
 
 # ── Database ──────────────────────────────────
-DATABASE_URL = os.getenv("DATABASE_URL")
+if DESKTOP_MODE:
+    # PAKUPAKU_DB_PATH is set by the Electron main process to the
+    # OS userData directory so data survives app updates.
+    _db_path = os.getenv("PAKUPAKU_DB_PATH", "pakupaku.db")
+    DATABASE_URL = f"sqlite+aiosqlite:///{_db_path}"
+else:
+    DATABASE_URL = os.getenv("DATABASE_URL")
 
 # ── Auth ──────────────────────────────────────
 # Generate a strong secret with: python -c "import secrets; print(secrets.token_hex(32))"

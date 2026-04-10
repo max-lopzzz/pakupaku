@@ -362,3 +362,38 @@ class BodyMeasurementResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ── Workouts ──────────────────────────────────────────────
+
+class WorkoutCreateRequest(BaseModel):
+    source:          str             = Field("tracker")   # "tracker" | "estimated"
+    name:            Optional[str]   = Field(None, max_length=255)
+    workout_type:    Optional[str]   = Field(None, max_length=100)
+    duration_min:    Optional[float] = Field(None, gt=0)
+    intensity:       Optional[str]   = Field(None)
+    calories_burned: Optional[float] = Field(None, ge=0)
+    notes:           Optional[str]   = Field(None, max_length=500)
+    log_date:        Optional[date]  = None
+
+    @validator("intensity")
+    def valid_intensity(cls, v):
+        if v is not None and v not in ("light", "moderate", "vigorous"):
+            raise ValueError("intensity must be light, moderate, or vigorous")
+        return v
+
+
+class WorkoutResponse(BaseModel):
+    id:              uuid.UUID
+    log_date:        date
+    logged_at:       datetime
+    name:            Optional[str]
+    workout_type:    Optional[str]
+    duration_min:    Optional[float]
+    intensity:       Optional[str]
+    calories_burned: float
+    source:          str
+    notes:           Optional[str]
+
+    class Config:
+        from_attributes = True

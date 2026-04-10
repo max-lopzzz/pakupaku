@@ -33,9 +33,13 @@ function applyUserProfile(user: any, setNutritionData: (d: NutritionData) => voi
   }
 }
 
+// In desktop mode (Electron) email verification is skipped — the backend
+// auto-verifies on register and window.electron.isDesktop is exposed by preload.js
+const IS_DESKTOP = !!(window as any).electron?.isDesktop;
+
 function viewForUser(user: any): AppView {
-  if (!user.email_verified)                          return "verifyEmail";
-  if (user.target_kcal || user.uses_custom_goals)   return "dashboard";
+  if (!user.email_verified && !IS_DESKTOP)         return "verifyEmail";
+  if (user.target_kcal || user.uses_custom_goals)  return "dashboard";
   return "onboarding";
 }
 
@@ -143,10 +147,16 @@ function App() {
   }
 
   if (view === "dashboard") {
+    const handleLogout = () => {
+      localStorage.removeItem("token");
+      setView("login");
+      setUserProfile(null);
+    };
     return <Dashboard
       nutritionData={nutritionData}
       userProfile={userProfile}
       onOpenRecipeBuilder={() => setView("recipeBuilder")}
+      onLogout={handleLogout}
     />;
   }
 

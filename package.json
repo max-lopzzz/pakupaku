@@ -1,0 +1,63 @@
+{
+  "name": "pakupaku",
+  "version": "1.0.0",
+  "description": "PakuPaku — inclusive calorie & nutrition tracker",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "PAKU_DEV=1 electron .",
+    "build:frontend": "cd pakupaku-frontend && npm run build",
+    "dist": "npm run build:frontend && electron-builder",
+    "dist:mac": "npm run build:frontend && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac",
+    "dist:win": "npm run build:frontend && electron-builder --win",
+    "dist:linux": "npm run build:frontend && electron-builder --linux"
+  },
+  "devDependencies": {
+    "electron": "^30.0.0",
+    "electron-builder": "^24.0.0"
+  },
+  "build": {
+    "appId": "com.pakupaku.app",
+    "productName": "PakuPaku",
+    "copyright": "Copyright © 2025 PakuPaku",
+    "directories": {
+      "buildResources": "electron/resources",
+      "output": "dist"
+    },
+    "extraResources": [
+      {
+        "from": "dist-backend/pakupaku-backend",
+        "to": "backend/pakupaku-backend",
+        "filter": ["**/*"]
+      }
+    ],
+    "files": [
+      "electron/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["x64", "arm64"] }
+      ],
+      "category": "public.app-category.healthcare-fitness",
+      "icon": "electron/resources/icon.icns",
+      "identity": null
+    },
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] }
+      ],
+      "icon": "electron/resources/icon.ico"
+    },
+    "linux": {
+      "target": [
+        { "target": "AppImage", "arch": ["x64"] }
+      ],
+      "category": "Healthcare"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

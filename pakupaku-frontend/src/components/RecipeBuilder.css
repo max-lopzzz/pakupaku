@@ -1,7 +1,6 @@
 /* ── Root ────────────────────────────────────────────────── */
 .recipe-builder-root {
   min-height: 100vh;
-  background-color: #fcf9ea;
   padding: 2rem 1rem;
   font-family: "MorningBreeze";
 }
@@ -363,9 +362,15 @@
 
 .cancel-edit-button:hover { opacity: 0.9; }
 
-/* ── Edit recipe button ───────────────────────────────────── */
-.edit-recipe-button {
+/* ── Recipe card action buttons ──────────────────────────── */
+.recipe-card-actions {
+  display: flex;
+  gap: 0.5rem;
   margin-top: 0.75rem;
+}
+
+.edit-recipe-button {
+  flex: 1;
   border: 2px solid #badfdb;
   background: transparent;
   color: #3a2a2a;
@@ -374,11 +379,25 @@
   cursor: pointer;
   font-family: "MorningBreeze";
   font-size: 0.85rem;
-  width: 100%;
 }
 
 .edit-recipe-button:hover:not(:disabled) { background: #eaf5f3; }
 .edit-recipe-button:disabled { opacity: 0.5; cursor: default; }
+
+.delete-recipe-button {
+  flex: 1;
+  border: 2px solid #f5c6c6;
+  background: transparent;
+  color: #c47a7a;
+  border-radius: 10px;
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+  font-family: "MorningBreeze";
+  font-size: 0.85rem;
+}
+
+.delete-recipe-button:hover:not(:disabled) { background: #fdf0f0; border-color: #e57373; color: #e57373; }
+.delete-recipe-button:disabled { opacity: 0.5; cursor: default; }
 
 .saved-recipe-card--editing {
   border-color: #8a6060;

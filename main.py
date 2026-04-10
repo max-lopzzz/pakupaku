@@ -11,22 +11,25 @@ Route groups:
   /recipes    — custom recipe CRUD
 """
 
-from datetime import date
+from contextlib import asynccontextmanager
+from datetime import date, datetime, timezone
 from typing import Optional, List
 import uuid
 import secrets
 import logging
+import os
 
 from fastapi import FastAPI, Depends, HTTPException, status, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func, cast, Date
 from sqlalchemy.orm import selectinload
 
-from database import get_db
-from models import User, FoodLog, Recipe, RecipeIngredient, BodyMeasurement
+from database import get_db, init_db
+from models import User, FoodLog, Recipe, RecipeIngredient, BodyMeasurement, WorkoutLog
 from schemas import (
     RegisterRequest, LoginRequest, TokenResponse,
     UserResponse, UserUpdateRequest,
@@ -34,10 +37,11 @@ from schemas import (
     FoodLogCreateRequest, FoodLogResponse, DailySummaryResponse,
     RecipeCreateRequest, RecipeUpdateRequest, RecipeResponse,
     BodyMeasurementCreate, BodyMeasurementResponse,
+    WorkoutCreateRequest, WorkoutResponse,
 )
 from auth import hash_password, verify_password, create_access_token, get_current_user
 from email_utils import send_verification_email
-from config import FRONTEND_URL
+from config import FRONTEND_URL, DESKTOP_MODE
 
 logger = logging.getLogger(__name__)
 from usda import search_foods, get_food, get_foods_bulk, extract_nutrients
@@ -53,6 +57,17 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 http_bearer = HTTPBearer()
 
 # ─────────────────────────────────────────────
+#  LIFESPAN
+# ─────────────────────────────────────────────
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if DESKTOP_MODE:
+        await init_db()
+    yield
+
+
+# ─────────────────────────────────────────────
 #  APP
 # ─────────────────────────────────────────────
 
@@ -60,11 +75,21 @@ app = FastAPI(
     title="PakuPaku API",
     description="Inclusive calorie and nutrition tracking API.",
     version="0.1.0",
+    lifespan=lifespan,
+)
+
+# In desktop mode the Electron window loads file:// or http://localhost:<port>
+# so we allow "null" origin (file://) plus localhost variants.
+_cors_origins = (
+    ["null", "http://localhost", "http://127.0.0.1"]
+    if DESKTOP_MODE
+    else ["http://localhost:3000"]
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # React dev server
+    allow_origins=_cors_origins,
+    allow_origin_regex=r"http://localhost:\d+",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -93,24 +118,36 @@ async def register(payload: RegisterRequest, db: AsyncSession = Depends(get_db))
     if existing_username.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Username already taken.")
 
-    verification_token = secrets.token_hex(32)
+    if DESKTOP_MODE:
+        # No email server in desktop mode — mark verified immediately
+        user = User(
+            email=payload.email,
+            username=payload.username,
+            hashed_password=hash_password(payload.password),
+            email_verified=True,
+            verification_token=None,
+        )
+        db.add(user)
+        await db.flush()
+        await db.commit()
+    else:
+        verification_token = secrets.token_hex(32)
+        user = User(
+            email=payload.email,
+            username=payload.username,
+            hashed_password=hash_password(payload.password),
+            verification_token=verification_token,
+        )
+        db.add(user)
+        await db.flush()
+        await db.commit()
 
-    user = User(
-        email=payload.email,
-        username=payload.username,
-        hashed_password=hash_password(payload.password),
-        verification_token=verification_token,
-    )
-    db.add(user)
-    await db.flush()
-    await db.commit()
-
-    # Send verification email — non-fatal if SMTP is not configured
-    try:
-        await send_verification_email(payload.email, verification_token)
-        logger.info("Verification email sent to %s", payload.email)
-    except Exception as exc:
-        logger.warning("Could not send verification email to %s: %r", payload.email, exc)
+        # Send verification email — non-fatal if SMTP is not configured
+        try:
+            await send_verification_email(payload.email, verification_token)
+            logger.info("Verification email sent to %s", payload.email)
+        except Exception as exc:
+            logger.warning("Could not send verification email to %s: %r", payload.email, exc)
 
     token = create_access_token({"sub": str(user.id)})
     return TokenResponse(access_token=token)
@@ -782,3 +819,179 @@ async def list_measurements(
         .order_by(BodyMeasurement.measured_at)
     )
     return result.scalars().all()
+
+
+# ─────────────────────────────────────────────
+#  WORKOUTS
+# ─────────────────────────────────────────────
+
+# MET values by workout type and intensity (calories = MET × weight_kg × hours)
+WORKOUT_METS: dict = {
+    "walking":        {"light": 2.5, "moderate": 3.5, "vigorous": 4.5},
+    "running":        {"light": 6.0, "moderate": 9.8, "vigorous": 12.8},
+    "cycling":        {"light": 4.0, "moderate": 6.8, "vigorous": 10.0},
+    "swimming":       {"light": 4.0, "moderate": 6.0, "vigorous": 8.3},
+    "weight training":{"light": 3.0, "moderate": 5.0, "vigorous": 6.0},
+    "hiit":           {"light": 7.0, "moderate": 10.0, "vigorous": 14.0},
+    "yoga":           {"light": 2.5, "moderate": 3.0, "vigorous": 4.0},
+    "pilates":        {"light": 3.0, "moderate": 3.5, "vigorous": 4.5},
+    "dancing":        {"light": 3.0, "moderate": 5.0, "vigorous": 7.5},
+    "hiking":         {"light": 4.5, "moderate": 6.0, "vigorous": 7.5},
+    "rowing":         {"light": 4.0, "moderate": 7.0, "vigorous": 8.5},
+    "elliptical":     {"light": 4.0, "moderate": 6.0, "vigorous": 8.0},
+    "jump rope":      {"light": 8.0, "moderate": 10.0, "vigorous": 12.0},
+    "martial arts":   {"light": 4.0, "moderate": 7.0, "vigorous": 10.0},
+    "sports":         {"light": 4.0, "moderate": 6.0, "vigorous": 8.0},
+    "calisthenics":   {"light": 3.5, "moderate": 5.0, "vigorous": 8.0},
+    "stretching":     {"light": 2.0, "moderate": 2.5, "vigorous": 3.0},
+}
+
+
+def estimate_calories(workout_type: str, intensity: str, duration_min: float, weight_kg: float) -> float:
+    mets = WORKOUT_METS.get(workout_type.lower(), {})
+    met  = mets.get(intensity, mets.get("moderate", 5.0))
+    return round(met * weight_kg * (duration_min / 60), 1)
+
+
+@app.get("/workouts/met-table")
+async def get_met_table():
+    """Return available workout types and their MET values."""
+    return WORKOUT_METS
+
+
+@app.post("/workouts", response_model=WorkoutResponse, status_code=status.HTTP_201_CREATED)
+async def create_workout(
+    payload:      WorkoutCreateRequest,
+    current_user: User         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+):
+    """Log a workout entry. For estimated entries, calculates calories from MET × weight × duration."""
+    calories = payload.calories_burned
+
+    if payload.source == "estimated":
+        if not (payload.workout_type and payload.duration_min and payload.intensity):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="workout_type, duration_min, and intensity are required for estimated workouts.",
+            )
+        # Resolve current weight: prefer most recent measurement, fall back to onboarding
+        weight_kg = current_user.weight_kg or 70.0
+        latest = await db.execute(
+            select(BodyMeasurement)
+            .where(BodyMeasurement.user_id == current_user.id,
+                   BodyMeasurement.weight_kg.isnot(None))
+            .order_by(BodyMeasurement.measured_at.desc())
+            .limit(1)
+        )
+        if m := latest.scalar_one_or_none():
+            weight_kg = m.weight_kg  # type: ignore[assignment]
+
+        calories = estimate_calories(
+            payload.workout_type, payload.intensity, payload.duration_min, weight_kg
+        )
+
+    w = WorkoutLog(
+        user_id         = current_user.id,
+        log_date        = payload.log_date or date.today(),
+        logged_at       = datetime.now(timezone.utc),
+        name            = payload.name,
+        workout_type    = payload.workout_type,
+        duration_min    = payload.duration_min,
+        intensity       = payload.intensity,
+        calories_burned = calories or 0,
+        source          = payload.source,
+        notes           = payload.notes,
+    )
+    db.add(w)
+    await db.flush()
+    return w
+
+
+@app.get("/workouts", response_model=List[WorkoutResponse])
+async def list_workouts(
+    log_date:     Optional[date] = Query(None),
+    current_user: User           = Depends(get_current_user),
+    db:           AsyncSession   = Depends(get_db),
+):
+    """Return workout entries for a given date (default: today)."""
+    target = log_date or date.today()
+    result = await db.execute(
+        select(WorkoutLog)
+        .where(WorkoutLog.user_id == current_user.id,
+               WorkoutLog.log_date == target)
+        .order_by(WorkoutLog.logged_at)
+    )
+    return result.scalars().all()
+
+
+@app.delete("/workouts/{workout_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_workout(
+    workout_id:   uuid.UUID,
+    current_user: User         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(WorkoutLog)
+        .where(WorkoutLog.id == workout_id,
+               WorkoutLog.user_id == current_user.id)
+    )
+    w = result.scalar_one_or_none()
+    if not w:
+        raise HTTPException(status_code=404, detail="Workout not found.")
+    await db.delete(w)
+    await db.flush()
+
+
+# ─────────────────────────────────────────────
+#  STATIC FILE SERVING (desktop / production)
+# ─────────────────────────────────────────────
+# When running as a PyInstaller bundle the React build is extracted
+# to a "frontend_build" folder next to the executable.
+# We serve it as a catch-all SPA so that direct URL navigation works.
+
+import sys as _sys
+
+def _frontend_build_path():
+    if getattr(_sys, "frozen", False):
+        base = getattr(_sys, "_MEIPASS", os.path.dirname(_sys.executable))
+        return os.path.join(base, "frontend_build")
+    candidate = os.path.join(os.path.dirname(__file__), "pakupaku-frontend", "build")
+    return candidate if os.path.isdir(candidate) else None
+
+
+_build_path = _frontend_build_path()
+if _build_path and os.path.isdir(_build_path):
+    from starlette.responses import FileResponse as _FileResponse
+
+    # Serve CRA's compiled static assets (JS / CSS / media)
+    # CRA puts them in build/static/, so we mount at /static
+    _static_dir = os.path.join(_build_path, "static")
+    if os.path.isdir(_static_dir):
+        app.mount("/static", StaticFiles(directory=_static_dir), name="static_assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa(full_path: str):
+        """Serve the React SPA for any non-API path."""
+        file_candidate = os.path.join(_build_path, full_path)
+        if os.path.isfile(file_candidate):
+            return _FileResponse(file_candidate)
+        return _FileResponse(os.path.join(_build_path, "index.html"))
+
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+import sys
+
+# ── Serve React frontend in desktop mode ──────────────────────────────────────
+if os.environ.get("PAKUPAKU_DESKTOP") == "1":
+    if getattr(sys, 'frozen', False):
+        base_dir = sys._MEIPASS
+    else:
+        base_dir = os.path.dirname(__file__)
+
+    frontend_dir = os.path.join(base_dir, "frontend")
+
+    app.mount("/static", StaticFiles(directory=os.path.join(frontend_dir, "static")), name="static")
+
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        return FileResponse(os.path.join(frontend_dir, "index.html"))

@@ -1,6 +1,20 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import "./Dashboard.css";
 
+// ─── Local date helper (avoids UTC-offset date shifts) ────
+function localDateStr(d: Date = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function shiftDate(dateStr: string, days: number): string {
+  const d = new Date(dateStr + "T12:00:00"); // noon avoids DST boundary issues
+  d.setDate(d.getDate() + days);
+  return localDateStr(d);
+}
+
 // ─── USDA nutrient extraction (mirrors RecipeBuilder) ─────
 
 const NUTRIENT_ID_MAP: Record<number, string> = {
@@ -107,6 +121,7 @@ interface DashboardProps {
   nutritionData: NutritionData;
   userProfile: any;
   onOpenRecipeBuilder: () => void;
+  onLogout: () => void;
 }
 
 // ─── FoodLogInput component ───────────────────────────────
@@ -415,9 +430,284 @@ function CustomFoodInput({ category, logDate, onLogged }: CustomFoodInputProps) 
   );
 }
 
+// ─── WorkoutSection component ─────────────────────────────
+
+const WORKOUT_TYPES = [
+  "walking", "running", "cycling", "swimming", "weight training",
+  "hiit", "yoga", "pilates", "dancing", "hiking", "rowing",
+  "elliptical", "jump rope", "martial arts", "sports", "calisthenics", "stretching",
+];
+
+const WORKOUT_METS: Record<string, Record<string, number>> = {
+  "walking":        { light: 2.5, moderate: 3.5, vigorous: 4.5 },
+  "running":        { light: 6.0, moderate: 9.8, vigorous: 12.8 },
+  "cycling":        { light: 4.0, moderate: 6.8, vigorous: 10.0 },
+  "swimming":       { light: 4.0, moderate: 6.0, vigorous: 8.3 },
+  "weight training":{ light: 3.0, moderate: 5.0, vigorous: 6.0 },
+  "hiit":           { light: 7.0, moderate: 10.0, vigorous: 14.0 },
+  "yoga":           { light: 2.5, moderate: 3.0, vigorous: 4.0 },
+  "pilates":        { light: 3.0, moderate: 3.5, vigorous: 4.5 },
+  "dancing":        { light: 3.0, moderate: 5.0, vigorous: 7.5 },
+  "hiking":         { light: 4.5, moderate: 6.0, vigorous: 7.5 },
+  "rowing":         { light: 4.0, moderate: 7.0, vigorous: 8.5 },
+  "elliptical":     { light: 4.0, moderate: 6.0, vigorous: 8.0 },
+  "jump rope":      { light: 8.0, moderate: 10.0, vigorous: 12.0 },
+  "martial arts":   { light: 4.0, moderate: 7.0, vigorous: 10.0 },
+  "sports":         { light: 4.0, moderate: 6.0, vigorous: 8.0 },
+  "calisthenics":   { light: 3.5, moderate: 5.0, vigorous: 8.0 },
+  "stretching":     { light: 2.0, moderate: 2.5, vigorous: 3.0 },
+};
+
+interface WorkoutEntry {
+  id:              string;
+  name:            string | null;
+  workout_type:    string | null;
+  duration_min:    number | null;
+  intensity:       string | null;
+  calories_burned: number;
+  source:          string;
+}
+
+interface WorkoutSectionProps {
+  logDate:      string;
+  weightKg:     number | null;
+  onBurnedChange: (total: number) => void;
+}
+
+function WorkoutSection({ logDate, weightKg, onBurnedChange }: WorkoutSectionProps) {
+  const [workouts,   setWorkouts]   = useState<WorkoutEntry[]>([]);
+  const [tab,        setTab]        = useState<"tracker" | "estimate">("tracker");
+
+  // tracker inputs
+  const [trackerName, setTrackerName]       = useState("");
+  const [trackerCals, setTrackerCals]       = useState("");
+
+  // estimate inputs
+  const [estName,     setEstName]           = useState("");
+  const [estType,     setEstType]           = useState("running");
+  const [estDuration, setEstDuration]       = useState("");
+  const [estIntensity, setEstIntensity]     = useState("moderate");
+
+  const [logging,    setLogging]    = useState(false);
+  const [error,      setError]      = useState("");
+
+  const fetchWorkouts = useCallback(async () => {
+    const token = localStorage.getItem("token");
+    if (!token) return;
+    try {
+      const res = await fetch(`/workouts?log_date=${logDate}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const data: WorkoutEntry[] = await res.json();
+      setWorkouts(data);
+      onBurnedChange(data.reduce((s, w) => s + w.calories_burned, 0));
+    } catch { /* non-fatal */ }
+  }, [logDate, onBurnedChange]);
+
+  useEffect(() => { fetchWorkouts(); }, [fetchWorkouts]);
+
+  const estimatedCals = (): number | null => {
+    if (!estDuration || parseFloat(estDuration) <= 0) return null;
+    const mets = WORKOUT_METS[estType];
+    if (!mets) return null;
+    const met = mets[estIntensity] ?? mets["moderate"];
+    const w = weightKg ?? 70;
+    return Math.round(met * w * (parseFloat(estDuration) / 60));
+  };
+
+  const handleLog = async () => {
+    setError("");
+    setLogging(true);
+    const token = localStorage.getItem("token");
+
+    const body: Record<string, any> = { log_date: logDate };
+
+    if (tab === "tracker") {
+      if (!trackerCals || parseFloat(trackerCals) <= 0) {
+        setError("Enter calories burned."); setLogging(false); return;
+      }
+      body.source          = "tracker";
+      body.name            = trackerName.trim() || undefined;
+      body.calories_burned = parseFloat(trackerCals);
+    } else {
+      if (!estDuration || parseFloat(estDuration) <= 0) {
+        setError("Enter duration."); setLogging(false); return;
+      }
+      body.source       = "estimated";
+      body.name         = estName.trim() || undefined;
+      body.workout_type = estType;
+      body.duration_min = parseFloat(estDuration);
+      body.intensity    = estIntensity;
+    }
+
+    try {
+      const res = await fetch("/workouts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token ?? ""}` },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        console.error("POST /workouts failed:", JSON.stringify(body), err);
+        throw new Error();
+      }
+      setTrackerName(""); setTrackerCals("");
+      setEstName(""); setEstDuration("");
+      await fetchWorkouts();
+    } catch {
+      setError("Failed to log workout.");
+    } finally {
+      setLogging(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    const token = localStorage.getItem("token");
+    try {
+      await fetch(`/workouts/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token ?? ""}` },
+      });
+      await fetchWorkouts();
+    } catch { /* non-fatal */ }
+  };
+
+  const preview = tab === "estimate" ? estimatedCals() : null;
+
+  return (
+    <section className="workout-section">
+      <h2 className="section-title">Workouts</h2>
+
+      {workouts.length === 0 ? (
+        <p className="workout-empty">No workouts logged yet.</p>
+      ) : (
+        <div className="workout-list">
+          {workouts.map(w => (
+            <div key={w.id} className="workout-card">
+              <div className="workout-card-main">
+                <span className="workout-card-name">
+                  {w.name || w.workout_type || "Workout"}
+                  {w.workout_type && w.name && (
+                    <span className="workout-card-type"> · {w.workout_type}</span>
+                  )}
+                </span>
+                <span className="workout-card-detail">
+                  {w.duration_min ? `${w.duration_min} min` : ""}
+                  {w.duration_min && w.intensity ? " · " : ""}
+                  {w.intensity || ""}
+                  {(w.duration_min || w.intensity) ? " · " : ""}
+                  <strong>{Math.round(w.calories_burned)} kcal</strong>
+                  {w.source === "estimated" && (
+                    <span className="workout-card-badge">est.</span>
+                  )}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="workout-delete-btn"
+                onClick={() => handleDelete(w.id)}
+                aria-label="Delete workout"
+              >×</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="workout-log-form">
+        <div className="add-food-tabs">
+          <button
+            type="button"
+            className={`add-tab-btn${tab === "tracker" ? " active" : ""}`}
+            onClick={() => setTab("tracker")}
+          >Tracker</button>
+          <button
+            type="button"
+            className={`add-tab-btn${tab === "estimate" ? " active" : ""}`}
+            onClick={() => setTab("estimate")}
+          >Estimate</button>
+        </div>
+
+        {tab === "tracker" ? (
+          <div className="workout-tracker-form">
+            <input
+              type="text"
+              placeholder="Workout name (optional)"
+              value={trackerName}
+              onChange={e => setTrackerName(e.target.value)}
+              className="workout-input"
+            />
+            <input
+              type="number"
+              min="0"
+              step="any"
+              placeholder="Calories burned"
+              value={trackerCals}
+              onChange={e => setTrackerCals(e.target.value)}
+              className="workout-input workout-input--short"
+            />
+          </div>
+        ) : (
+          <div className="workout-estimate-form">
+            <input
+              type="text"
+              placeholder="Workout name (optional)"
+              value={estName}
+              onChange={e => setEstName(e.target.value)}
+              className="workout-input"
+            />
+            <div className="workout-estimate-row">
+              <select
+                value={estType}
+                onChange={e => setEstType(e.target.value)}
+                className="workout-select"
+              >
+                {WORKOUT_TYPES.map(t => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                placeholder="Duration (min)"
+                value={estDuration}
+                onChange={e => setEstDuration(e.target.value)}
+                className="workout-input workout-input--short"
+              />
+              <select
+                value={estIntensity}
+                onChange={e => setEstIntensity(e.target.value)}
+                className="workout-select"
+              >
+                <option value="light">light</option>
+                <option value="moderate">moderate</option>
+                <option value="vigorous">vigorous</option>
+              </select>
+            </div>
+            {preview !== null && (
+              <p className="workout-estimate-preview">≈ {preview} kcal burned</p>
+            )}
+          </div>
+        )}
+
+        {error && <p className="food-log-error">{error}</p>}
+        <button
+          type="button"
+          className="food-log-button"
+          onClick={handleLog}
+          disabled={logging}
+        >
+          {logging ? "Logging…" : "Log workout"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────
 
-export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuilder }: DashboardProps) {
+export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuilder, onLogout }: DashboardProps) {
   const [meals, setMeals] = useState<Meal[]>([]);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [selectedRecipe, setSelectedRecipe] = useState<{ [key in MealCategory]: string }>({
@@ -426,8 +716,9 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
     dinner: "",
     snacks: "",
   });
-  const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
-  const isToday = selectedDate === new Date().toISOString().slice(0, 10);
+  const [selectedDate, setSelectedDate] = useState<string>(() => localDateStr());
+  const isToday = selectedDate === localDateStr();
+  const [caloriesBurned, setCaloriesBurned] = useState(0);
 
   const [addTab, setAddTab] = useState<{ [key in MealCategory]: "food" | "custom" | "recipe" }>({
     breakfast: "food",
@@ -443,7 +734,7 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
   const [measWaist, setMeasWaist]       = useState("");
   const [measNeck, setMeasNeck]         = useState("");
   const [measHip, setMeasHip]           = useState("");
-  const [measDate, setMeasDate]         = useState(() => new Date().toISOString().slice(0, 10));
+  const [measDate, setMeasDate]         = useState(() => localDateStr());
   const [measError, setMeasError]       = useState("");
   const [measSaving, setMeasSaving]     = useState(false);
   const chartRef = useRef<SVGSVGElement>(null);
@@ -475,6 +766,8 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
 
     fetchRecipes();
   }, []);
+
+  useEffect(() => { setCaloriesBurned(0); }, [selectedDate]);
 
   useEffect(() => {
     const fetchLogs = async () => {
@@ -637,11 +930,7 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
   };
 
   return (
-    <div className="dashboard-root" style={{
-      backgroundImage: `url(${process.env.PUBLIC_URL}/polka_dots.png)`,
-      backgroundSize: '280px 280px',
-      backgroundRepeat: 'repeat'
-    }}>
+    <div className="dashboard-root">
       <div className="dashboard-container">
         {/* Header */}
         <header className="dashboard-header">
@@ -649,9 +938,14 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
             <h1 className="dashboard-title">Welcome back! 👋</h1>
             <p className="dashboard-subtitle">Track your nutrition journey</p>
           </div>
-          <button type="button" className="secondary-button" onClick={onOpenRecipeBuilder}>
-            Create recipe
-          </button>
+          <div className="header-actions">
+            <button type="button" className="secondary-button" onClick={onOpenRecipeBuilder}>
+              Create recipe
+            </button>
+            <button type="button" className="logout-button" onClick={onLogout}>
+              Log out
+            </button>
+          </div>
         </header>
 
         {/* Date navigation */}
@@ -659,11 +953,7 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
           <button
             type="button"
             className="date-nav-btn"
-            onClick={() => {
-              const d = new Date(selectedDate);
-              d.setDate(d.getDate() - 1);
-              setSelectedDate(d.toISOString().slice(0, 10));
-            }}
+            onClick={() => setSelectedDate(shiftDate(selectedDate, -1))}
           >
             ←
           </button>
@@ -671,18 +961,14 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
             type="date"
             className="date-nav-input"
             value={selectedDate}
-            max={new Date().toISOString().slice(0, 10)}
+            max={localDateStr()}
             onChange={e => setSelectedDate(e.target.value)}
           />
           <button
             type="button"
             className="date-nav-btn"
             disabled={isToday}
-            onClick={() => {
-              const d = new Date(selectedDate);
-              d.setDate(d.getDate() + 1);
-              setSelectedDate(d.toISOString().slice(0, 10));
-            }}
+            onClick={() => setSelectedDate(shiftDate(selectedDate, 1))}
           >
             →
           </button>
@@ -690,7 +976,7 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
             <button
               type="button"
               className="date-nav-today"
-              onClick={() => setSelectedDate(new Date().toISOString().slice(0, 10))}
+              onClick={() => setSelectedDate(localDateStr())}
             >
               today
             </button>
@@ -702,13 +988,18 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
           <h2 className="section-title">Calorie Progress</h2>
           <div className="overall-progress-card">
             <div className="overall-progress-label">
-              <span>Today</span>
-              <strong>{totalConsumed.calories} / {nutritionData.calories.goal} cal</strong>
+              <span>
+                {caloriesBurned > 0 && (
+                  <span className="calorie-burned-tag">🔥 {Math.round(caloriesBurned)} burned · </span>
+                )}
+                net {Math.max(0, Math.round(totalConsumed.calories - caloriesBurned))} / {nutritionData.calories.goal} cal
+              </span>
+              <strong>{totalConsumed.calories} consumed</strong>
             </div>
             <div className="overall-progress-bar">
               <div
                 className="overall-progress-fill"
-                style={{ width: `${progressPercent('calories')}%` }}
+                style={{ width: `${Math.min(((totalConsumed.calories - caloriesBurned) / nutritionData.calories.goal) * 100, 100)}%` }}
               />
             </div>
           </div>
@@ -953,7 +1244,22 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
                       <div key={meal.id} className="meal-card">
                         <div className="meal-header">
                           <h3 className="meal-name">{meal.name}</h3>
-                          <span className="meal-time">{meal.time}</span>
+                          <div className="meal-header-right">
+                            <span className="meal-time">{meal.time}</span>
+                            <button
+                              type="button"
+                              className="meal-delete-btn"
+                              aria-label="Delete log entry"
+                              onClick={async () => {
+                                const token = localStorage.getItem("token");
+                                await fetch(`/logs/${meal.id}`, {
+                                  method: "DELETE",
+                                  headers: { Authorization: `Bearer ${token ?? ""}` },
+                                });
+                                refreshLogs();
+                              }}
+                            >×</button>
+                          </div>
                         </div>
                         <div className="meal-macros">
                           <span className="macro-item">{meal.calories} cal</span>
@@ -1017,6 +1323,16 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
             ))}
           </div>
         </section>
+
+        <WorkoutSection
+          logDate={selectedDate}
+          weightKg={(() => {
+            const lastWith = <K extends keyof BodyMeasurement>(key: K) =>
+              [...measurements].reverse().find(m => m[key] != null)?.[key] ?? null;
+            return (lastWith("weight_kg") ?? userProfile?.weight_kg ?? null) as number | null;
+          })()}
+          onBurnedChange={setCaloriesBurned}
+        />
       </div>
     </div>
   );

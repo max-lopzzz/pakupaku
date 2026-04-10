@@ -299,10 +299,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
   const progress = Math.round((STEPS.indexOf(step) / (STEPS.length - 1)) * 100);
 
   return (
-    <div
-      className="onboarding-root"
-      style={{ backgroundImage: `url(${PUB}/polka_dots.png)` }}
-    >
+    <div className="onboarding-root">
       <div className="onboarding-card">
         <div className="onboarding-mascot-wrap">
           <img

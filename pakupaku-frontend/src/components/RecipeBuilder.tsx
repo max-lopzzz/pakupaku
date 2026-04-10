@@ -245,7 +245,7 @@ export default function RecipeBuilder({ onBack }: RecipeBuilderProps) {
       return;
     }
 
-    const valid = ingredients.filter(r => r.food_name.trim() && r.amount.trim());
+    const valid = ingredients.filter(r => r.food_name.trim() && parseFloat(r.amount) > 0);
     if (valid.length === 0) {
       setError("Add at least one ingredient with a name and amount.");
       return;
@@ -256,7 +256,7 @@ export default function RecipeBuilder({ onBack }: RecipeBuilderProps) {
       description: description.trim() || undefined,
       servings:    parseFloat(servings) || 1,
       ingredients: valid.map(r => {
-        const amount_g = toGrams(r.amount, r.unit, r.portionsMap);
+        const amount_g = Math.max(toGrams(r.amount, r.unit, r.portionsMap), 0.01);
         return {
           fdc_id:     r.fdc_id ?? undefined,
           food_name:  r.food_name.trim(),
@@ -289,7 +289,10 @@ export default function RecipeBuilder({ onBack }: RecipeBuilderProps) {
 
       if (!res.ok) {
         const body = await res.json().catch(() => null);
-        throw new Error(body?.detail || "Failed to save recipe.");
+        console.error("Recipe save failed:", JSON.stringify(payload), body);
+        throw new Error(Array.isArray(body?.detail)
+          ? body.detail.map((e: any) => `${e.loc?.slice(-1)[0]}: ${e.msg}`).join("; ")
+          : body?.detail || "Failed to save recipe.");
       }
 
       const saved = await res.json();
@@ -422,14 +425,35 @@ export default function RecipeBuilder({ onBack }: RecipeBuilderProps) {
                     <span>{recipe.total_carbs_g != null ? Math.round(recipe.total_carbs_g) : "—"}g C</span>
                     <span>{recipe.total_fat_g != null ? Math.round(recipe.total_fat_g) : "—"}g F</span>
                   </div>
-                  <button
-                    type="button"
-                    className="edit-recipe-button"
-                    onClick={() => startEdit(recipe)}
-                    disabled={editingId === recipe.id}
-                  >
-                    {editingId === recipe.id ? "Editing…" : "Edit"}
-                  </button>
+                  <div className="recipe-card-actions">
+                    <button
+                      type="button"
+                      className="edit-recipe-button"
+                      onClick={() => startEdit(recipe)}
+                      disabled={editingId === recipe.id}
+                    >
+                      {editingId === recipe.id ? "Editing…" : "Edit"}
+                    </button>
+                    <button
+                      type="button"
+                      className="delete-recipe-button"
+                      disabled={editingId === recipe.id}
+                      onClick={async () => {
+                        if (!window.confirm(`Delete "${recipe.name}"?`)) return;
+                        const token = localStorage.getItem("token");
+                        const res = await fetch(`/recipes/${recipe.id}`, {
+                          method: "DELETE",
+                          headers: { Authorization: token ? `Bearer ${token}` : "" },
+                        });
+                        if (res.ok) {
+                          setRecipes(prev => prev.filter(r => r.id !== recipe.id));
+                          if (editingId === recipe.id) cancelEdit();
+                        }
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

@@ -1,0 +1,11 @@
+version: 1.0.0
+files:
+  - url: PakuPaku-1.0.0-arm64.dmg
+    sha512: 1PMetqqKOKfryaKkf+3OAsP1aZYBoHLbYjYxzPZhr48MXwc2gfTfCufMDfg2D1xHPybxBSbBEF67riavwN/WBQ==
+    size: 116958018
+  - url: PakuPaku-1.0.0.dmg
+    sha512: 0jzYTZvCIh3P7V32yuwWA0PGQ+/Aqt5+E3CDYnxFzrsmn+b+Xs9PcHmlM0PX+7hQwxUmT0dwAuvsu7MZzSW3dQ==
+    size: 122467665
+path: PakuPaku-1.0.0-arm64.dmg
+sha512: 1PMetqqKOKfryaKkf+3OAsP1aZYBoHLbYjYxzPZhr48MXwc2gfTfCufMDfg2D1xHPybxBSbBEF67riavwN/WBQ==
+releaseDate: '2026-04-10T23:36:27.554Z'

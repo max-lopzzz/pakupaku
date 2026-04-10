@@ -18,10 +18,9 @@ from sqlalchemy import (
     ForeignKey, Text, Enum as SAEnum,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
 import enum
 
-from database import Base
+from database import Base, UUIDType
 
 
 # ─────────────────────────────────────────────
@@ -71,7 +70,7 @@ class User(Base):
 
     # ── Identity ─────────────────────────────
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        UUIDType(), primary_key=True, default=uuid.uuid4
     )
     email: Mapped[str] = mapped_column(
         String(255), unique=True, nullable=False, index=True
@@ -161,6 +160,9 @@ class User(Base):
     measurements: Mapped[List["BodyMeasurement"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    workouts: Mapped[List["WorkoutLog"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<User {self.username} ({self.email})>"
@@ -174,10 +176,10 @@ class FoodLog(Base):
     __tablename__ = "food_logs"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        UUIDType(), primary_key=True, default=uuid.uuid4
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+        UUIDType(), ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False, index=True,
     )
     logged_at: Mapped[datetime] = mapped_column(
@@ -192,7 +194,7 @@ class FoodLog(Base):
     # For custom recipes: recipe_id is set, fdc_id is None
     fdc_id:      Mapped[Optional[int]]        = mapped_column(Integer,  nullable=True)
     recipe_id:   Mapped[Optional[uuid.UUID]]  = mapped_column(
-        UUID(as_uuid=True), ForeignKey("recipes.id", ondelete="SET NULL"),
+        UUIDType(), ForeignKey("recipes.id", ondelete="SET NULL"),
         nullable=True,
     )
     food_name:   Mapped[str]   = mapped_column(String(255), nullable=False)
@@ -233,10 +235,10 @@ class Recipe(Base):
     __tablename__ = "recipes"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        UUIDType(), primary_key=True, default=uuid.uuid4
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+        UUIDType(), ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False, index=True,
     )
     name:        Mapped[str]        = mapped_column(String(255), nullable=False)
@@ -275,10 +277,10 @@ class RecipeIngredient(Base):
     __tablename__ = "recipe_ingredients"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        UUIDType(), primary_key=True, default=uuid.uuid4
     )
     recipe_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("recipes.id", ondelete="CASCADE"),
+        UUIDType(), ForeignKey("recipes.id", ondelete="CASCADE"),
         nullable=False, index=True,
     )
 
@@ -312,10 +314,10 @@ class BodyMeasurement(Base):
     __tablename__ = "body_measurements"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        UUIDType(), primary_key=True, default=uuid.uuid4
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+        UUIDType(), ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False, index=True,
     )
     measured_at: Mapped[date] = mapped_column(
@@ -334,3 +336,34 @@ class BodyMeasurement(Base):
 
     def __repr__(self) -> str:
         return f"<BodyMeasurement {self.measured_at} {self.weight_kg}kg>"
+
+
+# ─────────────────────────────────────────────
+#  WORKOUT LOGS
+# ─────────────────────────────────────────────
+
+class WorkoutLog(Base):
+    __tablename__ = "workout_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUIDType(), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUIDType(), ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    log_date:  Mapped[date]     = mapped_column(Date, default=date.today, nullable=False, index=True)
+    logged_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    name:            Mapped[Optional[str]]   = mapped_column(String(255), nullable=True)
+    workout_type:    Mapped[Optional[str]]   = mapped_column(String(100), nullable=True)
+    duration_min:    Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    intensity:       Mapped[Optional[str]]   = mapped_column(String(50),  nullable=True)
+    calories_burned: Mapped[float]           = mapped_column(Float, nullable=False)
+    source:          Mapped[str]             = mapped_column(String(20), default="tracker", nullable=False)
+    notes:           Mapped[Optional[str]]   = mapped_column(Text, nullable=True)
+
+    user: Mapped["User"] = relationship(back_populates="workouts")
+
+    def __repr__(self) -> str:
+        return f"<WorkoutLog {self.log_date} {self.calories_burned}kcal>"

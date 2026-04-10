@@ -1,0 +1,40 @@
+directories:
+  output: dist
+  buildResources: electron/resources
+appId: com.pakupaku.app
+productName: PakuPaku
+copyright: Copyright © 2025 PakuPaku
+extraResources:
+  - from: dist-backend/pakupaku-backend
+    to: backend/pakupaku-backend
+    filter:
+      - '**/*'
+files:
+  - filter:
+      - electron/**/*
+      - package.json
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  category: public.app-category.healthcare-fitness
+  icon: electron/resources/icon.icns
+  identity: null
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: electron/resources/icon.ico
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+  category: Healthcare
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+electronVersion: 30.5.1
