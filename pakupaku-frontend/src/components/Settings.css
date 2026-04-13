@@ -1,0 +1,324 @@
+/* ── Root ────────────────────────────────────────────────── */
+.settings-root {
+  min-height: 100vh;
+  padding: 2rem 1rem;
+  font-family: "MorningBreeze";
+  background-color: #fcf9ea;
+  background-image: url('../assets/polka_dots.png');
+  background-repeat: repeat;
+}
+
+.settings-container {
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+/* ── Header ──────────────────────────────────────────────── */
+.settings-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.settings-title {
+  font-size: 2rem;
+  margin: 0;
+  color: #3a2a2a;
+}
+
+/* ── Sections ────────────────────────────────────────────── */
+.settings-section {
+  margin-bottom: 1.75rem;
+}
+
+.settings-section-title {
+  font-size: 1.1rem;
+  color: #8a6060;
+  text-transform: lowercase;
+  margin: 0 0 0.6rem 0.25rem;
+  font-weight: 400;
+}
+
+/* ── Card ────────────────────────────────────────────────── */
+.settings-card {
+  background: #ffffff;
+  border-radius: 16px;
+  border: 2px solid #badfdb;
+  box-shadow: 0 4px 20px rgba(186, 223, 219, 0.18);
+  padding: 1.25rem 1.5rem;
+}
+
+/* ── Ko-fi button ────────────────────────────────────────── */
+.kofi-button {
+  display: block;
+  width: 100%;
+  background: #FF5E5B;
+  color: #ffffff;
+  border: none;
+  border-radius: 12px;
+  padding: 0.9rem 1.25rem;
+  font-family: "MorningBreeze";
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: center;
+  transition: opacity 0.15s;
+}
+
+.kofi-button:hover { opacity: 0.92; }
+
+/* ── Row layout (for toggles, etc.) ─────────────────────── */
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.settings-row-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+}
+
+.settings-row-label {
+  font-size: 1rem;
+  color: #3a2a2a;
+  font-weight: 700;
+}
+
+.settings-row-desc {
+  font-size: 0.85rem;
+  color: #8a6060;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.settings-row-control {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+/* ── Toggle switch ───────────────────────────────────────── */
+.toggle-switch {
+  position: relative;
+  display: inline-flex;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-switch input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-track {
+  position: relative;
+  display: inline-block;
+  width: 48px;
+  height: 28px;
+  background: #e0d8d8;
+  border-radius: 999px;
+  transition: background 0.2s;
+}
+
+.toggle-switch input:checked + .toggle-track {
+  background: #badfdb;
+}
+
+.toggle-switch input:disabled + .toggle-track {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.toggle-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  background: #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.18);
+  transition: transform 0.2s;
+}
+
+.toggle-switch input:checked + .toggle-track .toggle-thumb {
+  transform: translateX(20px);
+}
+
+/* ── Loading spinner ─────────────────────────────────────── */
+.settings-spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid #badfdb;
+  border-top-color: #8a6060;
+  border-radius: 50%;
+  animation: settings-spin 0.6s linear infinite;
+}
+
+@keyframes settings-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Sub-sections inside account card ───────────────────── */
+.settings-sub-section {
+  padding: 0.25rem 0;
+}
+
+.settings-sub-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #3a2a2a;
+  margin: 0 0 0.35rem;
+}
+
+.settings-current-value {
+  font-size: 0.85rem;
+  color: #8a6060;
+  margin: 0 0 0.6rem;
+}
+
+.settings-divider {
+  height: 1.5px;
+  background: #eaf5f3;
+  margin: 1.1rem 0;
+  border: none;
+}
+
+/* ── Inline form ─────────────────────────────────────────── */
+.settings-inline-form {
+  display: flex;
+  gap: 0.6rem;
+  align-items: stretch;
+}
+
+.settings-inline-form--column {
+  flex-direction: column;
+  align-items: stretch;
+  max-width: 340px;
+}
+
+.settings-input {
+  flex: 1;
+  border: 2px solid #badfdb;
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  font-family: "MorningBreeze";
+  font-size: 0.95rem;
+  color: #3a2a2a;
+  background: transparent;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.settings-input:focus { border-color: #ffbdbd; }
+
+.settings-save-button {
+  border: none;
+  background: #badfdb;
+  color: #3a2a2a;
+  border-radius: 12px;
+  padding: 0.75rem 1.1rem;
+  font-family: "MorningBreeze";
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  white-space: nowrap;
+  align-self: flex-start;
+}
+
+.settings-save-button:hover:not(:disabled) { opacity: 0.9; }
+.settings-save-button:disabled { opacity: 0.55; cursor: default; }
+
+.settings-secondary-button {
+  border: 2px solid #badfdb;
+  background: transparent;
+  color: #3a2a2a;
+  border-radius: 12px;
+  padding: 0.75rem 1.1rem;
+  font-family: "MorningBreeze";
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  margin-top: 0.5rem;
+}
+
+.settings-secondary-button:hover:not(:disabled) { background: #eaf5f3; }
+.settings-secondary-button:disabled { opacity: 0.55; cursor: default; }
+
+.settings-danger-button {
+  border: 2px solid #f5c6c6;
+  background: transparent;
+  color: #c47a7a;
+  border-radius: 12px;
+  padding: 0.75rem 1.1rem;
+  font-family: "MorningBreeze";
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  margin-top: 0.5rem;
+}
+
+.settings-danger-button:hover { background: #fdf0f0; border-color: #e57373; color: #e57373; }
+
+/* ── Status messages ─────────────────────────────────────── */
+.settings-success {
+  font-family: "MorningBreeze";
+  color: #3a2a2a;
+  font-size: 0.88rem;
+  margin: 0.4rem 0 0;
+}
+
+.settings-error {
+  font-family: "MorningBreeze";
+  color: #c0607a;
+  font-size: 0.88rem;
+  margin: 0.4rem 0 0;
+}
+
+/* ── About card ──────────────────────────────────────────── */
+.settings-about {
+  text-align: center;
+  padding: 1.5rem;
+}
+
+.about-app-name {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #3a2a2a;
+  margin: 0 0 0.25rem;
+}
+
+.about-version {
+  font-size: 0.9rem;
+  color: #8a6060;
+  margin: 0 0 0.5rem;
+}
+
+.about-made-with {
+  font-size: 0.85rem;
+  color: #c0607a;
+  margin: 0;
+}
+
+/* ── Responsive ──────────────────────────────────────────── */
+@media (max-width: 480px) {
+  .settings-root {
+    padding: 1rem 0.75rem;
+  }
+  .settings-inline-form {
+    flex-direction: column;
+  }
+  .settings-save-button {
+    align-self: stretch;
+    text-align: center;
+  }
+}

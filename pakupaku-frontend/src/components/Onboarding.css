@@ -1,0 +1,336 @@
+/* ── Fonts ───────────────────────────────────────────────── */
+@font-face {
+  font-family: "MorningBreeze";
+  src: url("../assets/fonts/MorningBreeze.otf") format("opentype");
+  font-weight: 400;
+}
+@font-face {
+  font-family: "MorningBreeze";
+  src: url("../assets/fonts/MorningBreeze-Bold.otf") format("opentype");
+  font-weight: 700;
+}
+@font-face {
+  font-family: "MorningBreeze";
+  src: url("../assets/fonts/MorningBreeze-Light.otf") format("opentype");
+  font-weight: 300;
+}
+@font-face {
+  font-family: "MorningBreeze";
+  src: url("../assets/fonts/MorningBreeze-Italic.otf") format("opentype");
+  font-style: italic;
+}
+
+/* ── Tokens ──────────────────────────────────────────────── */
+:root {
+  --paku-bg:        #fcf9ea;
+  --paku-mint:      #badfdb;
+  --paku-pink:      #ffbdbd;
+  --paku-pink-dark: #c0607a;
+  --paku-text:      #3a2a2a;
+  --paku-muted:     #8a6060;
+  --paku-white:     #ffffff;
+  --paku-radius:    20px;
+  --paku-radius-sm: 12px;
+}
+
+/* ── Root ────────────────────────────────────────────────── */
+.onboarding-root {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+  font-family: "MorningBreeze";
+}
+
+/* ── Card ────────────────────────────────────────────────── */
+.onboarding-card {
+  background: var(--paku-white);
+  border-radius: var(--paku-radius);
+  box-shadow: 0 6px 32px rgba(186, 223, 219, 0.35);
+  border: 2px solid var(--paku-mint);
+  width: 100%;
+  max-width: 640px;
+  overflow: hidden;
+}
+
+/* ── Mascot ──────────────────────────────────────────────── */
+.onboarding-mascot-wrap {
+  background: var(--paku-white);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 2rem 1rem 0;
+  min-height: 180px;
+  border-bottom: 2px solid rgba(186, 223, 219, 0.35);
+}
+.onboarding-mascot {
+  width: 180px;
+  height: 180px;
+  object-fit: contain;
+  object-position: center bottom;
+  animation: mascot-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform-origin: bottom center;
+}
+@keyframes mascot-pop {
+  0%   { transform: scale(0.7) translateY(20px); opacity: 0; }
+  100% { transform: scale(1)   translateY(0);    opacity: 1; }
+}
+
+/* ── Progress bar ────────────────────────────────────────── */
+.onboarding-progress-bar {
+  height: 8px;
+  background: #eaf5f3;
+}
+.onboarding-progress-fill {
+  height: 100%;
+  background: var(--paku-mint);
+  border-radius: 0 4px 4px 0;
+  transition: width 0.4s ease;
+}
+
+/* ── Body ────────────────────────────────────────────────── */
+.onboarding-body { padding: 2.25rem 2.5rem 3rem; }
+.step-content    { animation: step-in 0.3s ease; }
+@keyframes step-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Step title (label1 banner) ──────────────────────────── */
+.step-title-wrap {
+  position: relative;
+  display: block;
+  width: 100%;
+  margin-bottom: 0.75rem;
+}
+.step-title {
+  font-family: "MorningBreeze";
+  font-weight: 700;
+  font-size: 1.7rem;
+  color: var(--paku-text);
+  margin: 0;
+  line-height: 1.25;
+  position: relative;
+  z-index: 1;
+  padding: 0.3rem 0.2rem;
+}
+.brand       { color: var(--paku-pink-dark); }
+.step-desc   {
+  font-size: 0.88rem;
+  color: var(--paku-muted);
+  margin: 0 0 1.25rem;
+  line-height: 1.6;
+  font-family: "MorningBreeze";
+}
+
+/* ── PrimaryBtn (label2 banner) ──────────────────────────── */
+.btn-primary {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 52px;
+  padding: 0;
+  border: none;
+  background: var(--paku-mint);
+  border-radius: var(--paku-radius-sm);
+  cursor: pointer;
+  margin-top: 0.75rem;
+  transition: transform 0.12s;
+}
+.btn-primary:active  { transform: scale(0.97); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+.btn-text {
+  position: relative;
+  z-index: 1;
+  font-family: "MorningBreeze";
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--paku-white);
+  padding: 0.75rem 1.5rem;
+}
+
+/* ── btn-back ─────────────────────────────────────────────── */
+.btn-back {
+  background: transparent;
+  border: 2px solid var(--paku-mint);
+  color: var(--paku-muted);
+  border-radius: var(--paku-radius-sm);
+  padding: 0.7rem 1.1rem;
+  font-size: 0.88rem;
+  font-family: "MorningBreeze";
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.btn-back:hover { background: #eaf5f3; }
+
+.nav-buttons {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  align-items: center;
+}
+
+/* ── HeartBtn (heart.svg background) ────────────────────── */
+.heart-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--paku-mint);
+  border: 2px solid var(--paku-mint);
+  border-radius: var(--paku-radius-sm);
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.15s;
+  min-height: 44px;
+}
+.heart-btn:active { transform: scale(0.95); }
+.heart-btn.selected {
+  background: var(--paku-pink);
+  border-color: var(--paku-pink);
+}
+
+/* wide = full-width row (radio options) */
+.heart-btn.wide {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+/* pill = compact tag shape (conditions) */
+.heart-btn.pill { min-height: 36px; }
+
+.heart-btn-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0.55rem 1rem;
+  text-align: left;
+  color: var(--paku-white);
+  font-family: "MorningBreeze";
+}
+
+/* ── Radio group ─────────────────────────────────────────── */
+.radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-bottom: 0.75rem;
+}
+.radio-label {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--paku-text);
+  font-family: "MorningBreeze";
+}
+.radio-sub {
+  font-size: 0.75rem;
+  color: var(--paku-muted);
+  font-family: "MorningBreeze";
+}
+
+/* ── Field (label4 background) ───────────────────────────── */
+.field-group { display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 0.5rem; }
+.field-row   { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+.field       { display: flex; flex-direction: column; gap: 4px; }
+
+.field-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--paku-muted);
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+  margin-left: 6px;
+  font-family: "MorningBreeze";
+}
+.field-input-wrap {
+  position: relative;
+  width: 100%;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  background: var(--paku-white);
+  border: 2px solid var(--paku-mint);
+  border-radius: var(--paku-radius-sm);
+}
+.field input[type="number"],
+.field input[type="text"] {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 0.75rem 1.1rem;
+  font-size: 0.95rem;
+  color: var(--paku-text);
+  font-family: "MorningBreeze";
+  box-sizing: border-box;
+}
+.field input[type="number"]::-webkit-inner-spin-button,
+.field input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; }
+.field input[type="number"] { -moz-appearance: textfield; }
+.field-error {
+  font-size: 0.75rem;
+  color: var(--paku-pink-dark);
+  font-weight: 700;
+  margin-left: 6px;
+  font-family: "MorningBreeze";
+}
+
+/* ── ErrorMsg (label3 background) ───────────────────────── */
+.error-msg-wrap {
+  position: relative;
+  margin-top: 0.5rem;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  background: var(--paku-pink);
+  border: 2px solid var(--paku-pink-dark);
+  border-radius: var(--paku-radius-sm);
+}
+.error-msg {
+  position: relative;
+  z-index: 1;
+  font-size: 0.82rem;
+  color: var(--paku-white);
+  font-weight: 700;
+  padding: 0.6rem 1rem;
+  margin: 0;
+  line-height: 1.4;
+  font-family: "MorningBreeze";
+}
+
+/* ── Pace ────────────────────────────────────────────────── */
+.pace-presets {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+.done-heart {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 1rem;
+  display: block;
+  object-fit: contain;
+  animation: heart-beat 0.8s ease infinite alternate;
+}
+@keyframes heart-beat {
+  from { transform: scale(1); }
+  to   { transform: scale(1.1); }
+}
+
+/* ── Responsive ──────────────────────────────────────────── */
+@media (max-width: 520px) {
+  .onboarding-body { padding: 1.25rem 1.25rem 1.5rem; }
+  .step-title      { font-size: 1.35rem; }
+  .field-row       { grid-template-columns: 1fr; }
+  .pace-presets    { grid-template-columns: 1fr 1fr; }
+}
