@@ -1,10 +1,9 @@
 # PakuPaku
 
-PakuPaku is an inclusive nutrition-tracking app with three main parts:
+PakuPaku is an inclusive nutrition-tracking app with two main parts:
 
 - A FastAPI backend for auth, user profiles, recipes, logs, measurements, and USDA food lookups.
-- A React frontend in `pakupaku-frontend/`.
-- An Electron packaging layer that bundles the frontend and launches the backend for desktop builds.
+- A React/Capacitor frontend in `pakupaku-frontend/` for iOS and Android.
 
 For a deeper walkthrough, see [docs/architecture.md](/Users/hanniamabellopezmontano/projects/pakupaku/pakupaku/docs/architecture.md).
 
@@ -18,8 +17,7 @@ For a deeper walkthrough, see [docs/architecture.md](/Users/hanniamabellopezmont
 - `nutrition_calculator.py`: calorie, body-fat, and macro calculations used by onboarding.
 - `usda.py`: USDA FoodData Central client and nutrient extraction helpers.
 - `email_utils.py`: verification email sending.
-- `backend_entry.py`: desktop backend bootstrap used by packaged builds.
-- `pakupaku-frontend/`: web/mobile frontend.
+- `pakupaku-frontend/`: mobile/web frontend.
 
 ## Backend Overview
 
@@ -85,12 +83,6 @@ cd pakupaku-frontend
 npm start
 ```
 
-Electron shell from the repo root:
-
-```bash
-npm run dev
-```
-
 ## Where To Make Changes
 
 - Add or modify API endpoints: `main.py`
@@ -99,7 +91,6 @@ npm run dev
 - Change auth behavior: `auth.py`
 - Change nutrition logic: `nutrition_calculator.py`
 - Change USDA parsing or API behavior: `usda.py`
-- Change email verification flow: `email_utils.py`, `main.py`, and `pakupaku-frontend/src/App.tsx`
 - Change frontend screens: `pakupaku-frontend/src/components/`
 
 ## Current Caveats

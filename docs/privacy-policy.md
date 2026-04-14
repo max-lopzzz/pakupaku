@@ -1,10 +1,10 @@
 # Privacy Policy for PakuPaku
 
-Effective date: `[Month Day, Year]`
+Effective date: April 14, 2026
 
-PakuPaku ("PakuPaku," "we," "our," or "us") provides nutrition-tracking features including account creation, food and recipe logging, body measurements, workout tracking, and optional Apple Health integration. This Privacy Policy explains what information we collect, how we use it, when we share it, and the choices available to you.
+PakuPaku provides nutrition-tracking features including account creation, food and recipe logging, body measurements, workout tracking, and optional Apple Health integration. This Privacy Policy explains what information we collect, how we use it, when we share it, and the choices available to you.
 
-If you have questions about this Privacy Policy, you can contact us at: `[support email or support URL]`
+If you have questions about this Privacy Policy, you can contact us at: m.lopz.montn@gmail.com
 
 ## 1. Information We Collect
 
@@ -38,14 +38,14 @@ When you use onboarding and tracking features, we may collect:
 
 On iOS, if you choose to grant access, PakuPaku may read limited data from Apple Health. Based on the current app implementation, this is used to read active calories burned for a selected date.
 
-We only access Apple Health data if you explicitly grant permission through Apple’s permission prompt. You can revoke that permission at any time in Apple Health or iOS Settings.
+We only access Apple Health data if you explicitly grant permission through Apple's permission prompt. You can revoke that permission at any time in Apple Health or iOS Settings.
 
 ### D. Device and Local Storage Information
 
 PakuPaku may store certain information locally on your device, including:
 
 - login/session state
-- locally stored app data in SQLite or similar on-device storage, depending on platform
+- locally stored app data in SQLite or similar on-device storage
 - app preferences and cached records needed for app functionality
 
 ### E. Email and Communication Data
@@ -82,7 +82,7 @@ We may share information in the following limited situations:
 We may share data with service providers that help us operate the app, such as:
 
 - email delivery providers used to send verification emails
-- infrastructure or hosting providers, if and where PakuPaku is hosted online
+- infrastructure or hosting providers where PakuPaku's backend is hosted
 
 These providers are only given access to information reasonably necessary to perform services for us.
 
@@ -92,7 +92,7 @@ Food search requests may be sent to USDA FoodData Central so the app can return 
 
 ### C. Health Platform Providers
 
-If you choose to connect Apple Health, data access is handled through Apple’s HealthKit permission system and subject to Apple’s platform controls.
+If you choose to connect Apple Health, data access is handled through Apple's HealthKit permission system and subject to Apple's platform controls.
 
 ### D. Legal Reasons
 
@@ -109,7 +109,7 @@ If PakuPaku accesses Apple Health data:
 
 - we use that data only to provide or improve health- and fitness-related features in the app
 - we do not use Apple Health data for advertising, marketing, or data-mining purposes
-- we do not share Apple Health data with third parties except as necessary to provide the feature you requested, comply with law, or as otherwise permitted by Apple’s rules and applicable law
+- we do not share Apple Health data with third parties except as necessary to provide the feature you requested, comply with law, or as otherwise permitted by Apple's rules and applicable law
 
 PakuPaku is intended for wellness, nutrition, and fitness support. Unless explicitly stated otherwise, it is not intended to provide medical diagnosis, treatment, or emergency services.
 
@@ -137,9 +137,9 @@ You may also:
 - revoke Apple Health permissions in Apple Health or iOS Settings
 - manage email preferences by contacting us if email functionality is enabled
 
-To submit a privacy request, contact us at: `[support email]`
+To submit a privacy request, contact us at: m.lopz.montn@gmail.com
 
-## 7. Children’s Privacy
+## 7. Children's Privacy
 
 PakuPaku is not intended for children under 13, or under the minimum age required in your jurisdiction to consent to data processing without parental approval. We do not knowingly collect personal information from children in violation of applicable law.
 
@@ -151,7 +151,7 @@ We use reasonable technical and organizational measures designed to protect info
 
 ## 9. International Transfers
 
-If PakuPaku is operated or hosted in a country different from your own, your information may be transferred to and processed in countries that may have different data protection laws than your jurisdiction.
+If PakuPaku's backend is operated or hosted in a country different from your own, your information may be transferred to and processed in countries that may have different data protection laws than your jurisdiction.
 
 ## 10. Changes to This Privacy Policy
 
@@ -161,20 +161,5 @@ We may update this Privacy Policy from time to time. If we make material changes
 
 If you have questions, concerns, or requests related to this Privacy Policy, contact:
 
-`[Legal entity or developer name]`  
-`[Mailing address, if desired]`  
-`[Support email]`  
-`[Support URL]`
-
----
-
-## Notes Before Publishing
-
-Replace the bracketed placeholders before publishing.
-
-You should also make sure this policy matches your actual production setup, especially:
-
-- whether user data is stored only on-device, on your backend, or both
-- the name of your email service provider
-- whether any hosting, analytics, crash reporting, or customer-support SDKs are added before launch
-- whether Apple Health data is ever transmitted off-device in your released build
+Hannia Mabel López Montaño  
+m.lopz.montn@gmail.com
