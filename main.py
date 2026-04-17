@@ -6,7 +6,8 @@ PakuPaku FastAPI application.
 Route groups:
   /auth       — register, login
   /users      — profile, onboarding, preferences
-  /foods      — USDA search and detail (via usda.py)
+  /foods      — Spoonacular ingredient search and detail (via spoonacular.py)
+  /mealplan   — Spoonacular meal plan generation
   /logs       — food log CRUD + daily summary
   /recipes    — custom recipe CRUD
 """
@@ -40,7 +41,10 @@ from email_utils import send_verification_email
 from config import CORS_ALLOWED_ORIGINS, FRONTEND_URL, SECRET_KEY
 
 logger = logging.getLogger(__name__)
-from usda import search_foods, get_food, get_foods_bulk, extract_nutrients
+from spoonacular import (
+    search_ingredients, get_ingredient, extract_nutrients,
+    generate_meal_plan, generate_weekly_plan,
+)
 from nutrition_calculator import (
     calc_body_fat_navy, calc_bmr, interpolate_bmr_hrt,
     apply_metabolic_conditions, calc_tdee, calc_goal_adjustment,
@@ -376,45 +380,103 @@ async def onboarding_custom(
 
 
 # ─────────────────────────────────────────────
-#  FOOD (USDA) ROUTES
+#  FOOD (SPOONACULAR) ROUTES
 # ─────────────────────────────────────────────
 
 @app.get("/foods/search")
 async def food_search(
-    query:       str,
-    page_size:   int           = Query(10,  ge=1, le=200),
-    page_number: int           = Query(1,   ge=1),
-    data_types:  Optional[str] = Query(None, description="Comma-separated data types"),
-    brand_owner: Optional[str] = Query(None, description="Filter branded foods by brand owner name"),
-    _: User = Depends(get_current_user),   # require auth
+    query:     str,
+    page_size: int = Query(25, ge=1, le=100),
+    _: User = Depends(get_current_user),
 ):
     """
-    Search the USDA FoodData Central database.
-    Returns raw USDA results — nutrients are per 100g.
+    Search the Spoonacular ingredient database.
+    Returns {results: [{id, name, image, possibleUnits}], totalResults}.
+    Nutrients are fetched separately via /foods/{id}.
     """
-    dt_list = [d.strip() for d in data_types.split(",")] if data_types else None
-    return await search_foods(query, page_size, page_number, dt_list, brand_owner)
+    return await search_ingredients(query, number=page_size)
 
 
-@app.get("/foods/{fdc_id}")
+@app.get("/foods/{spoonacular_id}")
 async def food_detail(
-    fdc_id:   int,
-    format:   str = Query("full", description="abridged or full"),
+    spoonacular_id: int,
     _: User = Depends(get_current_user),
 ):
-    """Get full details for a single food item by FDC ID."""
-    food = await get_food(fdc_id, format=format)
-    return extract_nutrients(food)
+    """
+    Get per-100g nutrition and available portions for a single ingredient.
+    Also fetches gram weights for non-standard units (piece, medium, etc.)
+    via concurrent Spoonacular calls.
+    """
+    ingredient = await get_ingredient(spoonacular_id)
+    return await extract_nutrients(ingredient)
 
 
-@app.post("/foods/bulk")
-async def food_bulk(
-    fdc_ids: List[int],
+# ─────────────────────────────────────────────
+#  MEAL PLAN ROUTES
+# ─────────────────────────────────────────────
+
+@app.post("/users/me/upgrade", status_code=status.HTTP_204_NO_CONTENT)
+async def upgrade_to_premium(
+    current_user: User        = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+):
+    """
+    Mark the current user as premium.
+
+    TODO: Before going live, gate this behind real payment verification
+    (e.g. verify a Stripe webhook or Google Play purchase token).
+    """
+    current_user.is_premium = True
+    await db.flush()
+
+
+@app.get("/mealplan/weekly")
+async def meal_plan_weekly(
+    diet:            Optional[str] = Query(None, description="e.g. vegetarian, vegan, ketogenic"),
+    exclude:         Optional[str] = Query(None, description="Comma-separated ingredients to exclude"),
+    current_user:    User          = Depends(get_current_user),
+    db:              AsyncSession  = Depends(get_db),
+):
+    """
+    Generate a personalised 7-day meal plan (premium only).
+
+    Uses the user's calorie target (custom or calculated).
+    Returns breakfast, lunch, dinner and a snack for each day,
+    plus a consolidated shopping list.
+    """
+    if not current_user.is_premium:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Weekly meal planning is a premium feature.",
+        )
+
+    target_kcal = (
+        current_user.custom_kcal
+        if current_user.uses_custom_goals
+        else current_user.target_kcal
+    )
+    if not target_kcal:
+        raise HTTPException(
+            status_code=400,
+            detail="Please complete onboarding or set a calorie goal before generating a meal plan.",
+        )
+
+    return await generate_weekly_plan(int(target_kcal), diet, exclude)
+
+
+@app.get("/mealplan/generate")
+async def meal_plan_generate(
+    target_calories: int           = Query(..., ge=500, le=10000),
+    time_frame:      str           = Query("week", description="'day' or 'week'"),
+    diet:            Optional[str] = Query(None, description="e.g. vegetarian, vegan, ketogenic"),
+    exclude:         Optional[str] = Query(None, description="Comma-separated ingredients to exclude"),
     _: User = Depends(get_current_user),
 ):
-    """Fetch up to 20 foods at once by FDC ID list."""
-    foods = await get_foods_bulk(fdc_ids)
-    return [extract_nutrients(f) for f in foods]
+    """
+    Generate a meal plan via Spoonacular.
+    Returns a day or week of meal suggestions matching the calorie target.
+    """
+    return await generate_meal_plan(target_calories, time_frame, diet, exclude)
 
 
 # ─────────────────────────────────────────────
@@ -440,7 +502,7 @@ async def create_log(
 
     log = FoodLog(
         user_id    = current_user.id,
-        fdc_id     = payload.fdc_id,
+        spoonacular_id = payload.spoonacular_id,
         recipe_id  = payload.recipe_id,
         food_name  = payload.food_name,
         brand_name = payload.brand_name,
@@ -594,7 +656,7 @@ async def create_recipe(
     for ing in payload.ingredients:
         obj = RecipeIngredient(
             recipe_id  = recipe.id,
-            fdc_id     = ing.fdc_id,
+            spoonacular_id = ing.spoonacular_id,
             food_name  = ing.food_name,
             brand_name = ing.brand_name,
             amount_g   = ing.amount_g,
@@ -695,7 +757,7 @@ async def update_recipe(
         for ing in payload.ingredients:
             obj = RecipeIngredient(
                 recipe_id  = recipe.id,
-                fdc_id     = ing.fdc_id,
+                spoonacular_id = ing.spoonacular_id,
                 food_name  = ing.food_name,
                 brand_name = ing.brand_name,
                 amount_g   = ing.amount_g,

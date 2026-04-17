@@ -58,8 +58,8 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS food_logs (
   id          TEXT PRIMARY KEY,
   user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  fdc_id      INTEGER,
-  recipe_id   TEXT,
+  spoonacular_id INTEGER,
+  recipe_id      TEXT,
   food_name   TEXT NOT NULL,
   brand_name  TEXT,
   amount_g    REAL NOT NULL,
@@ -92,8 +92,8 @@ CREATE TABLE IF NOT EXISTS recipes (
 CREATE TABLE IF NOT EXISTS recipe_ingredients (
   id         TEXT PRIMARY KEY,
   recipe_id  TEXT NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
-  fdc_id     INTEGER,
-  food_name  TEXT NOT NULL,
+  spoonacular_id INTEGER,
+  food_name      TEXT NOT NULL,
   brand_name TEXT,
   amount_g   REAL NOT NULL,
   calories   REAL,

@@ -1,32 +1,24 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import "./Dashboard.css";
 
-// ─── USDA nutrient extraction (mirrors RecipeBuilder) ─────
+// ─── Nutrient extraction from Spoonacular detail response ─────────────────────
 
-const NUTRIENT_ID_MAP: Record<number, string> = {
-  1008: "calories",
-  1003: "protein_g",
-  1004: "fat_g",
-  1005: "carbs_g",
-  1079: "fiber_g",
-};
-
-function extractNutrientsFromSearch(foodNutrients: any[]): Record<string, number> {
-  const out: Record<string, number> = {};
-  for (const n of foodNutrients) {
-    const key = NUTRIENT_ID_MAP[n.nutrientId as number];
-    if (key && n.value != null) out[key] = n.value;
-  }
-  return out; // per 100g
+function extractNutrientsFromDetail(detail: any): Record<string, number | null> {
+  return {
+    calories:   detail.calories   ?? null,
+    protein_g:  detail.protein_g  ?? null,
+    fat_g:      detail.fat_g      ?? null,
+    carbs_g:    detail.carbs_g    ?? null,
+  };
 }
 
 const UNIT_TO_G: Record<string, number> = { g: 1, ml: 1, oz: 28.3495, cup: 240, tbsp: 15, tsp: 5 };
 const STANDARD_UNITS = ["g", "ml", "oz", "cup", "tbsp", "tsp"];
 
-// ─── Food suggestion type (mirrors RecipeBuilder) ─────────
+// ─── Food suggestion type ─────────────────────────────────
 
 interface FoodSuggestion {
-  fdc_id:            number;
+  spoonacular_id:    number;
   description:       string;
   calories_per_100g: number | null;
   protein_per_100g:  number | null;
@@ -107,6 +99,7 @@ interface DashboardProps {
   nutritionData: NutritionData;
   userProfile: any;
   onOpenRecipeBuilder: () => void;
+  onOpenMealPlanner:   () => void;
 }
 
 // ─── FoodLogInput component ───────────────────────────────
@@ -153,19 +146,15 @@ function FoodLogInput({ category, logDate, onLogged }: FoodLogInputProps) {
         );
         if (!res.ok) return;
         const data = await res.json();
-        const results: FoodSuggestion[] = (data.foods ?? [])
-          .filter((f: any) => f.dataType !== "Branded")
-          .map((f: any) => {
-            const n = extractNutrientsFromSearch(f.foodNutrients ?? []);
-            return {
-              fdc_id:            f.fdcId,
-              description:       f.description,
-              calories_per_100g: n.calories   ?? null,
-              protein_per_100g:  n.protein_g  ?? null,
-              fat_per_100g:      n.fat_g      ?? null,
-              carbs_per_100g:    n.carbs_g    ?? null,
-            };
-          });
+        const results: FoodSuggestion[] = (data.results ?? [])
+          .map((f: any) => ({
+            spoonacular_id:    f.id,
+            description:       f.name,
+            calories_per_100g: null,
+            protein_per_100g:  null,
+            fat_per_100g:      null,
+            carbs_per_100g:    null,
+          }));
         setSuggestions(results);
         setShowDropdown(results.length > 0);
       } catch { /* ignore */ }
@@ -181,43 +170,33 @@ function FoodLogInput({ category, logDate, onLogged }: FoodLogInputProps) {
     const token   = localStorage.getItem("token");
     const headers = { Authorization: `Bearer ${token ?? ""}` };
 
-    const fetchPortions = async (fdc_id: number): Promise<Record<string, number> | null> => {
-      try {
-        const res = await fetch(`/foods/${fdc_id}`, { headers });
-        if (!res.ok) return null;
+    try {
+      const res = await fetch(`/foods/${food.spoonacular_id}`, { headers });
+      if (res.ok) {
         const detail = await res.json();
-        const map: Record<string, number> = {};
+
+        // Update the selected food with nutrition from detail
+        const withNutrition: FoodSuggestion = {
+          ...food,
+          calories_per_100g: detail.calories  ?? null,
+          protein_per_100g:  detail.protein_g ?? null,
+          fat_per_100g:      detail.fat_g     ?? null,
+          carbs_per_100g:    detail.carbs_g   ?? null,
+        };
+        setSelected(withNutrition);
+
+        // Build portions map from detail response
+        const pm: Record<string, number> = {};
         for (const p of detail.portions ?? []) {
-          if (p.unit && p.grams_per_unit) map[p.unit] = p.grams_per_unit;
+          if (p.unit && p.grams_per_unit) pm[p.unit] = p.grams_per_unit;
         }
-        return Object.keys(map).length > 0 ? map : null;
-      } catch { return null; }
-    };
+        setPortionsMap(pm);
 
-    let portions = await fetchPortions(food.fdc_id);
-    if (!portions) {
-      try {
-        const res = await fetch(
-          `/foods/search?query=${encodeURIComponent(food.description)}&page_size=20`,
-          { headers }
-        );
-        if (res.ok) {
-          const data = await res.json();
-          const RELIABLE = new Set(["Survey (FNDDS)", "SR Legacy"]);
-          for (const f of data.foods ?? []) {
-            if (!RELIABLE.has(f.dataType)) continue;
-            portions = await fetchPortions(f.fdcId);
-            if (portions) break;
-          }
-        }
-      } catch { /* non-fatal */ }
-    }
-
-    const pm = portions ?? {};
-    setPortionsMap(pm);
-    const natural = Object.keys(pm).filter(u => !STANDARD_UNIT_SET.has(u));
-    if (natural.length > 0) { setUnit(natural[0]); setAmount("1"); }
-    else { setUnit("g"); setAmount("100"); }
+        const natural = Object.keys(pm).filter(u => !STANDARD_UNIT_SET.has(u));
+        if (natural.length > 0) { setUnit(natural[0]); setAmount("1"); }
+        else { setUnit("g"); setAmount("100"); }
+      }
+    } catch { /* non-fatal — user can still log in grams */ }
   };
 
   const handleLog = async () => {
@@ -233,8 +212,8 @@ function FoodLogInput({ category, logDate, onLogged }: FoodLogInputProps) {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token ?? ""}` },
         body: JSON.stringify({
-          fdc_id:    selected.fdc_id,
-          food_name: selected.description,
+          spoonacular_id: selected.spoonacular_id,
+          food_name:      selected.description,
           amount_g,
           calories:  sc(selected.calories_per_100g),
           protein_g: sc(selected.protein_per_100g),
@@ -275,7 +254,7 @@ function FoodLogInput({ category, logDate, onLogged }: FoodLogInputProps) {
           <ul className="food-autocomplete-dropdown">
             {suggestions.map(f => (
               <li
-                key={f.fdc_id}
+                key={f.spoonacular_id}
                 onMouseDown={e => { e.preventDefault(); selectFood(f); }}
                 className="food-autocomplete-item"
               >
@@ -417,7 +396,7 @@ function CustomFoodInput({ category, logDate, onLogged }: CustomFoodInputProps) 
 
 // ─── Main component ───────────────────────────────────────
 
-export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuilder }: DashboardProps) {
+export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuilder, onOpenMealPlanner }: DashboardProps) {
   const [meals, setMeals] = useState<Meal[]>([]);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [selectedRecipe, setSelectedRecipe] = useState<{ [key in MealCategory]: string }>({
@@ -649,9 +628,14 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
             <h1 className="dashboard-title">Welcome back! 👋</h1>
             <p className="dashboard-subtitle">Track your nutrition journey</p>
           </div>
-          <button type="button" className="secondary-button" onClick={onOpenRecipeBuilder}>
-            Create recipe
-          </button>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <button type="button" className="secondary-button" onClick={onOpenMealPlanner}>
+              🗓 Meal Plan
+            </button>
+            <button type="button" className="secondary-button" onClick={onOpenRecipeBuilder}>
+              Create recipe
+            </button>
+          </div>
         </header>
 
         {/* Date navigation */}

@@ -151,6 +151,12 @@ class User(Base):
         Boolean, default=False, nullable=False
     )
 
+    # ── Premium subscription ───────────────────
+    # TODO: gate this behind real payment verification before going live
+    is_premium: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+
     # ── Relationships ─────────────────────────
     food_logs: Mapped[List["FoodLog"]]         = relationship(
         back_populates="user", cascade="all, delete-orphan"
@@ -188,9 +194,9 @@ class FoodLog(Base):
     )
 
     # ── What was eaten ────────────────────────
-    # For USDA foods: fdc_id is set, recipe_id is None
-    # For custom recipes: recipe_id is set, fdc_id is None
-    fdc_id:      Mapped[Optional[int]]        = mapped_column(Integer,  nullable=True)
+    # For Spoonacular foods: spoonacular_id is set, recipe_id is None
+    # For custom recipes: recipe_id is set, spoonacular_id is None
+    spoonacular_id: Mapped[Optional[int]]     = mapped_column(Integer,  nullable=True)
     recipe_id:   Mapped[Optional[uuid.UUID]]  = mapped_column(
         UUID(as_uuid=True), ForeignKey("recipes.id", ondelete="SET NULL"),
         nullable=True,
@@ -282,8 +288,8 @@ class RecipeIngredient(Base):
         nullable=False, index=True,
     )
 
-    # ── USDA reference ────────────────────────
-    fdc_id:     Mapped[Optional[int]] = mapped_column(Integer,     nullable=True)
+    # ── Spoonacular reference ─────────────────
+    spoonacular_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     food_name:  Mapped[str]        = mapped_column(String(255), nullable=False)
     brand_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 

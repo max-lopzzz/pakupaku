@@ -3,6 +3,7 @@ import Login from "./components/Login";
 import Onboarding from "./components/Onboarding";
 import Dashboard from "./components/Dashboard";
 import RecipeBuilder from "./components/RecipeBuilder";
+import MealPlanner from "./components/MealPlanner";
 
 interface NutritionData {
   calories: { consumed: number; goal: number };
@@ -11,7 +12,7 @@ interface NutritionData {
   fat:      { consumed: number; goal: number };
 }
 
-type AppView = "login" | "verifyEmail" | "onboarding" | "dashboard" | "recipeBuilder";
+type AppView = "login" | "verifyEmail" | "onboarding" | "dashboard" | "recipeBuilder" | "mealPlanner";
 
 // ─── Helpers ─────────────────────────────────────────────
 
@@ -142,11 +143,23 @@ function App() {
     return <RecipeBuilder onBack={() => setView("dashboard")} />;
   }
 
+  if (view === "mealPlanner") {
+    return <MealPlanner
+      userProfile={userProfile}
+      onBack={() => setView("dashboard")}
+      onUpgrade={async () => {
+        const u = await loadUser().catch(() => null);
+        if (u) routeUser(u);
+      }}
+    />;
+  }
+
   if (view === "dashboard") {
     return <Dashboard
       nutritionData={nutritionData}
       userProfile={userProfile}
       onOpenRecipeBuilder={() => setView("recipeBuilder")}
+      onOpenMealPlanner={() => setView("mealPlanner")}
     />;
   }
 

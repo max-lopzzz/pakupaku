@@ -38,109 +38,42 @@ function uuid(): string {
   });
 }
 
-// ── USDA ──────────────────────────────────────────────────────────────────────
-
-const USDA_BASE = "https://api.nal.usda.gov/fdc/v1";
-const USDA_KEY  = process.env.REACT_APP_USDA_API_KEY ?? "";
+// ── Spoonacular (via backend) ─────────────────────────────────────────────────
 
 export async function apiFoodSearch(
   query: string,
-  pageSize = 50
-): Promise<{ foods: any[] }> {
-  const params = new URLSearchParams({
-    query,
-    pageSize: String(pageSize),
-    api_key:  USDA_KEY,
+  pageSize = 25
+): Promise<{ results: any[]; totalResults: number }> {
+  const token = localStorage.getItem("token");
+  const params = new URLSearchParams({ query, page_size: String(pageSize) });
+  const res = await fetch(`/foods/search?${params}`, {
+    headers: { Authorization: token ? `Bearer ${token}` : "" },
   });
-  const res = await fetch(`${USDA_BASE}/foods/search?${params}`);
-  if (!res.ok) throw new Error("USDA search failed");
+  if (!res.ok) throw new Error("Food search failed");
   return res.json();
 }
 
 export async function apiFoodDetail(
-  fdcId: number
-): Promise<{ portions: { unit: string; grams_per_unit: number }[] }> {
-  const res = await fetch(`${USDA_BASE}/food/${fdcId}?api_key=${USDA_KEY}`);
-  if (!res.ok) throw new Error("USDA food detail failed");
-  const food = await res.json();
-
-  // Port of usda.py extract_nutrients() portion parsing
-  const UNIT_ALIASES: Record<string, string> = {
-    c: "cup", cup: "cup", cups: "cup",
-    tbs: "tbsp", tbsp: "tbsp", tablespoon: "tbsp", tablespoons: "tbsp",
-    tsp: "tsp", teaspoon: "tsp", teaspoons: "tsp",
-    oz: "oz", ounce: "oz", ounces: "oz",
-    g: "g", gram: "g", grams: "g",
-    ml: "ml", milliliter: "ml", milliliters: "ml",
-    millilitre: "ml", millilitres: "ml",
-  };
-  const DENYLIST = new Set(["individual","school","guideline","specified","container","quantity","amount","serving"]);
-
-  function normalise(raw: string): string | null {
-    const key = UNIT_ALIASES[raw] ?? raw;
-    if (key && !DENYLIST.has(key) && key.length <= 20) return key;
-    return null;
-  }
-
-  function unitAndGrams(p: any): [string | null, number | null] {
-    const gramWeight = p.gramWeight;
-    if (!gramWeight) return [null, null];
-    const unitInfo = p.measureUnit ?? {};
-    const unitId   = unitInfo.id;
-    const amount   = parseFloat(p.amount ?? "1") || 1;
-
-    // Path A: real measureUnit ID (Foundation)
-    if (unitId && unitId !== 9999) {
-      const raw = (unitInfo.name ?? unitInfo.abbreviation ?? "").trim().toLowerCase();
-      const key = normalise(raw);
-      if (key && amount > 0) return [key, Math.round((gramWeight / Math.max(amount, 0.001)) * 100) / 100];
-    }
-
-    // Path B: Survey FNDDS — portionDescription
-    const desc = (p.portionDescription ?? "").trim();
-    if (desc) {
-      const m = desc.match(/^(\d+(?:\/\d+)?(?:\.\d+)?)\s+(fl\s+oz|[a-z]+)/i);
-      if (m) {
-        let amt = m[1].includes("/")
-          ? parseFloat(m[1].split("/")[0]) / parseFloat(m[1].split("/")[1])
-          : parseFloat(m[1]);
-        const key = normalise(m[2].trim().toLowerCase());
-        if (key && amt > 0) return [key, Math.round((gramWeight / amt) * 100) / 100];
-      }
-    }
-
-    // Path C: SR Legacy — modifier
-    const modifier = (p.modifier ?? "").trim();
-    if (modifier && !/^\d+$/.test(modifier)) {
-      const clean = modifier.replace(/\s*\(.*\)/, "").trim().toLowerCase();
-      for (const candidate of [clean, clean.split(" ")[0]].filter(Boolean)) {
-        const key = normalise(candidate);
-        if (key && amount > 0) return [key, Math.round((gramWeight / Math.max(amount, 0.001)) * 100) / 100];
-      }
-    }
-
-    return [null, null];
-  }
-
-  const portions: { unit: string; grams_per_unit: number }[] = [];
-  const seen = new Set<string>();
-
-  for (const p of food.foodPortions ?? []) {
-    const [unit, gpg] = unitAndGrams(p);
-    if (unit && gpg && !seen.has(unit)) {
-      portions.push({ unit, grams_per_unit: gpg });
-      seen.add(unit);
-    }
-  }
-
-  // Branded serving size
-  const ss = food.servingSize;
-  const su = (food.servingSizeUnit ?? "").trim().toLowerCase();
-  if (ss && su && su !== "g" && !seen.has(su)) {
-    portions.push({ unit: su, grams_per_unit: Math.round(parseFloat(ss) * 100) / 100 });
-  }
-
-  return { portions };
+  spoonacularId: number
+): Promise<{
+  spoonacular_id: number;
+  description: string;
+  calories: number | null;
+  protein_g: number | null;
+  fat_g: number | null;
+  carbs_g: number | null;
+  fiber_g: number | null;
+  sugar_g: number | null;
+  sodium_mg: number | null;
+  possible_units: string[];
+  portions: { unit: string; grams_per_unit: number }[];
+}> {
+  const token = localStorage.getItem("token");
+  const res = await fetch(`/foods/${spoonacularId}`, {
+    headers: { Authorization: token ? `Bearer ${token}` : "" },
+  });
+  if (!res.ok) throw new Error("Food detail failed");
+  return res.json();
 }
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
@@ -283,7 +216,7 @@ export async function apiOnboardingCustom(payload: {
 
 export interface FoodLogRow {
   id:         string;
-  fdc_id:     number | null;
+  spoonacular_id: number | null;
   recipe_id:  string | null;
   food_name:  string;
   brand_name: string | null;
@@ -318,12 +251,12 @@ export async function apiCreateLog(payload: Omit<FoodLogRow, "id" | "logged_at">
 
   await db.run(
     `INSERT INTO food_logs
-      (id, user_id, fdc_id, recipe_id, food_name, brand_name,
+      (id, user_id, spoonacular_id, recipe_id, food_name, brand_name,
        amount_g, calories, protein_g, fat_g, carbs_g, fiber_g,
        sugar_g, sodium_mg, meal, log_date, logged_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [id, uid,
-     payload.fdc_id ?? null, payload.recipe_id ?? null,
+     payload.spoonacular_id ?? null, payload.recipe_id ?? null,
      payload.food_name, payload.brand_name ?? null,
      payload.amount_g,
      payload.calories ?? null, payload.protein_g ?? null,
@@ -350,7 +283,7 @@ export async function apiDeleteLog(logId: string): Promise<void> {
 export interface RecipeIngredient {
   id?:        string;
   recipe_id?: string;
-  fdc_id:     number | null;
+  spoonacular_id: number | null;
   food_name:  string;
   brand_name: string | null;
   amount_g:   number;
@@ -448,11 +381,11 @@ export async function apiCreateRecipe(payload: {
   for (const ing of payload.ingredients) {
     await db.run(
       `INSERT INTO recipe_ingredients
-         (id, recipe_id, fdc_id, food_name, brand_name,
+         (id, recipe_id, spoonacular_id, food_name, brand_name,
           amount_g, calories, protein_g, fat_g, carbs_g, fiber_g)
        VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
       [uuid(), id,
-       ing.fdc_id ?? null, ing.food_name, ing.brand_name ?? null,
+       ing.spoonacular_id ?? null, ing.food_name, ing.brand_name ?? null,
        ing.amount_g,
        ing.calories ?? null, ing.protein_g ?? null, ing.fat_g ?? null,
        ing.carbs_g ?? null, ing.fiber_g ?? null]
@@ -504,11 +437,11 @@ export async function apiUpdateRecipe(
     for (const ing of payload.ingredients) {
       await db.run(
         `INSERT INTO recipe_ingredients
-           (id, recipe_id, fdc_id, food_name, brand_name,
+           (id, recipe_id, spoonacular_id, food_name, brand_name,
             amount_g, calories, protein_g, fat_g, carbs_g, fiber_g)
          VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
         [uuid(), recipeId,
-         ing.fdc_id ?? null, ing.food_name, ing.brand_name ?? null,
+         ing.spoonacular_id ?? null, ing.food_name, ing.brand_name ?? null,
          ing.amount_g,
          ing.calories ?? null, ing.protein_g ?? null, ing.fat_g ?? null,
          ing.carbs_g ?? null, ing.fiber_g ?? null]

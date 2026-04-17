@@ -26,8 +26,8 @@ CORS_ALLOWED_ORIGINS = _split_csv_env(
     f"{FRONTEND_URL},http://localhost:3000,http://127.0.0.1:3000",
 )
 
-# ── USDA ──────────────────────────────────────
-USDA_API_KEY = os.getenv("USDA_API_KEY")
+# ── Spoonacular ───────────────────────────────
+SPOONACULAR_API_KEY = os.getenv("SPOONACULAR_API_KEY")
 
 # ── Database ──────────────────────────────────
 DATABASE_URL = os.getenv("DATABASE_URL")

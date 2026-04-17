@@ -180,6 +180,7 @@ class UserResponse(BaseModel):
     fat_g:        Optional[float]
     carbs_g:      Optional[float]
     uses_custom_goals: bool
+    is_premium:        bool
 
     class Config:
         from_attributes = True
@@ -203,9 +204,9 @@ class UserUpdateRequest(BaseModel):
 
 class FoodLogCreateRequest(BaseModel):
     """Log a single food entry."""
-    # One of fdc_id or recipe_id must be provided
-    fdc_id:    Optional[int]       = None
-    recipe_id: Optional[uuid.UUID] = None
+    # One of spoonacular_id or recipe_id must be provided
+    spoonacular_id: Optional[int]       = None
+    recipe_id:      Optional[uuid.UUID] = None
 
     food_name:  str   = Field(..., min_length=1, max_length=255)
     brand_name: Optional[str] = Field(None, max_length=255)
@@ -222,16 +223,16 @@ class FoodLogCreateRequest(BaseModel):
 
     meal:     Optional[str]  = Field(None, max_length=50)
     log_date: Optional[date] = None   # defaults to today if not provided
-    # fdc_id and recipe_id are both optional — custom foods have neither
+    # spoonacular_id and recipe_id are both optional — custom foods have neither
 
 
 class FoodLogResponse(BaseModel):
-    id:         uuid.UUID
-    user_id:    uuid.UUID
-    log_date:   date
-    logged_at:  datetime
-    fdc_id:     Optional[int]
-    recipe_id:  Optional[uuid.UUID]
+    id:             uuid.UUID
+    user_id:        uuid.UUID
+    log_date:       date
+    logged_at:      datetime
+    spoonacular_id: Optional[int]
+    recipe_id:      Optional[uuid.UUID]
     food_name:  str
     brand_name: Optional[str]
     amount_g:   float
@@ -269,7 +270,7 @@ class DailySummaryResponse(BaseModel):
 # ─────────────────────────────────────────────
 
 class RecipeIngredientRequest(BaseModel):
-    fdc_id:     Optional[int]  = None
+    spoonacular_id: Optional[int]  = None
     food_name:  str            = Field(..., min_length=1, max_length=255)
     brand_name: Optional[str]  = Field(None, max_length=255)
     amount_g:   float          = Field(..., gt=0)
@@ -281,9 +282,9 @@ class RecipeIngredientRequest(BaseModel):
 
 
 class RecipeIngredientResponse(BaseModel):
-    id:         uuid.UUID
-    recipe_id:  uuid.UUID
-    fdc_id:     Optional[int]
+    id:             uuid.UUID
+    recipe_id:      uuid.UUID
+    spoonacular_id: Optional[int]
     food_name:  str
     brand_name: Optional[str]
     amount_g:   float
