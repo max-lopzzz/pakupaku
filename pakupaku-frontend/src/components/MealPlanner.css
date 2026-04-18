@@ -418,3 +418,24 @@
 
 .mp-upgrade-btn:hover:not(:disabled) { opacity: 0.85; }
 .mp-upgrade-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* ── ED diet warning ─────────────────────────────────────── */
+.mp-ed-warning {
+  width: 100%;
+  padding: 0.65rem 0.9rem;
+  border-radius: var(--paku-radius-sm, 12px);
+  background: #fff8e1;
+  border: 1.5px solid #ffe082;
+  font-size: 0.88rem;
+  color: #5d4037;
+  line-height: 1.5;
+}
+
+.mp-ed-warning a {
+  color: #5d4037;
+  font-weight: 600;
+}
+
+.mp-ed-warning a:hover {
+  text-decoration: underline;
+}

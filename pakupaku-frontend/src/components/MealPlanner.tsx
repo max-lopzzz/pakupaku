@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import "./MealPlanner.css";
 import { round0, round1 } from "../utils/format";
+import { CONDITION_NOTES } from "../constants/conditionNotes";
 
 // ─── Types ────────────────────────────────────────────────
 
@@ -171,6 +172,12 @@ export default function MealPlanner({ userProfile, onBack, onUpgrade }: MealPlan
   const [diet,       setDiet]       = useState("");
   const [checked,    setChecked]    = useState<Set<string>>(new Set());
 
+  const hasEdHistory = (userProfile?.metabolic_conditions ?? [])
+    .includes("eating_disorder_history");
+
+  const EXTREME_DIETS = new Set(["ketogenic", "paleo"]);
+  const showEdWarning = hasEdHistory && EXTREME_DIETS.has(diet);
+
   // Show paywall if user is not premium
   if (!userProfile?.is_premium) {
     return <Paywall onBack={onBack} onUpgrade={onUpgrade} />;
@@ -242,6 +249,19 @@ export default function MealPlanner({ userProfile, onBack, onUpgrade }: MealPlan
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
+          {showEdWarning && (
+            <div className="mp-ed-warning" role="alert">
+              ⚠️ Some restrictive diets can be challenging with an eating disorder
+              history. Support is available:{" "}
+              <a href="https://www.beateatingdisorders.org.uk" target="_blank" rel="noreferrer">
+                Beat (UK)
+              </a>{" "}
+              ·{" "}
+              <a href="https://www.nationaleatingdisorders.org" target="_blank" rel="noreferrer">
+                NEDA (US)
+              </a>
+            </div>
+          )}
           <button
             className="mp-generate-btn"
             onClick={generatePlan}
