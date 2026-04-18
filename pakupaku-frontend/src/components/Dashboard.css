@@ -389,6 +389,11 @@
   margin-bottom: 2rem;
 }
 
+.body-stats-grid > *,
+.nutrition-grid > * {
+  min-width: 0;
+}
+
 .stat-card {
   background: var(--paku-white);
   border-radius: var(--paku-radius);
@@ -456,8 +461,8 @@
 }
 
 .measurement-row {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 0.75rem;
   margin-bottom: 1rem;
 }
@@ -466,7 +471,6 @@
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
-  flex: 1 1 120px;
 }
 
 .measurement-field span {
@@ -895,6 +899,34 @@
   color: var(--paku-muted);
   margin-left: 0;
   white-space: nowrap;
+}
+
+.meal-time--editable {
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 0.1rem 0.3rem;
+  transition: background 0.15s, color 0.15s;
+}
+
+.meal-time--editable:hover {
+  background: var(--paku-mint, #badfdb);
+  color: var(--paku-text, #3a2a2a);
+}
+
+.meal-time-input {
+  font-family: inherit;
+  font-size: 0.85rem;
+  color: var(--paku-text, #3a2a2a);
+  border: 1.5px solid var(--paku-mint, #badfdb);
+  border-radius: 6px;
+  padding: 0.1rem 0.3rem;
+  background: #fff;
+  outline: none;
+  width: 7rem;
+}
+
+.meal-time-input:focus {
+  border-color: var(--paku-pink, #ffbdbd);
 }
 
 .meal-macros {
