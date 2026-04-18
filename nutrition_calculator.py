@@ -157,6 +157,18 @@ CONDITIONS: Dict[str, MetabolicCondition] = {
         ),
         requires_consult=True,
     ),
+    "fibromyalgia": MetabolicCondition(
+        name="Fibromyalgia",
+        bmr_multiplier=None,
+        note=(
+            "Fibromyalgia's effect on resting metabolism is not well established. "
+            "No BMR adjustment applied. Fatigue and pain may significantly reduce "
+            "activity tolerance -- calorie targets may need downward adjustment. "
+            "An anti-inflammatory dietary pattern is often recommended; consult "
+            "a dietitian familiar with chronic pain conditions."
+        ),
+        requires_consult=True,
+    ),
 }
 
 
