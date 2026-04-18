@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 import "./MealPlanner.css";
+import { round0, round1 } from "../utils/format";
 
 // ─── Types ────────────────────────────────────────────────
 
@@ -149,10 +150,10 @@ function MealCard({ type, meal }: { type: string; meal: MealItem | null }) {
           {meal.servings && <span>🍽 {meal.servings} serving{meal.servings !== 1 ? "s" : ""}</span>}
         </div>
         <div className="mp-meal-macros">
-          <span className="mp-macro mp-macro--cal">{meal.calories} kcal</span>
-          <span className="mp-macro mp-macro--p">{meal.protein_g}g P</span>
-          <span className="mp-macro mp-macro--c">{meal.carbs_g}g C</span>
-          <span className="mp-macro mp-macro--f">{meal.fat_g}g F</span>
+          <span className="mp-macro mp-macro--cal">{round0(meal.calories)} kcal</span>
+          <span className="mp-macro mp-macro--p">{round0(meal.protein_g)}g P</span>
+          <span className="mp-macro mp-macro--c">{round0(meal.carbs_g)}g C</span>
+          <span className="mp-macro mp-macro--f">{round0(meal.fat_g)}g F</span>
         </div>
       </div>
     </div>
@@ -224,7 +225,7 @@ export default function MealPlanner({ userProfile, onBack, onUpgrade }: MealPlan
           <div>
             <h1 className="mp-title">Weekly Meal Planner</h1>
             {targetKcal && (
-              <p className="mp-subtitle">Based on your {Math.round(targetKcal)} kcal/day goal</p>
+              <p className="mp-subtitle">Based on your {round0(targetKcal)} kcal/day goal</p>
             )}
           </div>
         </header>
@@ -301,7 +302,7 @@ export default function MealPlanner({ userProfile, onBack, onUpgrade }: MealPlan
                       onClick={() => setActiveDay(i)}
                     >
                       <span className="mp-day-short">{DAYS_SHORT[i]}</span>
-                      <span className="mp-day-kcal">{d.total_calories} kcal</span>
+                      <span className="mp-day-kcal">{round0(d.total_calories)} kcal</span>
                     </button>
                   ))}
                 </div>
@@ -339,7 +340,7 @@ export default function MealPlanner({ userProfile, onBack, onUpgrade }: MealPlan
                         <span className="mp-check">{done ? "✅" : "☐"}</span>
                         <span className="mp-shopping-name">{item.name}</span>
                         <span className="mp-shopping-amount">
-                          {item.amount} {item.unit}
+                          {round1(item.amount)} {item.unit}
                         </span>
                       </li>
                     );
