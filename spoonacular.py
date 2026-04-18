@@ -51,6 +51,37 @@ NUTRIENT_NAME_MAP: Dict[str, str] = {
     "vitamin b12":     "vitamin_b12_mcg",
 }
 
+# ─── Condition meal hints ──────────────────────────────────────
+# Maps metabolic condition slugs to Spoonacular search adjustments.
+# prefer_diet: used only when the user has no diet preference selected.
+# exclude_extra: always appended to the exclude list.
+
+CONDITION_MEAL_HINTS: Dict[str, Dict[str, object]] = {
+    "hypothyroidism_untreated": {
+        "exclude_extra": ["seaweed", "kelp", "nori"],
+    },
+    "hyperthyroidism_untreated": {
+        "exclude_extra": ["seaweed", "kelp", "nori", "iodized salt"],
+    },
+    "hiv_wasting": {
+        "prefer_diet": "highprotein",
+    },
+    "cancer_active": {
+        "prefer_diet": "highprotein",
+    },
+    "pcos": {
+        "prefer_diet": "mediterranean",
+    },
+    "cushings": {
+        "exclude_extra": ["soy sauce", "miso", "canned soup", "pickles"],
+    },
+    "fibromyalgia": {
+        "prefer_diet": "mediterranean",
+    },
+    # hypothyroidism_treated, hyperthyroidism_treated, diabetes_t1,
+    # eating_disorder_history: no search-level changes
+}
+
 
 def _require_api_key() -> str:
     key = (SPOONACULAR_API_KEY or "").strip()
@@ -353,9 +384,11 @@ async def generate_weekly_plan(
     target_calories: int,
     diet: Optional[str] = None,
     exclude: Optional[str] = None,
+    conditions: Optional[List[str]] = None,
 ) -> dict:
     """
     Generate a 7-day meal plan tailored to the given calorie target.
+    Applies condition-specific dietary hints when conditions are provided.
 
     Calorie distribution:
       Breakfast  25%  |  Lunch  30%  |  Dinner  35%  |  Snack  10%
@@ -384,6 +417,26 @@ async def generate_weekly_plan(
           ]
         }
     """
+    conditions = conditions or []
+
+    # Apply condition hints: prefer_diet when user has no preference;
+    # exclude_extra items always appended.
+    effective_diet = diet
+    extra_excludes: List[str] = []
+
+    for cond in conditions:
+        hints = CONDITION_MEAL_HINTS.get(cond, {})
+        if not effective_diet and hints.get("prefer_diet"):
+            effective_diet = str(hints["prefer_diet"])
+        extra_excludes.extend(hints.get("exclude_extra", []))  # type: ignore
+
+    if extra_excludes:
+        existing = [e.strip() for e in (exclude or "").split(",") if e.strip()]
+        combined = existing + extra_excludes
+        effective_exclude: Optional[str] = ",".join(combined)
+    else:
+        effective_exclude = exclude if exclude else None
+
     breakfast_cals = round(target_calories * 0.25)
     lunch_cals     = round(target_calories * 0.30)
     dinner_cals    = round(target_calories * 0.35)
@@ -393,10 +446,10 @@ async def generate_weekly_plan(
     # Lunch and dinner both use "main course" but with different offsets
     # so Spoonacular returns different results.
     breakfasts, lunches, dinners, snacks = await asyncio.gather(
-        search_recipes_for_meal("breakfast",   breakfast_cals, 7, diet, exclude, offset=0),
-        search_recipes_for_meal("main course", lunch_cals,     7, diet, exclude, offset=0),
-        search_recipes_for_meal("main course", dinner_cals,    7, diet, exclude, offset=7),
-        search_recipes_for_meal("snack",       snack_cals,     7, diet, exclude, offset=0),
+        search_recipes_for_meal("breakfast",   breakfast_cals, 7, effective_diet, effective_exclude, offset=0),
+        search_recipes_for_meal("main course", lunch_cals,     7, effective_diet, effective_exclude, offset=0),
+        search_recipes_for_meal("main course", dinner_cals,    7, effective_diet, effective_exclude, offset=7),
+        search_recipes_for_meal("snack",       snack_cals,     7, effective_diet, effective_exclude, offset=0),
     )
 
     def _pad(lst: List[dict], n: int = 7) -> List[Optional[dict]]:

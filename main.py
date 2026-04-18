@@ -463,8 +463,7 @@ async def meal_plan_weekly(
 
     raw_conditions = current_user.metabolic_conditions or ""
     conditions = [c.strip() for c in raw_conditions.split(",") if c.strip()]
-    # conditions passed once Task 8 updates generate_weekly_plan signature
-    return await generate_weekly_plan(int(target_kcal), diet, exclude)
+    return await generate_weekly_plan(int(target_kcal), diet, exclude, conditions)
 
 
 @app.get("/mealplan/generate")
