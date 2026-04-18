@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import "./Dashboard.css";
+import { round0, round1 } from "../utils/format";
 
 // ─── Nutrient extraction from Spoonacular detail response ─────────────────────
 
@@ -57,14 +58,15 @@ interface NutritionData {
 type MealCategory = "breakfast" | "lunch" | "dinner" | "snacks";
 
 interface Meal {
-  id: string;
-  name: string;
-  time: string;
-  category: MealCategory;
-  calories: number;
-  protein: number;
-  carbs: number;
-  fat: number;
+  id:        string;
+  name:      string;
+  time:      string;       // display string e.g. "02:30 PM"
+  logged_at: string;       // raw ISO timestamp for editing
+  category:  MealCategory;
+  calories:  number;
+  protein:   number;
+  carbs:     number;
+  fat:       number;
 }
 
 // Proportions must sum to 1.0
@@ -408,6 +410,9 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
   const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const isToday = selectedDate === new Date().toISOString().slice(0, 10);
 
+  // { id: mealId, value: "HH:MM" } while a time field is being edited
+  const [editingTime, setEditingTime] = useState<{ id: string; value: string } | null>(null);
+
   const [addTab, setAddTab] = useState<{ [key in MealCategory]: "food" | "custom" | "recipe" }>({
     breakfast: "food",
     lunch: "food",
@@ -467,14 +472,15 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
         const logs = await res.json();
         if (!Array.isArray(logs)) { setMeals([]); return; }
         setMeals(logs.map((log: any) => ({
-          id:       log.id,
-          name:     log.food_name,
-          time:     new Date(log.logged_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          category: (log.meal as MealCategory) || "snacks",
-          calories: log.calories  || 0,
-          protein:  log.protein_g || 0,
-          carbs:    log.carbs_g   || 0,
-          fat:      log.fat_g     || 0,
+          id:        log.id,
+          name:      log.food_name,
+          logged_at: log.logged_at,
+          time:      new Date(log.logged_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          category:  (log.meal as MealCategory) || "snacks",
+          calories:  log.calories  || 0,
+          protein:   log.protein_g || 0,
+          carbs:     log.carbs_g   || 0,
+          fat:       log.fat_g     || 0,
         })));
       } catch { setMeals([]); }
     };
@@ -549,6 +555,29 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
       })));
     } catch { /* non-fatal */ }
   }, [selectedDate]);
+
+  const handleTimeEdit = useCallback(async (mealId: string) => {
+    if (!editingTime || editingTime.id !== mealId) { setEditingTime(null); return; }
+    const token = localStorage.getItem("token");
+    if (!token) { setEditingTime(null); return; }
+    try {
+      // Combine the currently-viewed date with the newly chosen HH:MM
+      const newLoggedAt = new Date(`${selectedDate}T${editingTime.value}:00`).toISOString();
+      const res = await fetch(`/logs/${mealId}`, {
+        method:  "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body:    JSON.stringify({ logged_at: newLoggedAt }),
+      });
+      if (res.ok) {
+        setMeals(prev => prev.map(m =>
+          m.id === mealId
+            ? { ...m, logged_at: newLoggedAt, time: new Date(newLoggedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) }
+            : m
+        ));
+      }
+    } catch { /* non-fatal */ }
+    setEditingTime(null);
+  }, [editingTime, selectedDate]);
 
   const handleAddRecipe = async (category: MealCategory) => {
     const recipeId = selectedRecipe[category];
@@ -687,7 +716,7 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
           <div className="overall-progress-card">
             <div className="overall-progress-label">
               <span>Today</span>
-              <strong>{totalConsumed.calories} / {nutritionData.calories.goal} cal</strong>
+              <strong>{round0(totalConsumed.calories)} / {round0(nutritionData.calories.goal)} cal</strong>
             </div>
             <div className="overall-progress-bar">
               <div
@@ -706,7 +735,7 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
               <div className="macro-header">
                 <span className="macro-name">Calories</span>
                 <span className="macro-values">
-                  {totalConsumed.calories} / {nutritionData.calories.goal}
+                  {round0(totalConsumed.calories)} / {round0(nutritionData.calories.goal)}
                 </span>
               </div>
               <div className="progress-bar">
@@ -721,7 +750,7 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
               <div className="macro-header">
                 <span className="macro-name">Protein</span>
                 <span className="macro-values">
-                  {totalConsumed.protein}g / {nutritionData.protein.goal}g
+                  {round0(totalConsumed.protein)}g / {round0(nutritionData.protein.goal)}g
                 </span>
               </div>
               <div className="progress-bar">
@@ -736,7 +765,7 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
               <div className="macro-header">
                 <span className="macro-name">Carbs</span>
                 <span className="macro-values">
-                  {totalConsumed.carbs}g / {nutritionData.carbs.goal}g
+                  {round0(totalConsumed.carbs)}g / {round0(nutritionData.carbs.goal)}g
                 </span>
               </div>
               <div className="progress-bar">
@@ -751,7 +780,7 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
               <div className="macro-header">
                 <span className="macro-name">Fat</span>
                 <span className="macro-values">
-                  {totalConsumed.fat}g / {nutritionData.fat.goal}g
+                  {round0(totalConsumed.fat)}g / {round0(nutritionData.fat.goal)}g
                 </span>
               </div>
               <div className="progress-bar">
@@ -789,8 +818,8 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
             // Height: from latest measurement with height, or onboarding value
             const height = lastWith("height_cm") ?? userProfile?.height_cm ?? null;
 
-            // Weight: from latest measurement with weight
-            const weight = lastWith("weight_kg");
+            // Weight: from latest measurement, then fall back to onboarding value
+            const weight = lastWith("weight_kg") ?? userProfile?.weight_kg ?? null;
 
             // Body fat: from latest measurement with body_fat_pct, or onboarding value
             const bf = lastWith("body_fat_pct") ?? userProfile?.body_fat_pct ?? null;
@@ -799,11 +828,11 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
               <div className="body-stats-grid">
                 <div className="stat-card">
                   <span className="stat-label">Weight</span>
-                  <span className="stat-value">{weight != null ? `${weight} kg` : "N/A"}</span>
+                  <span className="stat-value">{weight != null ? `${round1(weight)} kg` : "N/A"}</span>
                 </div>
                 <div className="stat-card">
                   <span className="stat-label">Height</span>
-                  <span className="stat-value">{height != null ? `${height} cm` : "N/A"}</span>
+                  <span className="stat-value">{height != null ? `${round1(height)} cm` : "N/A"}</span>
                 </div>
                 <div className="stat-card">
                   <span className="stat-label">Age</span>
@@ -811,7 +840,7 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
                 </div>
                 <div className="stat-card">
                   <span className="stat-label">Body Fat %</span>
-                  <span className="stat-value">{bf != null ? `${bf}%` : "N/A"}</span>
+                  <span className="stat-value">{bf != null ? `${round1(bf)}%` : "N/A"}</span>
                 </div>
               </div>
             );
@@ -920,7 +949,7 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
                 <div className="category-header">
                   <div>
                     <h3>{category.label}</h3>
-                    <p>{category.consumed} / {category.goal} cal</p>
+                    <p>{round0(category.consumed)} / {round0(category.goal)} cal</p>
                   </div>
                   <div className="category-progress-bar">
                     <div
@@ -937,13 +966,39 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
                       <div key={meal.id} className="meal-card">
                         <div className="meal-header">
                           <h3 className="meal-name">{meal.name}</h3>
-                          <span className="meal-time">{meal.time}</span>
+                          {editingTime?.id === meal.id ? (
+                            <input
+                              type="time"
+                              className="meal-time-input"
+                              value={editingTime.value}
+                              autoFocus
+                              onChange={e => setEditingTime({ id: meal.id, value: e.target.value })}
+                              onBlur={() => handleTimeEdit(meal.id)}
+                              onKeyDown={e => {
+                                if (e.key === "Enter")  handleTimeEdit(meal.id);
+                                if (e.key === "Escape") setEditingTime(null);
+                              }}
+                            />
+                          ) : (
+                            <span
+                              className="meal-time meal-time--editable"
+                              title="Click to edit time"
+                              onClick={() => {
+                                const d = new Date(meal.logged_at);
+                                const hh = String(d.getHours()).padStart(2, "0");
+                                const mm = String(d.getMinutes()).padStart(2, "0");
+                                setEditingTime({ id: meal.id, value: `${hh}:${mm}` });
+                              }}
+                            >
+                              {meal.time} ✎
+                            </span>
+                          )}
                         </div>
                         <div className="meal-macros">
-                          <span className="macro-item">{meal.calories} cal</span>
-                          <span className="macro-item">{meal.protein}g P</span>
-                          <span className="macro-item">{meal.carbs}g C</span>
-                          <span className="macro-item">{meal.fat}g F</span>
+                          <span className="macro-item">{round0(meal.calories)} cal</span>
+                          <span className="macro-item">{round0(meal.protein)}g P</span>
+                          <span className="macro-item">{round0(meal.carbs)}g C</span>
+                          <span className="macro-item">{round0(meal.fat)}g F</span>
                         </div>
                       </div>
                     ))}
@@ -987,7 +1042,7 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
                         <option value="">Select a recipe…</option>
                         {recipes.map((recipe) => (
                           <option key={recipe.id} value={recipe.id}>
-                            {recipe.name} ({recipe.total_calories} cal)
+                            {recipe.name} ({round0(recipe.total_calories)} cal)
                           </option>
                         ))}
                       </select>
