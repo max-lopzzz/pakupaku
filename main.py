@@ -32,7 +32,7 @@ from schemas import (
     RegisterRequest, LoginRequest, TokenResponse,
     UserResponse, UserUpdateRequest,
     NutritionProfileRequest, NutritionProfileResponse, CustomGoalsRequest,
-    FoodLogCreateRequest, FoodLogResponse, DailySummaryResponse,
+    FoodLogCreateRequest, FoodLogUpdateRequest, FoodLogResponse, DailySummaryResponse,
     RecipeCreateRequest, RecipeUpdateRequest, RecipeResponse,
     BodyMeasurementCreate, BodyMeasurementResponse,
 )
@@ -461,6 +461,9 @@ async def meal_plan_weekly(
             detail="Please complete onboarding or set a calorie goal before generating a meal plan.",
         )
 
+    raw_conditions = current_user.metabolic_conditions or ""
+    conditions = [c.strip() for c in raw_conditions.split(",") if c.strip()]
+    # conditions passed once Task 8 updates generate_weekly_plan signature
     return await generate_weekly_plan(int(target_kcal), diet, exclude)
 
 
@@ -615,6 +618,34 @@ async def delete_log(
     if not log:
         raise HTTPException(status_code=404, detail="Log entry not found.")
     await db.delete(log)
+
+
+@app.patch("/logs/{log_id}", response_model=FoodLogResponse)
+async def update_log(
+    log_id:       uuid.UUID,
+    payload:      FoodLogUpdateRequest,
+    current_user: User         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+):
+    """Update editable fields of a food log entry (logged_at time, meal category)."""
+    result = await db.execute(
+        select(FoodLog).where(
+            FoodLog.id      == log_id,
+            FoodLog.user_id == current_user.id,
+        )
+    )
+    log = result.scalar_one_or_none()
+    if not log:
+        raise HTTPException(status_code=404, detail="Log entry not found.")
+    if payload.logged_at is not None:
+        # Timezone is already stripped by the schema validator; belt-and-suspenders here.
+        naive_dt = payload.logged_at.replace(tzinfo=None)
+        log.logged_at = naive_dt
+        log.log_date  = naive_dt.date()   # keep log_date in sync with logged_at
+    if payload.meal is not None:
+        log.meal = payload.meal
+    await db.flush()
+    return log
 
 
 # ─────────────────────────────────────────────

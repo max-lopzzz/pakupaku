@@ -181,6 +181,15 @@ class UserResponse(BaseModel):
     carbs_g:      Optional[float]
     uses_custom_goals: bool
     is_premium:        bool
+    metabolic_conditions: List[str] = Field(default_factory=list)
+
+    @validator("metabolic_conditions", pre=True, always=True)
+    def parse_conditions(cls, v):
+        if not v:
+            return []
+        if isinstance(v, list):
+            return v
+        return [c.strip() for c in str(v).split(",") if c.strip()]
 
     class Config:
         from_attributes = True
@@ -247,6 +256,21 @@ class FoodLogResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class FoodLogUpdateRequest(BaseModel):
+    """Partial update for a food log entry — only editable fields."""
+    logged_at: Optional[datetime] = None
+    meal:      Optional[str]      = Field(None, max_length=50)
+
+    @validator("logged_at", pre=False, always=False)
+    @classmethod
+    def strip_timezone(cls, v: Optional[datetime]) -> Optional[datetime]:
+        """The food_logs.logged_at column is TIMESTAMP WITHOUT TIME ZONE.
+        Strip any tzinfo so asyncpg doesn't reject the value."""
+        if v is not None and v.tzinfo is not None:
+            return v.replace(tzinfo=None)
+        return v
 
 
 class DailySummaryResponse(BaseModel):
