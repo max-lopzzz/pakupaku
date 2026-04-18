@@ -1,5 +1,6 @@
 import { useState } from "react";
 import "./Onboarding.css";
+import { CONDITION_NOTES } from "../constants/conditionNotes";
 
 import puppyWave    from "../assets/images/puppy_wave.png";
 import puppyBlush   from "../assets/images/puppy_blush.png";
@@ -92,6 +93,7 @@ const CONDITIONS_LIST = [
   { key: "cushings",                 label: "Cushing's Syndrome" },
   { key: "diabetes_t1",              label: "Type 1 Diabetes" },
   { key: "eating_disorder_history",  label: "Eating disorder history" },
+  { key: "fibromyalgia",             label: "Fibromyalgia" },
 ];
 
 const STEP_MASCOT: Record<Step, { img: string; mood: string }> = {
@@ -666,13 +668,21 @@ function StepConditions({
       <p className="step-desc">
         select all that apply, or skip if none apply to you.
       </p>
-      <div className="conditions-grid">
-        {CONDITIONS_LIST.map(c => (
-          <HeartBtn key={c.key} selected={form.conditions.includes(c.key)}
-            onClick={() => toggleCondition(c.key)} pill>
-            {c.label}
-          </HeartBtn>
-        ))}
+      <div className="conditions-list">
+        {CONDITIONS_LIST.map(c => {
+          const selected = form.conditions.includes(c.key);
+          const note = CONDITION_NOTES[c.key];
+          return (
+            <div key={c.key} className="condition-item">
+              <HeartBtn selected={selected} onClick={() => toggleCondition(c.key)} pill>
+                {c.label}
+              </HeartBtn>
+              {selected && note && (
+                <p className="condition-inline-note">{note.onboardingNote}</p>
+              )}
+            </div>
+          );
+        })}
       </div>
       <ErrorMsg msg={errors.submit} />
       <NavButtons onBack={onBack} onNext={onNext}
