@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import "./RecipeBuilder.css";
+import { round0 } from "../utils/format";
 
 // ─── Unit conversion ──────────────────────────────────────
 
@@ -370,10 +371,10 @@ export default function RecipeBuilder({ onBack }: RecipeBuilderProps) {
                 return (
                   <div className="ingredient-kcal-total">
                     <span>total</span>
-                    <span>{Math.round(total)} kcal</span>
+                    <span>{round0(total)} kcal</span>
                     {svgs > 1 && (
                       <span className="ingredient-kcal-per-serving">
-                        ({Math.round(total / svgs)} kcal / serving)
+                        ({round0(total / svgs)} kcal / serving)
                       </span>
                     )}
                   </div>
@@ -404,10 +405,10 @@ export default function RecipeBuilder({ onBack }: RecipeBuilderProps) {
                   </div>
                   {recipe.description && <p>{recipe.description}</p>}
                   <div className="saved-recipe-stats">
-                    <span>{recipe.total_calories != null ? Math.round(recipe.total_calories) : "—"} cal</span>
-                    <span>{recipe.total_protein_g != null ? Math.round(recipe.total_protein_g) : "—"}g P</span>
-                    <span>{recipe.total_carbs_g != null ? Math.round(recipe.total_carbs_g) : "—"}g C</span>
-                    <span>{recipe.total_fat_g != null ? Math.round(recipe.total_fat_g) : "—"}g F</span>
+                    <span>{recipe.total_calories != null ? round0(recipe.total_calories) : "—"} cal</span>
+                    <span>{recipe.total_protein_g != null ? round0(recipe.total_protein_g) : "—"}g P</span>
+                    <span>{recipe.total_carbs_g != null ? round0(recipe.total_carbs_g) : "—"}g C</span>
+                    <span>{recipe.total_fat_g != null ? round0(recipe.total_fat_g) : "—"}g F</span>
                   </div>
                   <button
                     type="button"
@@ -598,7 +599,7 @@ function IngredientInput({ row, onUpdate, onRemove }: IngredientInputProps) {
                     {food.brand && <span className="autocomplete-brand">{food.brand}</span>}
                     {food.calories_per_100g != null && (
                       <span className="autocomplete-kcal">
-                        {Math.round(food.calories_per_100g)} kcal/100g
+                        {round0(food.calories_per_100g)} kcal/100g
                       </span>
                     )}
                   </li>
@@ -683,7 +684,7 @@ function IngredientInput({ row, onUpdate, onRemove }: IngredientInputProps) {
       <div className="ingredient-kcal-cell">
         {(() => {
           const k = rowKcal(row);
-          return k != null ? <span>{Math.round(k)}</span> : <span className="ingredient-kcal-empty">—</span>;
+          return k != null ? <span>{round0(k)}</span> : <span className="ingredient-kcal-empty">—</span>;
         })()}
       </div>
 
