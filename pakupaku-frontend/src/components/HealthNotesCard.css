@@ -1,0 +1,65 @@
+/* pakupaku-frontend/src/components/HealthNotesCard.css */
+
+.hnc-root {
+  background: var(--paku-white, #fff);
+  border-radius: var(--paku-radius, 20px);
+  padding: 1.25rem;
+  box-shadow: 0 2px 8px rgba(58, 42, 42, 0.07);
+  margin-bottom: 1.5rem;
+  border: 2px solid var(--paku-mint, #badfdb);
+}
+
+.hnc-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--paku-text, #3a2a2a);
+  margin: 0 0 1rem;
+}
+
+.hnc-row {
+  border-top: 1px solid #f0ede0;
+  padding: 0.6rem 0;
+}
+
+.hnc-row:first-of-type {
+  border-top: none;
+}
+
+.hnc-row-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
+
+.hnc-row-label {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--paku-text, #3a2a2a);
+}
+
+.hnc-chevron {
+  font-size: 0.7rem;
+  color: var(--paku-muted, #8a6060);
+  flex-shrink: 0;
+}
+
+.hnc-notes {
+  margin: 0.5rem 0 0;
+  padding-left: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.hnc-notes li {
+  font-size: 0.88rem;
+  color: var(--paku-text, #3a2a2a);
+  line-height: 1.5;
+}

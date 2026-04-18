@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import "./Dashboard.css";
 import { round0, round1 } from "../utils/format";
+import HealthNotesCard from "./HealthNotesCard";
 
 // ─── Nutrient extraction from Spoonacular detail response ─────────────────────
 
@@ -940,6 +941,8 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
             </button>
           </div>
         </section>
+
+        <HealthNotesCard conditions={userProfile?.metabolic_conditions ?? []} />
 
         <section className="category-section">
           <h2 className="section-title">Meals by Category</h2>
