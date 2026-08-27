@@ -162,3 +162,20 @@
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+/* ── Link Button (Forgot password? / Back to login) ─────────── */
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--paku-muted);
+  font-family: "MorningBreeze";
+  font-size: 0.85rem;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+  align-self: center;
+}
+
+.link-btn:hover {
+  color: var(--paku-pink-dark);
+}

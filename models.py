@@ -89,6 +89,14 @@ class User(Base):
     verification_token: Mapped[Optional[str]] = mapped_column(
         String(64), nullable=True, unique=True, index=True
     )
+    # Unlike verification_token, a reset token expires — it's higher-stakes
+    # (grants a password change, not just an email-ownership check).
+    reset_token: Mapped[Optional[str]] = mapped_column(
+        String(64), nullable=True, unique=True, index=True
+    )
+    reset_token_expires_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True
+    )
     birthday: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
 
     # ── Preferences ───────────────────────────
