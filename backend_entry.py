@@ -54,18 +54,47 @@ os.environ.setdefault("USDA_API_KEY", "DEMO_KEY")
 # ─── Now safe to import the app ────────────────────────────────────────────────
 from main import app  # noqa: E402  (must come after the env vars above)
 
-# ─── Create tables on first launch ─────────────────────────────────────────────
+# ─── Create tables / migrate schema on every launch ────────────────────────────
 # There's no migration tooling available to an end user running a packaged
 # app, and no one to run one for them — so the desktop build creates its own
-# SQLite schema directly. create_all() only creates tables that don't
-# already exist, so this is a safe no-op on every launch after the first.
+# SQLite schema directly. create_all() only creates tables that don't already
+# exist, though, so an install from before some model gained a new column
+# would keep failing on that column forever. _add_missing_columns() below
+# closes that gap by diffing each table's live columns against the model's
+# declared columns and ALTERing in whatever's missing.
 import asyncio  # noqa: E402
 from database import Base, engine  # noqa: E402
+from sqlalchemy import text  # noqa: E402
+
+
+async def _add_missing_columns(conn):
+    """Additive-only schema safety net: adds columns that exist on the
+    model but not in the live table. Only covers nullable-column
+    additions — the one shape of schema drift this app has hit in
+    practice. A NOT NULL addition or a column type change needs a real
+    migration; if one of those ever ships, handle it explicitly here
+    rather than relying on this loop."""
+    for table in Base.metadata.sorted_tables:
+        rows = (await conn.execute(text(f"PRAGMA table_info({table.name})"))).fetchall()
+        existing_columns = {row[1] for row in rows}
+        if not existing_columns:
+            continue  # table doesn't exist yet — create_all() just made it, so it's already complete
+        for column in table.columns:
+            if column.name in existing_columns:
+                continue
+            coltype = column.type.compile(dialect=conn.dialect)
+            await conn.execute(text(f"ALTER TABLE {table.name} ADD COLUMN {column.name} {coltype}"))
+            if column.unique:
+                index_name = f"ix_{table.name}_{column.name}"
+                await conn.execute(text(
+                    f"CREATE UNIQUE INDEX IF NOT EXISTS {index_name} ON {table.name} ({column.name})"
+                ))
 
 
 async def _create_tables():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await _add_missing_columns(conn)
 
 
 asyncio.run(_create_tables())
