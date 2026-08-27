@@ -148,6 +148,51 @@ interface RecipeResponse {
   ingredients: SavedIngredient[];
 }
 
+interface ImportedIngredientCandidate extends NutrientData {
+  fdc_id:      number;
+  description: string;
+  brand:       string | null;
+  portions_map: Record<string, number>;
+}
+
+interface ImportedIngredient {
+  raw_line:   string;
+  quantity:   number;
+  unit:       string;
+  food_name:  string;
+  best_match: ImportedIngredientCandidate | null;
+  alternates: ImportedIngredientCandidate[];
+}
+
+interface RecipeImportDraft {
+  name:        string;
+  servings:    number;
+  image_url:   string | null;
+  ingredients: ImportedIngredient[];
+  source_url:  string;
+}
+
+function rowFromImportedIngredient(ing: ImportedIngredient): IngredientRow {
+  const match = ing.best_match;
+  return {
+    mode: match ? "search" : "custom",
+    query: match ? match.description : ing.food_name,
+    suggestions: [], showDropdown: false,
+    brandSuggestions: [], showBrandDropdown: false,
+    fdc_id: match ? match.fdc_id : null,
+    food_name: match ? match.description : ing.food_name,
+    brand_name: match?.brand ?? "",
+    calories_per_100g: match?.calories_per_100g ?? null,
+    protein_per_100g:  match?.protein_per_100g  ?? null,
+    fat_per_100g:      match?.fat_per_100g      ?? null,
+    carbs_per_100g:    match?.carbs_per_100g    ?? null,
+    fiber_per_100g:    match?.fiber_per_100g    ?? null,
+    portionsMap: match?.portions_map ?? {},
+    amount: String(ing.quantity),
+    unit: ing.unit,
+  };
+}
+
 interface RecipeBuilderProps {
   onBack: () => void;
 }
@@ -164,6 +209,9 @@ export default function RecipeBuilder({ onBack }: RecipeBuilderProps) {
   const [message, setMessage]       = useState("");
   const [error, setError]           = useState("");
   const [editingId, setEditingId]   = useState<string | null>(null);
+  const [importUrl, setImportUrl]           = useState("");
+  const [importing, setImporting]           = useState(false);
+  const [importImageUrl, setImportImageUrl] = useState<string | null>(null);
 
   const fetchRecipes = async () => {
     try {
@@ -233,7 +281,50 @@ export default function RecipeBuilder({ onBack }: RecipeBuilderProps) {
     setEditingId(null);
     setName(""); setDescription(""); setServings("1");
     setIngredients([blankRow()]);
+    setImportImageUrl(null);
     setError(""); setMessage("");
+  };
+
+  const startImport = async () => {
+    if (!importUrl.trim()) {
+      setError("Enter a recipe URL to import.");
+      return;
+    }
+    setError(""); setMessage(""); setImporting(true);
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch("/recipes/import", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: token ? `Bearer ${token}` : "",
+        },
+        body: JSON.stringify({ url: importUrl.trim() }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.detail || "Couldn't import that recipe.");
+      }
+      const draft: RecipeImportDraft = await res.json();
+
+      setEditingId(null);
+      setName(draft.name);
+      setServings(String(draft.servings));
+      setDescription("");
+      setImportImageUrl(draft.image_url);
+      setIngredients(
+        draft.ingredients.length > 0
+          ? draft.ingredients.map(rowFromImportedIngredient)
+          : [blankRow()]
+      );
+      setImportUrl("");
+      setMessage("Recipe imported — review the ingredients below, then save.");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (err: any) {
+      setError(err.message || "Unable to import that recipe.");
+    } finally {
+      setImporting(false);
+    }
   };
 
   const handleSave = async () => {
@@ -302,6 +393,7 @@ export default function RecipeBuilder({ onBack }: RecipeBuilderProps) {
       setEditingId(null);
       setName(""); setDescription(""); setServings("1");
       setIngredients([blankRow()]);
+      setImportImageUrl(null);
     } catch (err: any) {
       setError(err.message || "Unable to save recipe.");
     } finally {
@@ -319,6 +411,33 @@ export default function RecipeBuilder({ onBack }: RecipeBuilderProps) {
             <p className="recipe-builder-subtitle">Combine ingredients and save recipes to your account.</p>
           </div>
         </header>
+
+        <section className="recipe-form-section">
+          <div className="recipe-form-card">
+            <label className="recipe-field">
+              <span>Import from a recipe blog URL</span>
+              <div className="recipe-field-inline">
+                <input
+                  type="url"
+                  value={importUrl}
+                  onChange={e => setImportUrl(e.target.value)}
+                  placeholder="https://example.com/some-recipe"
+                />
+                <button
+                  type="button"
+                  className="add-ingredient-button"
+                  onClick={startImport}
+                  disabled={importing}
+                >
+                  {importing ? "Importing…" : "Import"}
+                </button>
+              </div>
+            </label>
+            {importImageUrl && (
+              <img src={importImageUrl} alt="" className="recipe-import-image" />
+            )}
+          </div>
+        </section>
 
         <section className="recipe-form-section">
           <div className="recipe-form-card">
