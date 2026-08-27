@@ -484,8 +484,9 @@ class ImportedIngredient(BaseModel):
 
 
 class RecipeImportDraft(BaseModel):
-    name:        str
-    servings:    float
-    image_url:   Optional[str] = None
-    ingredients: List[ImportedIngredient]
-    source_url:  str
+    name:         str
+    servings:     float
+    image_url:    Optional[str] = None
+    instructions: Optional[str] = None
+    ingredients:  List[ImportedIngredient]
+    source_url:   str

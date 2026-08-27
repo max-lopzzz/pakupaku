@@ -128,6 +128,28 @@ def test_extract_recipe_via_llm_raises_502_on_empty_choices_array(monkeypatch):
     assert exc_info.value.status_code == 502
 
 
+def test_extract_recipe_via_llm_captures_steps(monkeypatch):
+    monkeypatch.setattr(recipe_import, "LLM_API_KEY", "test-key")
+    _install_fake_client(
+        monkeypatch,
+        json.dumps(
+            {
+                "name": "Soup",
+                "servings": 2,
+                "ingredient_lines": ["1 cup broth"],
+                "steps": ["Heat the broth.", "Season and serve."],
+            }
+        ),
+    )
+
+    import asyncio
+
+    raw = asyncio.run(recipe_import.extract_recipe_via_llm("<html></html>"))
+
+    assert raw is not None
+    assert raw.instructions == "Heat the broth.\nSeason and serve."
+
+
 def test_parse_ingredient_line_via_llm_parses_response(monkeypatch):
     monkeypatch.setattr(recipe_import, "LLM_API_KEY", "test-key")
     _install_fake_client(

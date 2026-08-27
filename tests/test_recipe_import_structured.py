@@ -34,3 +34,51 @@ def test_extracts_recipe_wrapped_in_graph():
 
 def test_returns_none_when_no_recipe_markup():
     assert extract_structured_recipe(_read("recipe_blog_none.html")) is None
+
+
+def test_extract_structured_recipe_captures_instructions():
+    html = """
+    <script type="application/ld+json">
+    {
+      "@type": "Recipe",
+      "name": "Soup",
+      "recipeIngredient": ["1 cup broth"],
+      "recipeInstructions": [
+        {"@type": "HowToStep", "text": "Heat the broth."},
+        {"@type": "HowToStep", "text": "Season and serve."}
+      ]
+    }
+    </script>
+    """
+    result = extract_structured_recipe(html)
+    assert result is not None
+    assert result.instructions == "Heat the broth.\nSeason and serve."
+
+
+def test_extract_structured_recipe_instructions_as_plain_strings():
+    html = """
+    <script type="application/ld+json">
+    {
+      "@type": "Recipe",
+      "name": "Soup",
+      "recipeIngredient": ["1 cup broth"],
+      "recipeInstructions": ["Heat the broth.", "Season and serve."]
+    }
+    </script>
+    """
+    result = extract_structured_recipe(html)
+    assert result.instructions == "Heat the broth.\nSeason and serve."
+
+
+def test_extract_structured_recipe_no_instructions_is_none():
+    html = """
+    <script type="application/ld+json">
+    {
+      "@type": "Recipe",
+      "name": "Soup",
+      "recipeIngredient": ["1 cup broth"]
+    }
+    </script>
+    """
+    result = extract_structured_recipe(html)
+    assert result.instructions is None
