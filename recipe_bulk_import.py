@@ -93,3 +93,40 @@ async def discover_recipe_links(index_url: str) -> List[str]:
         candidates.append(normalized)
 
     return candidates
+
+
+# ─────────────────────────────────────────────
+#  BATCH EXTRACTION
+# ─────────────────────────────────────────────
+
+_MAX_CONCURRENT_EXTRACTIONS = 5
+
+
+async def _safe_build_import_draft(
+    url: str, semaphore: asyncio.Semaphore
+) -> Optional[RecipeImportDraft]:
+    async with semaphore:
+        try:
+            return await build_import_draft(url)
+        except HTTPException:
+            return None
+        except Exception:
+            logger.exception(
+                "bulk_extract_drafts: unexpected failure extracting %r", url
+            )
+            return None
+
+
+async def bulk_extract_drafts(urls: List[str]) -> List[RecipeImportDraft]:
+    """Run build_import_draft() over every URL, concurrency-bounded to
+    _MAX_CONCURRENT_EXTRACTIONS in-flight extractions so a large batch
+    can't hammer the source site or the LLM endpoint all at once. URLs
+    where extraction fails (no recipe found, fetch error, anything
+    build_import_draft raises HTTPException for) are silently dropped —
+    mirrors recipe_import.py's _safe_match_ingredient, so one bad URL in
+    a batch can't sink the whole run."""
+    semaphore = asyncio.Semaphore(_MAX_CONCURRENT_EXTRACTIONS)
+    results = await asyncio.gather(
+        *(_safe_build_import_draft(url, semaphore) for url in urls)
+    )
+    return [draft for draft in results if draft is not None]
