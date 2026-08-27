@@ -545,14 +545,19 @@ export default function RecipeBuilder({ onBack, userProfile }: RecipeBuilderProp
               </div>
             </div>
             {userProfile?.is_admin && (
-              <label className="recipe-field recipe-field-inline">
-                <input
-                  type="checkbox"
-                  checked={isShared}
-                  onChange={e => setIsShared(e.target.checked)}
-                />
+              <div className="recipe-field recipe-field-inline recipe-shared-toggle">
                 <span>Share in the shared recipe library</span>
-              </label>
+                <label className="toggle-switch">
+                  <input
+                    type="checkbox"
+                    checked={isShared}
+                    onChange={e => setIsShared(e.target.checked)}
+                  />
+                  <span className="toggle-track">
+                    <span className="toggle-thumb" />
+                  </span>
+                </label>
+              </div>
             )}
 
             <div className="ingredient-section">
