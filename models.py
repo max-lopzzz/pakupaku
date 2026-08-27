@@ -18,10 +18,9 @@ from sqlalchemy import (
     ForeignKey, Text, Enum as SAEnum,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
 import enum
 
-from database import Base
+from database import Base, GUID
 
 
 # ─────────────────────────────────────────────
@@ -71,7 +70,7 @@ class User(Base):
 
     # ── Identity ─────────────────────────────
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        GUID(), primary_key=True, default=uuid.uuid4
     )
     email: Mapped[str] = mapped_column(
         String(255), unique=True, nullable=False, index=True
@@ -174,10 +173,10 @@ class FoodLog(Base):
     __tablename__ = "food_logs"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        GUID(), primary_key=True, default=uuid.uuid4
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+        GUID(), ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False, index=True,
     )
     logged_at: Mapped[datetime] = mapped_column(
@@ -192,7 +191,7 @@ class FoodLog(Base):
     # For custom recipes: recipe_id is set, fdc_id is None
     fdc_id:      Mapped[Optional[int]]        = mapped_column(Integer,  nullable=True)
     recipe_id:   Mapped[Optional[uuid.UUID]]  = mapped_column(
-        UUID(as_uuid=True), ForeignKey("recipes.id", ondelete="SET NULL"),
+        GUID(), ForeignKey("recipes.id", ondelete="SET NULL"),
         nullable=True,
     )
     food_name:   Mapped[str]   = mapped_column(String(255), nullable=False)
@@ -233,10 +232,10 @@ class Recipe(Base):
     __tablename__ = "recipes"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        GUID(), primary_key=True, default=uuid.uuid4
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+        GUID(), ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False, index=True,
     )
     name:        Mapped[str]        = mapped_column(String(255), nullable=False)
@@ -275,10 +274,10 @@ class RecipeIngredient(Base):
     __tablename__ = "recipe_ingredients"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        GUID(), primary_key=True, default=uuid.uuid4
     )
     recipe_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("recipes.id", ondelete="CASCADE"),
+        GUID(), ForeignKey("recipes.id", ondelete="CASCADE"),
         nullable=False, index=True,
     )
 
@@ -312,10 +311,10 @@ class BodyMeasurement(Base):
     __tablename__ = "body_measurements"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        GUID(), primary_key=True, default=uuid.uuid4
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+        GUID(), ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False, index=True,
     )
     measured_at: Mapped[date] = mapped_column(
