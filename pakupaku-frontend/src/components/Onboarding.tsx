@@ -1,7 +1,6 @@
 import { useState } from "react";
 import "./Onboarding.css";
 
-import puppyWave    from "../assets/images/puppy_wave.png";
 import puppyBlush   from "../assets/images/puppy_blush.png";
 import puppyNervous from "../assets/images/puppy_nervous.png";
 import puppyCheer   from "../assets/images/puppy_cheer.png";
@@ -96,8 +95,8 @@ const CONDITIONS_LIST = [
 ];
 
 const STEP_MASCOT: Record<Step, { img: string; mood: string }> = {
-  welcome:      { img: puppyWave,    mood: "wave" },
-  dietitian:    { img: puppyBlush,   mood: "blush" },
+  welcome:      { img: puppyNotes,   mood: "notes" },
+  dietitian:    { img: puppyNotes,   mood: "notes" },
   biometrics:   { img: puppyNotes,   mood: "notes" },
   hormonal:     { img: puppySparkle, mood: "sparkle" },
   hrt:          { img: puppyNervous, mood: "nervous" },
