@@ -786,6 +786,21 @@ async def list_recipes(
     return result.scalars().all()
 
 
+@app.get("/recipes/shared", response_model=List[RecipeResponse])
+async def list_shared_recipes(
+    current_user: User         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+):
+    """Every admin-curated shared recipe, for any logged-in user."""
+    result = await db.execute(
+        select(Recipe)
+        .where(Recipe.is_shared == True)  # noqa: E712  (SQLAlchemy needs == True, not `is True`)
+        .order_by(Recipe.created_at.desc())
+        .options(selectinload(Recipe.ingredients))
+    )
+    return result.scalars().all()
+
+
 @app.get("/recipes/{recipe_id}", response_model=RecipeResponse)
 async def get_recipe(
     recipe_id:    uuid.UUID,

@@ -94,3 +94,39 @@ def test_update_recipe_cannot_flip_is_shared_without_admin(client, db_session):
         assert res.json()["is_shared"] is False
     finally:
         app.dependency_overrides.pop(get_current_user, None)
+
+
+def test_shared_recipes_visible_to_non_owner(client, db_session):
+    import asyncio
+
+    async def _setup():
+        admin = await _make_user(db_session, is_admin=True)
+        viewer = await _make_user(db_session)
+        return admin, viewer
+
+    admin, viewer = asyncio.get_event_loop().run_until_complete(_setup())
+    try:
+        _as(client, admin).post(
+            "/recipes",
+            json={
+                "name": "Shared one",
+                "servings": 1,
+                "ingredients": [{"food_name": "rice", "amount_g": 100}],
+                "is_shared": True,
+            },
+        )
+        _as(client, admin).post(
+            "/recipes",
+            json={
+                "name": "Admin's private recipe",
+                "servings": 1,
+                "ingredients": [{"food_name": "rice", "amount_g": 100}],
+            },
+        )
+
+        res = _as(client, viewer).get("/recipes/shared")
+        assert res.status_code == 200
+        names = [r["name"] for r in res.json()]
+        assert names == ["Shared one"]
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
