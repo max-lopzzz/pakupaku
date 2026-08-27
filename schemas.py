@@ -189,6 +189,7 @@ class UserResponse(BaseModel):
     fat_g:        Optional[float]
     carbs_g:      Optional[float]
     uses_custom_goals: bool
+    is_admin: bool
 
     class Config:
         from_attributes = True
@@ -323,12 +324,60 @@ class RecipeCreateRequest(BaseModel):
     servings:    float = Field(1.0, gt=0)
     ingredients: List[RecipeIngredientRequest] = Field(..., min_items=1)
 
+    image_url:    Optional[str]       = None
+    source_url:   Optional[str]       = None
+    instructions: Optional[str]       = None
+    diet_tags:    Optional[List[str]] = None
+    is_shared:    Optional[bool]      = None
+
+    @validator("diet_tags")
+    def validate_diet_tags(cls, v):
+        if v is None:
+            return v
+        valid = {
+            "vegan", "vegetarian", "pescatarian", "flexitarian",
+            "gluten_free", "dairy_free", "nut_free", "soy_free",
+            "egg_free", "shellfish_free",
+            "keto", "low_carb", "paleo", "whole30", "low_fodmap",
+            "diabetic_friendly", "low_sodium", "low_fat", "high_protein",
+            "halal", "kosher",
+            "mediterranean", "dash",
+        }
+        invalid = set(v) - valid
+        if invalid:
+            raise ValueError(f"Unknown diet tag(s): {sorted(invalid)}. Must be one of {sorted(valid)}")
+        return v
+
 
 class RecipeUpdateRequest(BaseModel):
     name:        Optional[str]   = Field(None, min_length=1, max_length=255)
     description: Optional[str]   = None
     servings:    Optional[float] = Field(None, gt=0)
     ingredients: Optional[List[RecipeIngredientRequest]] = None
+
+    image_url:    Optional[str]       = None
+    source_url:   Optional[str]       = None
+    instructions: Optional[str]       = None
+    diet_tags:    Optional[List[str]] = None
+    is_shared:    Optional[bool]      = None
+
+    @validator("diet_tags")
+    def validate_diet_tags(cls, v):
+        if v is None:
+            return v
+        valid = {
+            "vegan", "vegetarian", "pescatarian", "flexitarian",
+            "gluten_free", "dairy_free", "nut_free", "soy_free",
+            "egg_free", "shellfish_free",
+            "keto", "low_carb", "paleo", "whole30", "low_fodmap",
+            "diabetic_friendly", "low_sodium", "low_fat", "high_protein",
+            "halal", "kosher",
+            "mediterranean", "dash",
+        }
+        invalid = set(v) - valid
+        if invalid:
+            raise ValueError(f"Unknown diet tag(s): {sorted(invalid)}. Must be one of {sorted(valid)}")
+        return v
 
 
 class RecipeResponse(BaseModel):
@@ -348,6 +397,12 @@ class RecipeResponse(BaseModel):
     total_fiber_g:   Optional[float]
 
     ingredients: List[RecipeIngredientResponse]
+
+    image_url:    Optional[str]
+    source_url:   Optional[str]
+    instructions: Optional[str]
+    diet_tags:    List[str]
+    is_shared:    bool
 
     class Config:
         from_attributes = True
