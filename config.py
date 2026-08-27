@@ -48,9 +48,11 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 60 * 24 * 7))
 # Default: 7 days. Adjust as needed.
 
-# ── Email (SMTP) ──────────────────────────────
-SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
-SMTP_USER = os.getenv("SMTP_USER", "")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-SMTP_FROM = os.getenv("SMTP_FROM", SMTP_USER)
+# ── Email (Resend) ─────────────────────────────
+# Sent over HTTPS via Resend's API rather than raw SMTP — several common
+# hosts (including Render's free tier) block outbound SMTP entirely to
+# prevent spam abuse, but don't block outbound HTTPS.
+RESEND_API_KEY    = os.getenv("RESEND_API_KEY", "")
+# Resend's own shared sender works immediately with no domain
+# verification, for any recipient — fine until a real domain is set up.
+RESEND_FROM_EMAIL = os.getenv("RESEND_FROM_EMAIL", "PakuPaku <onboarding@resend.dev>")
