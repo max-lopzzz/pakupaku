@@ -9,11 +9,14 @@ nothing is saved to the database here.
 """
 
 import asyncio
+import ipaddress
 import json
 import logging
 import re
+import socket
 from dataclasses import dataclass
 from typing import Dict, List, Optional
+from urllib.parse import urljoin, urlparse
 
 import httpx
 from bs4 import BeautifulSoup
@@ -481,33 +484,101 @@ async def _safe_match_ingredient(parsed: ParsedIngredient) -> ImportedIngredient
 #  ORCHESTRATION
 # ─────────────────────────────────────────────
 
+_MAX_REDIRECTS = 5
+
+
+async def _resolve_and_validate_host(url: str) -> None:
+    """Raises HTTPException(422) if url's host resolves to a private,
+    loopback, link-local, reserved, or otherwise internal address.
+
+    Blocks SSRF-style abuse of an authenticated user pointing this
+    importer at an internal service. This checks the resolved address at
+    validation time — it does not defend against DNS-rebinding attacks,
+    where a hostname resolves differently between this check and the
+    actual connection a moment later. A fully airtight guard would need a
+    custom transport that pins the resolved IP for the connection itself;
+    that's a bigger change than this warrants right now.
+    """
+    try:
+        hostname = urlparse(url).hostname
+    except ValueError:
+        raise HTTPException(status_code=422, detail="That doesn't look like a valid URL.")
+    if not hostname:
+        raise HTTPException(status_code=422, detail="That doesn't look like a valid URL.")
+
+    loop = asyncio.get_running_loop()
+    try:
+        addrinfo = await loop.getaddrinfo(hostname, None)
+    except (socket.gaierror, UnicodeError, ValueError):
+        raise HTTPException(status_code=422, detail="Could not resolve that URL's host.")
+
+    for _family, _type, _proto, _canonname, sockaddr in addrinfo:
+        ip = ipaddress.ip_address(sockaddr[0])
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+            or ip.is_unspecified
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="That URL points to a private or internal address, which isn't allowed.",
+            )
+
+
 async def fetch_page(url: str) -> str:
     """Fetch a blog URL and return its HTML. Raises HTTPException(422) on
-    any failure — dead link, timeout, non-HTML response, or a site that
-    blocks the request."""
+    any failure — dead link, timeout, non-HTML response, a site that
+    blocks the request, or a URL/redirect that resolves to a private or
+    internal address (see _resolve_and_validate_host).
+
+    Redirects are followed manually (rather than via httpx's built-in
+    follow_redirects) so each hop's host can be validated before the
+    request for it goes out — a redirect to an internal address is
+    rejected instead of silently followed.
+    """
     if not url.strip().lower().startswith(("http://", "https://")):
         raise HTTPException(
             status_code=422, detail="Import URL must start with http:// or https://."
         )
 
-    async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-        try:
-            response = await client.get(
-                url,
-                headers={"User-Agent": "Mozilla/5.0 (compatible; PakuPakuBot/1.0)"},
-            )
-            response.raise_for_status()
-        except httpx.TimeoutException:
-            raise HTTPException(status_code=422, detail="Timed out fetching that URL.")
-        except httpx.HTTPStatusError as e:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Could not fetch that URL ({e.response.status_code}).",
-            )
-        except httpx.RequestError:
-            raise HTTPException(status_code=422, detail="Could not fetch that URL.")
-        except (httpx.InvalidURL, UnicodeError, ValueError):
-            raise HTTPException(status_code=422, detail="That doesn't look like a valid URL.")
+    current_url = url
+    async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
+        for _ in range(_MAX_REDIRECTS + 1):
+            await _resolve_and_validate_host(current_url)
+            try:
+                response = await client.get(
+                    current_url,
+                    headers={"User-Agent": "Mozilla/5.0 (compatible; PakuPakuBot/1.0)"},
+                )
+            except httpx.TimeoutException:
+                raise HTTPException(status_code=422, detail="Timed out fetching that URL.")
+            except httpx.RequestError:
+                raise HTTPException(status_code=422, detail="Could not fetch that URL.")
+            except (httpx.InvalidURL, UnicodeError, ValueError):
+                raise HTTPException(
+                    status_code=422, detail="That doesn't look like a valid URL."
+                )
+
+            if response.is_redirect:
+                location = response.headers.get("location")
+                if not location:
+                    raise HTTPException(status_code=422, detail="Could not fetch that URL.")
+                current_url = urljoin(current_url, location)
+                continue
+
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Could not fetch that URL ({e.response.status_code}).",
+                )
+            break
+        else:
+            raise HTTPException(status_code=422, detail="Too many redirects.")
 
     content_type = response.headers.get("content-type", "")
     if "html" not in content_type.lower():

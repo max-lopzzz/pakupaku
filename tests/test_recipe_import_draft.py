@@ -1,5 +1,6 @@
 import asyncio
 
+import httpx
 import pytest
 from fastapi import HTTPException
 
@@ -178,3 +179,159 @@ def test_fetch_page_raises_422_on_invalid_url():
     with pytest.raises(HTTPException) as exc_info:
         asyncio.run(fetch_page("http://[::1"))
     assert exc_info.value.status_code == 422
+
+
+# ─── SSRF guard ─────────────────────────────────────────────
+
+
+class _NetworkCallNotExpectedClient:
+    """A fake AsyncClient whose .get() fails the test loudly if called at
+    all. Used to prove host validation rejects before any request goes
+    out — without this, a real network attempt to a private address might
+    fail with a connection error and produce the same 422 by accident,
+    which would pass even if the validation logic were entirely missing."""
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def get(self, url, headers=None):
+        raise AssertionError(
+            f"fetch_page should have rejected {url!r} before making a request"
+        )
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://127.0.0.1/recipe",
+        "http://10.0.0.5/recipe",
+        "http://169.254.169.254/latest/meta-data/",
+        "http://[::1]/recipe",
+    ],
+)
+def test_fetch_page_rejects_private_or_internal_hosts(url, monkeypatch):
+    monkeypatch.setattr(
+        recipe_import.httpx, "AsyncClient", _NetworkCallNotExpectedClient
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(fetch_page(url))
+    assert exc_info.value.status_code == 422
+    detail = exc_info.value.detail.lower()
+    assert "private" in detail or "internal" in detail
+
+
+class _FakeFetchResponse:
+    def __init__(self, status_code=200, headers=None, text=""):
+        self.status_code = status_code
+        self.headers = headers or {}
+        self.text = text
+
+    @property
+    def is_redirect(self):
+        return 300 <= self.status_code < 400
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise httpx.HTTPStatusError(
+                "error", request=None, response=self  # type: ignore[arg-type]
+            )
+
+
+class _FakeFetchClient:
+    """Stands in for httpx.AsyncClient as used by fetch_page. Set
+    _FakeFetchClient.responses to a list of _FakeFetchResponse consumed in
+    order, one per .get() call, before use."""
+
+    responses = []
+    calls = []
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def get(self, url, headers=None):
+        _FakeFetchClient.calls.append(url)
+        return _FakeFetchClient.responses.pop(0)
+
+
+def test_fetch_page_returns_html_on_success(monkeypatch):
+    _FakeFetchClient.responses = [
+        _FakeFetchResponse(
+            status_code=200,
+            headers={"content-type": "text/html; charset=utf-8"},
+            text="<html>hello</html>",
+        )
+    ]
+    _FakeFetchClient.calls = []
+    monkeypatch.setattr(recipe_import.httpx, "AsyncClient", _FakeFetchClient)
+
+    result = asyncio.run(fetch_page("http://1.1.1.1/recipe"))
+
+    assert result == "<html>hello</html>"
+
+
+def test_fetch_page_follows_redirect_to_public_host(monkeypatch):
+    _FakeFetchClient.responses = [
+        _FakeFetchResponse(status_code=302, headers={"location": "http://8.8.8.8/final"}),
+        _FakeFetchResponse(
+            status_code=200,
+            headers={"content-type": "text/html"},
+            text="<html>final page</html>",
+        ),
+    ]
+    _FakeFetchClient.calls = []
+    monkeypatch.setattr(recipe_import.httpx, "AsyncClient", _FakeFetchClient)
+
+    result = asyncio.run(fetch_page("http://1.1.1.1/start"))
+
+    assert result == "<html>final page</html>"
+    assert _FakeFetchClient.calls == ["http://1.1.1.1/start", "http://8.8.8.8/final"]
+
+
+def test_fetch_page_rejects_redirect_to_private_ip(monkeypatch):
+    _FakeFetchClient.responses = [
+        _FakeFetchResponse(
+            status_code=302, headers={"location": "http://127.0.0.1/secret"}
+        )
+    ]
+    _FakeFetchClient.calls = []
+    monkeypatch.setattr(recipe_import.httpx, "AsyncClient", _FakeFetchClient)
+
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(fetch_page("http://1.1.1.1/recipe"))
+
+    assert exc_info.value.status_code == 422
+    detail = exc_info.value.detail.lower()
+    assert "private" in detail or "internal" in detail
+    # Only the first hop should have been requested — the redirect target
+    # must be rejected by host validation before a second request is made.
+    assert _FakeFetchClient.calls == ["http://1.1.1.1/recipe"]
+
+
+def test_fetch_page_too_many_redirects(monkeypatch):
+    _FakeFetchClient.responses = [
+        _FakeFetchResponse(status_code=302, headers={"location": "http://1.1.1.1/next"})
+        for _ in range(10)
+    ]
+    _FakeFetchClient.calls = []
+    monkeypatch.setattr(recipe_import.httpx, "AsyncClient", _FakeFetchClient)
+
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(fetch_page("http://1.1.1.1/start"))
+
+    assert exc_info.value.status_code == 422
+    assert "redirect" in exc_info.value.detail.lower()
+    # Proves the loop actually iterated multiple times rather than
+    # accepting/rejecting after a single call.
+    assert len(_FakeFetchClient.calls) > 1
