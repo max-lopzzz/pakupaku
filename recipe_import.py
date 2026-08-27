@@ -10,6 +10,7 @@ nothing is saved to the database here.
 
 import asyncio
 import json
+import logging
 import re
 from dataclasses import dataclass
 from typing import Dict, List, Optional
@@ -21,6 +22,8 @@ from fastapi import HTTPException
 from config import LLM_API_KEY, LLM_BASE_URL, LLM_MODEL
 from schemas import ImportedIngredient, ImportedIngredientCandidate, RecipeImportDraft
 from usda import extract_nutrients, get_food, search_foods
+
+logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────
@@ -126,7 +129,25 @@ _UNIT_ALIASES = {
     "tbsp": "tbsp", "tbs": "tbsp",
     "tablespoon": "tbsp", "tablespoons": "tbsp",
     "tsp": "tsp", "teaspoon": "tsp", "teaspoons": "tsp",
+    "lb": "lb", "lbs": "lb", "pound": "lb", "pounds": "lb",
+    "kg": "kg", "kilogram": "kg", "kilograms": "kg",
+    "l": "l", "liter": "l", "liters": "l", "litre": "l", "litres": "l",
 }
+
+_UNICODE_FRACTIONS = {
+    "¼": "1/4", "½": "1/2", "¾": "3/4",
+    "⅓": "1/3", "⅔": "2/3",
+    "⅛": "1/8", "⅜": "3/8", "⅝": "5/8", "⅞": "7/8",
+}
+
+
+def _normalize_unicode_fractions(text: str) -> str:
+    """"1½ cups" -> "1 1/2 cups" (mixed number); "½ cup" -> "1/2 cup" (bare)."""
+    for char, replacement in _UNICODE_FRACTIONS.items():
+        text = re.sub(r"(?<=\d)" + char, " " + replacement, text)
+        text = text.replace(char, replacement)
+    return text
+
 
 _QTY_RE = re.compile(
     r"""^\s*
@@ -170,12 +191,17 @@ def parse_ingredient_line(line: str) -> Optional[ParsedIngredient]:
     Returns None when there's no leading quantity to parse (e.g. "Salt
     to taste") — the caller falls back to an LLM for that one line.
     """
+    line = _normalize_unicode_fractions(line)
     match = _QTY_RE.match(line)
     if not match:
         return None
 
-    quantity = _parse_quantity(match.group("qty"))
+    try:
+        quantity = _parse_quantity(match.group("qty"))
+    except (ValueError, ZeroDivisionError):
+        return None
     rest = match.group("rest").strip()
+    rest = re.sub(r"\([^)]*\)", "", rest).strip()
     if not rest:
         return None
 
@@ -274,7 +300,7 @@ async def _call_llm_json(system_prompt: str, user_content: str) -> dict:
 
     try:
         parsed = json.loads(content)
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, TypeError):
         raise HTTPException(
             status_code=502,
             detail="Recipe import's LLM returned an unparseable response.",
@@ -362,9 +388,13 @@ async def _fetch_portions_map(fdc_id: int, description: str) -> Dict[str, float]
     except HTTPException:
         return {}
 
+    checked = 0
     for food in research.get("foods", []):
         if food.get("dataType") not in _RELIABLE_PORTION_DATA_TYPES:
             continue
+        if checked >= 3:
+            break
+        checked += 1
         try:
             detail = await get_food(food["fdcId"], format="full")
         except HTTPException:
@@ -413,7 +443,9 @@ async def match_ingredient(parsed: ParsedIngredient) -> ImportedIngredient:
         )
 
     best_food, alt_foods = candidates[0], candidates[1:5]
-    portions_map = await _fetch_portions_map(best_food["fdcId"], parsed.food_name)
+    portions_map = await _fetch_portions_map(
+        best_food["fdcId"], best_food.get("description") or parsed.food_name
+    )
 
     return ImportedIngredient(
         raw_line=parsed.raw_line,
@@ -434,6 +466,7 @@ async def _safe_match_ingredient(parsed: ParsedIngredient) -> ImportedIngredient
     try:
         return await match_ingredient(parsed)
     except Exception:
+        logger.exception("match_ingredient failed for ingredient %r", parsed.food_name)
         return ImportedIngredient(
             raw_line=parsed.raw_line,
             quantity=parsed.quantity,
@@ -473,9 +506,11 @@ async def fetch_page(url: str) -> str:
             )
         except httpx.RequestError:
             raise HTTPException(status_code=422, detail="Could not fetch that URL.")
+        except (httpx.InvalidURL, UnicodeError, ValueError):
+            raise HTTPException(status_code=422, detail="That doesn't look like a valid URL.")
 
     content_type = response.headers.get("content-type", "")
-    if "html" not in content_type:
+    if "html" not in content_type.lower():
         raise HTTPException(
             status_code=422, detail="That URL doesn't look like a web page."
         )
@@ -499,7 +534,12 @@ async def build_import_draft(url: str) -> RecipeImportDraft:
     for line in raw.ingredient_lines:
         parsed = parse_ingredient_line(line)
         if parsed is None:
-            parsed = await parse_ingredient_line_via_llm(line)
+            try:
+                parsed = await parse_ingredient_line_via_llm(line)
+            except HTTPException:
+                parsed = ParsedIngredient(
+                    raw_line=line, quantity=1.0, unit="g", food_name=line
+                )
         parsed_lines.append(parsed)
 
     ingredients = await asyncio.gather(*(_safe_match_ingredient(p) for p in parsed_lines))

@@ -10,8 +10,11 @@ const UNIT_TO_G: Record<string, number> = {
   cup:  240,
   tbsp: 15,
   tsp:  5,
+  lb:   453.592,
+  kg:   1000,
+  l:    1000,
 };
-const STANDARD_UNITS = ["g", "ml", "oz", "cup", "tbsp", "tsp"];
+const STANDARD_UNITS = ["g", "ml", "oz", "cup", "tbsp", "tsp", "lb", "kg", "l"];
 const STANDARD_UNIT_SET = new Set(STANDARD_UNITS);
 
 /** Natural units are food-specific USDA portions that aren't in our standard list. */
@@ -416,7 +419,7 @@ export default function RecipeBuilder({ onBack }: RecipeBuilderProps) {
           <div className="recipe-form-card">
             <label className="recipe-field">
               <span>Import from a recipe blog URL</span>
-              <div className="recipe-field-inline">
+              <div className="recipe-import-controls">
                 <input
                   type="url"
                   value={importUrl}
@@ -746,6 +749,8 @@ function IngredientInput({ row, onUpdate, onRemove }: IngredientInputProps) {
   };
 
   const isCustom = row.mode === "custom";
+  const knownUnits = new Set(STANDARD_UNITS);
+  if (!isCustom) naturalUnits(row.portionsMap).forEach(u => knownUnits.add(u));
 
   return (
     <div className={`ingredient-row${isCustom ? " ingredient-row--custom" : ""}`} ref={wrapRef}>
@@ -861,6 +866,9 @@ function IngredientInput({ row, onUpdate, onRemove }: IngredientInputProps) {
         {STANDARD_UNITS.map(u => (
           <option key={u} value={u}>{unitLabel(u, row.portionsMap)}</option>
         ))}
+        {!knownUnits.has(row.unit) && (
+          <option value={row.unit}>{row.unit}</option>
+        )}
       </select>
 
       {/* Kcal for this ingredient */}

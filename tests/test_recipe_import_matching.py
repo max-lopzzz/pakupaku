@@ -183,3 +183,72 @@ def test_match_ingredient_fallback_portions_from_sr_legacy(monkeypatch):
     assert result.best_match.fdc_id == 100
     # But portions should come from the SR Legacy fallback
     assert result.best_match.portions_map == {"cup": 125.0, "tbsp": 8.0}
+
+
+def test_fetch_portions_map_fallback_caps_get_food_calls_at_three(monkeypatch):
+    """The fallback tier in _fetch_portions_map used to loop over every
+    reliable-data-type candidate in the re-search results (up to 20),
+    issuing a get_food call for each one. That's an unbounded USDA
+    fan-out for a single ingredient. It should stop after checking 3
+    candidates, even when none of them have usable portions."""
+
+    PRIMARY_FOOD = {
+        "fdcId": 1,
+        "description": "Flour, wheat, all-purpose",
+        "dataType": "Foundation",
+        "brandOwner": None,
+        "foodNutrients": [{"nutrientId": 1008, "value": 364.0}],
+    }
+
+    # 5 SR Legacy candidates, all with empty foodPortions.
+    CANDIDATES = [
+        {
+            "fdcId": 100 + i,
+            "description": f"Flour variant {i}",
+            "dataType": "SR Legacy",
+            "brandOwner": None,
+            "foodNutrients": [],
+        }
+        for i in range(5)
+    ]
+
+    async def fake_search_foods(query, page_size=5):
+        if page_size == 5:
+            # match_ingredient's primary search
+            return {"foods": [PRIMARY_FOOD]}
+        # _fetch_portions_map's fallback re-search (page_size=20)
+        return {"foods": CANDIDATES}
+
+    get_food_calls = {"count": 0}
+
+    async def fake_get_food(fdc_id, format="abridged"):
+        if fdc_id == 1:
+            # Primary food detail: no portions, forces the fallback tier.
+            return {
+                "fdcId": 1,
+                "description": "Flour, wheat, all-purpose",
+                "dataType": "Foundation",
+                "foodNutrients": PRIMARY_FOOD["foodNutrients"],
+                "foodPortions": [],
+            }
+        get_food_calls["count"] += 1
+        return {
+            "fdcId": fdc_id,
+            "description": "Flour variant",
+            "dataType": "SR Legacy",
+            "foodNutrients": [],
+            "foodPortions": [],  # Empty — no candidate ever satisfies the fallback.
+        }
+
+    monkeypatch.setattr(recipe_import, "search_foods", fake_search_foods)
+    monkeypatch.setattr(recipe_import, "get_food", fake_get_food)
+
+    parsed = ParsedIngredient(
+        raw_line="2 cups flour", quantity=2.0, unit="cup", food_name="flour"
+    )
+    result = asyncio.run(match_ingredient(parsed))
+
+    assert result.best_match is not None
+    assert result.best_match.portions_map == {}
+    # Not counting the initial primary-food get_food call (fdc_id == 1).
+    assert get_food_calls["count"] <= 3

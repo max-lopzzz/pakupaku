@@ -8,6 +8,7 @@ from recipe_import import (
     ParsedIngredient,
     RawRecipe,
     build_import_draft,
+    fetch_page,
 )
 from schemas import ImportedIngredient
 
@@ -115,3 +116,65 @@ def test_contains_ingredient_match_failures(monkeypatch):
     for ingredient in draft.ingredients:
         assert ingredient.best_match is None
         assert ingredient.alternates == []
+
+
+def test_llm_fallback_failure_degrades_gracefully_per_line(monkeypatch):
+    """If a line has no parseable leading quantity and the LLM fallback is
+    unavailable (503) or fails (502), build_import_draft should not fail
+    the whole import — it should degrade that one line to a raw fallback
+    ingredient instead of propagating the HTTPException."""
+    structured = RawRecipe(
+        name="Test Recipe",
+        servings=1.0,
+        image_url=None,
+        ingredient_lines=["salt to taste", "a pinch of saffron"],
+    )
+
+    async def fake_fetch_page(url):
+        return "<html>fake page</html>"
+
+    def fake_parse_line(line):
+        # Always fails to find a leading quantity, forcing the LLM fallback.
+        return None
+
+    async def failing_parse_via_llm(line):
+        raise HTTPException(status_code=503, detail="not configured")
+
+    async def fake_match_ingredient(parsed):
+        return ImportedIngredient(
+            raw_line=parsed.raw_line,
+            quantity=parsed.quantity,
+            unit=parsed.unit,
+            food_name=parsed.food_name,
+            best_match=None,
+            alternates=[],
+        )
+
+    monkeypatch.setattr(recipe_import, "fetch_page", fake_fetch_page)
+    monkeypatch.setattr(
+        recipe_import, "extract_structured_recipe", lambda html: structured
+    )
+    monkeypatch.setattr(recipe_import, "parse_ingredient_line", fake_parse_line)
+    monkeypatch.setattr(
+        recipe_import, "parse_ingredient_line_via_llm", failing_parse_via_llm
+    )
+    monkeypatch.setattr(recipe_import, "match_ingredient", fake_match_ingredient)
+
+    # Should not raise — the per-line HTTPException from the LLM fallback
+    # is caught and degraded to a raw fallback ingredient.
+    draft = asyncio.run(build_import_draft("https://example.com/recipe"))
+
+    assert draft.name == "Test Recipe"
+    assert len(draft.ingredients) == 2
+    for ingredient, line in zip(draft.ingredients, structured.ingredient_lines):
+        assert ingredient.raw_line == line
+        assert ingredient.food_name == line
+
+
+def test_fetch_page_raises_422_on_invalid_url():
+    """httpx.InvalidURL (e.g. a malformed IPv6 host) subclasses Exception
+    directly, not httpx.RequestError, so it needs its own except clause
+    in fetch_page — otherwise it would propagate as an unhandled 500."""
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(fetch_page("http://[::1"))
+    assert exc_info.value.status_code == 422
