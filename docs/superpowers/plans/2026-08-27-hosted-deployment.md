@@ -33,6 +33,8 @@ The app's direct third-party runtime imports (confirmed via `grep -hoE "^(import
 
 `python-multipart` is **not** needed — confirmed via `grep -n "Form(\|UploadFile\|OAuth2PasswordRequestForm" main.py` returning nothing; the app takes JSON bodies everywhere, no form parsing. `fastapi-users` is installed in the dev venv but unused by any code (`grep -rn "fastapi_users" --include="*.py" .` returns nothing) — leftover cruft, excluded.
 
+`email-validator` is also required, even though no file imports it by name: `schemas.py` uses Pydantic's `EmailStr` type (`grep -n "EmailStr" schemas.py` — used in `RegisterRequest`, `LoginRequest`, and `ForgotPasswordRequest`), and Pydantic v2 only validates that type when `email-validator` is installed — it's an optional extra pydantic imports internally, not a transitive dependency pip would pull in automatically. Pin it to `2.1.2`, the version already proven working in this repo's dev venv.
+
 - [ ] **Step 1: Replace `requirements.txt` with the full pinned list**
 
 ```
@@ -44,6 +46,7 @@ uvicorn==0.33.0
 sqlalchemy==2.0.49
 asyncpg==0.30.0
 pydantic==2.10.6
+email-validator==2.1.2
 python-jose==3.4.0
 passlib==1.7.4
 bcrypt==4.1.2
@@ -93,9 +96,11 @@ requirements.txt previously only listed deps the recipe-import feature
 added — there was never a full pinned list for the app. This one covers
 every runtime dependency, pinned to versions already proven working in
 this repo's dev venv, so Render's build step (pip install -r
-requirements.txt) produces the same environment. Excludes
-python-multipart (no form parsing anywhere in the app) and fastapi-users
-(installed in the dev venv but unused by any code)."
+requirements.txt) produces the same environment. Includes
+email-validator, which nothing imports by name but which Pydantic's
+EmailStr (used in schemas.py) requires at runtime to actually validate
+emails. Excludes python-multipart (no form parsing anywhere in the app)
+and fastapi-users (installed in the dev venv but unused by any code)."
 ```
 
 ---
