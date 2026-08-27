@@ -44,6 +44,12 @@ Do these in order — each later step needs a value from the one before it.
    makes connecting the repo in the next step a one-click picker).
 2. New → Web Service → connect the `pakupaku` GitHub repo.
 3. Settings:
+   - **Branch:** `main`
+   - **Root Directory:** leave blank. `main.py` and `requirements.txt`
+     live at the repo root, not in a subdirectory — do not type `main`
+     here by mistake (that's the branch, a separate field above); doing
+     so fails the clone step with "Root directory 'main' does not
+     exist."
    - **Runtime:** Python 3
    - **Build Command:** see step 5 below — it extends the plain
      `pip install -r requirements.txt` command with a schema-creation
