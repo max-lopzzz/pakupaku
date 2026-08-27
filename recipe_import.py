@@ -101,3 +101,97 @@ def extract_structured_recipe(html: str) -> Optional[RawRecipe]:
             ],
         )
     return None
+
+
+# ─────────────────────────────────────────────
+#  INGREDIENT LINE PARSING
+# ─────────────────────────────────────────────
+
+# Standard units RecipeBuilder.tsx's UNIT_TO_G already knows how to
+# convert to grams. Anything else parses through as a "natural unit"
+# (e.g. "clove", "large", "slice") the same way RecipeBuilder already
+# handles USDA food-specific portion units.
+_UNIT_ALIASES = {
+    "g": "g", "gram": "g", "grams": "g",
+    "ml": "ml", "milliliter": "ml", "milliliters": "ml",
+    "oz": "oz", "ounce": "oz", "ounces": "oz",
+    "cup": "cup", "cups": "cup", "c": "cup",
+    "tbsp": "tbsp", "tbs": "tbsp",
+    "tablespoon": "tbsp", "tablespoons": "tbsp",
+    "tsp": "tsp", "teaspoon": "tsp", "teaspoons": "tsp",
+}
+
+_QTY_RE = re.compile(
+    r"""^\s*
+    (?P<qty>
+        \d+\s+\d+/\d+     # mixed number, e.g. "1 1/2"
+        |\d+/\d+          # fraction, e.g. "1/2"
+        |\d+(?:\.\d+)?    # integer or decimal, e.g. "2", "0.5"
+    )
+    \s*
+    (?P<rest>.*)$
+    """,
+    re.VERBOSE,
+)
+
+
+def _parse_quantity(qty_str: str) -> float:
+    qty_str = qty_str.strip()
+    if " " in qty_str:
+        whole, frac = qty_str.split(" ", 1)
+        num, den = frac.split("/")
+        return float(whole) + float(num) / float(den)
+    if "/" in qty_str:
+        num, den = qty_str.split("/")
+        return float(num) / float(den)
+    return float(qty_str)
+
+
+@dataclass
+class ParsedIngredient:
+    raw_line: str
+    quantity: float
+    unit: str
+    food_name: str
+
+
+def parse_ingredient_line(line: str) -> Optional[ParsedIngredient]:
+    """
+    Parse a single ingredient line into quantity/unit/food_name, e.g.
+    "2 cups flour" -> (2.0, "cup", "flour").
+
+    Returns None when there's no leading quantity to parse (e.g. "Salt
+    to taste") — the caller falls back to an LLM for that one line.
+    """
+    match = _QTY_RE.match(line)
+    if not match:
+        return None
+
+    quantity = _parse_quantity(match.group("qty"))
+    rest = match.group("rest").strip()
+    if not rest:
+        return None
+
+    tokens = rest.split(None, 1)
+    first_word = tokens[0].lower().strip(",.")
+    unit = _UNIT_ALIASES.get(first_word)
+
+    if unit:
+        remainder = tokens[1] if len(tokens) > 1 else ""
+    elif len(tokens) > 1:
+        # No recognized standard unit, but there's more text after the
+        # first word — treat it as a natural unit (e.g. "clove", "large").
+        unit = first_word
+        remainder = tokens[1]
+    else:
+        # Just a quantity and a food name with no unit word at all.
+        unit = "g"
+        remainder = rest
+
+    food_name = remainder.split(",")[0].strip()
+    if not food_name:
+        return None
+
+    return ParsedIngredient(
+        raw_line=line, quantity=quantity, unit=unit, food_name=food_name
+    )
