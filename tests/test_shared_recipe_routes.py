@@ -191,3 +191,71 @@ def test_copy_of_private_recipe_you_dont_own_404s(client, db_session):
         assert res.status_code == 404
     finally:
         app.dependency_overrides.pop(get_current_user, None)
+
+
+def test_can_log_a_shared_recipe_you_dont_own(client, db_session):
+    import asyncio
+
+    async def _setup():
+        admin = await _make_user(db_session, is_admin=True)
+        logger_ = await _make_user(db_session)
+        return admin, logger_
+
+    admin, logger_ = asyncio.get_event_loop().run_until_complete(_setup())
+    try:
+        shared = _as(client, admin).post(
+            "/recipes",
+            json={
+                "name": "Shared soup",
+                "servings": 2,
+                "ingredients": [{"food_name": "broth", "amount_g": 500, "calories": 50}],
+                "is_shared": True,
+            },
+        ).json()
+
+        res = _as(client, logger_).post(
+            "/logs",
+            json={
+                "recipe_id": shared["id"],
+                "food_name": "Shared soup",
+                "amount_g": 100,
+                "calories": 25,
+                "meal": "lunch",
+            },
+        )
+        assert res.status_code == 201
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+def test_cannot_log_a_private_recipe_you_dont_own(client, db_session):
+    import asyncio
+
+    async def _setup():
+        owner = await _make_user(db_session)
+        other = await _make_user(db_session)
+        return owner, other
+
+    owner, other = asyncio.get_event_loop().run_until_complete(_setup())
+    try:
+        private = _as(client, owner).post(
+            "/recipes",
+            json={
+                "name": "Private soup",
+                "servings": 1,
+                "ingredients": [{"food_name": "broth", "amount_g": 500}],
+            },
+        ).json()
+
+        res = _as(client, other).post(
+            "/logs",
+            json={
+                "recipe_id": private["id"],
+                "food_name": "Private soup",
+                "amount_g": 100,
+                "meal": "lunch",
+            },
+        )
+        assert res.status_code == 404
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)

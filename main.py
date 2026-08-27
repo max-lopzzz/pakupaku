@@ -554,7 +554,7 @@ async def create_log(
         recipe_result = await db.execute(
             select(Recipe).where(
                 Recipe.id == payload.recipe_id,
-                Recipe.user_id == current_user.id,
+                (Recipe.user_id == current_user.id) | (Recipe.is_shared == True),  # noqa: E712
             )
         )
         if recipe_result.scalar_one_or_none() is None:
