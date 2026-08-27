@@ -117,6 +117,40 @@ test("discover shows candidate count, extract loads the review queue, save/skip 
   });
 });
 
+test("zero extracted drafts shows a found-0 message instead of an empty saved-count summary", async () => {
+  (global.fetch as jest.Mock).mockImplementation((url: RequestInfo | URL) => {
+    const u = String(url);
+    if (u === "/recipes/bulk-import/discover") {
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ urls: ["https://example.com/recipes/chocolate-cake/"] }),
+      } as Response);
+    }
+    if (u === "/recipes/bulk-import/extract") {
+      return Promise.resolve({ ok: true, json: async () => ({ drafts: [] }) } as Response);
+    }
+    return Promise.reject(new Error(`Unexpected fetch: ${u}`));
+  });
+
+  render(<BulkRecipeImport onBack={() => {}} userProfile={{ is_admin: true }} />);
+
+  fireEvent.change(screen.getByPlaceholderText("https://example.com/recipes/"), {
+    target: { value: "https://example.com/recipes/" },
+  });
+  fireEvent.click(screen.getByText("Find Recipes"));
+
+  await waitFor(() => {
+    expect(screen.getByText("Found 1 candidate link on this page.")).toBeInTheDocument();
+  });
+
+  fireEvent.click(screen.getByText("Extract 1 Recipe"));
+
+  await waitFor(() => {
+    expect(screen.getByText("Found 0 recipes in that batch.")).toBeInTheDocument();
+  });
+  expect(screen.queryByText("Saved 0 of 0.")).not.toBeInTheDocument();
+});
+
 test("zero candidate links shows a message instead of an empty confirm screen", async () => {
   (global.fetch as jest.Mock).mockImplementationOnce((url: RequestInfo | URL) => {
     if (String(url) === "/recipes/bulk-import/discover") {

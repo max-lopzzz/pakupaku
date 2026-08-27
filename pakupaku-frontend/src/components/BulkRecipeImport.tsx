@@ -232,7 +232,9 @@ export default function BulkRecipeImport({ onBack, userProfile }: BulkRecipeImpo
         {step === "summary" && (
           <div className="bulk-import-card">
             <p className="bulk-import-count">
-              Saved {savedCount} of {drafts.length}.
+              {drafts.length === 0
+                ? "Found 0 recipes in that batch."
+                : `Saved ${savedCount} of ${drafts.length}.`}
             </p>
             <button type="button" className="save-recipe-button" onClick={startOver}>
               Import another blog
