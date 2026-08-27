@@ -31,11 +31,12 @@ USDA_API_KEY = os.getenv("USDA_API_KEY")
 
 # ── LLM (recipe import fallback) ──────────────
 # Used only when a blog page has no schema.org/JSON-LD Recipe markup.
-# Any OpenAI-compatible chat-completions endpoint works — Together.ai is
-# the default because it hosts open-weight models behind that API shape.
+# Any OpenAI-compatible chat-completions endpoint works — Groq is the
+# default because it hosts open-weight models behind that API shape with
+# a genuinely free tier (no card/deposit required).
 LLM_API_KEY  = os.getenv("LLM_API_KEY")
-LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.together.xyz/v1")
-LLM_MODEL    = os.getenv("LLM_MODEL", "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo")
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.groq.com/openai/v1")
+LLM_MODEL    = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
 
 # ── Database ──────────────────────────────────
 DATABASE_URL = os.getenv("DATABASE_URL")

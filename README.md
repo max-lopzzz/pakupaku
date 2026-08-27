@@ -66,7 +66,7 @@ Important backend environment variables:
 - `USDA_API_KEY`: USDA FoodData Central API key.
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`: email settings.
 - `LLM_API_KEY`: API key for the LLM used as a fallback when a recipe blog has no schema.org/JSON-LD markup (recipe import feature). Optional — import returns a 503 for that fallback path when unset.
-- `LLM_BASE_URL`: Base URL for the LLM's OpenAI-compatible chat-completions endpoint. Defaults to Together.ai.
+- `LLM_BASE_URL`: Base URL for the LLM's OpenAI-compatible chat-completions endpoint. Defaults to Groq.
 - `LLM_MODEL`: Model name to request from the LLM endpoint.
 
 Desktop builds use `backend_entry.py` to set desktop-specific environment values before importing the app.
