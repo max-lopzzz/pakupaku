@@ -111,6 +111,23 @@ def test_extract_recipe_via_llm_raises_502_on_request_failure(monkeypatch):
     assert exc_info.value.status_code == 502
 
 
+def test_extract_recipe_via_llm_raises_502_on_empty_choices_array(monkeypatch):
+    monkeypatch.setattr(recipe_import, "LLM_API_KEY", "test-key")
+
+    class _EmptyChoicesClient(_FakeAsyncClient):
+        async def post(self, url, headers=None, json=None):
+            _FakeAsyncClient.last_request = {"url": url, "headers": headers, "json": json}
+            return _FakeResponse({"choices": []})
+
+    monkeypatch.setattr(recipe_import.httpx, "AsyncClient", _EmptyChoicesClient)
+
+    import asyncio
+
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(recipe_import.extract_recipe_via_llm("<html></html>"))
+    assert exc_info.value.status_code == 502
+
+
 def test_parse_ingredient_line_via_llm_parses_response(monkeypatch):
     monkeypatch.setattr(recipe_import, "LLM_API_KEY", "test-key")
     _install_fake_client(

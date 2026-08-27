@@ -262,14 +262,29 @@ async def _call_llm_json(system_prompt: str, user_content: str) -> dict:
             )
 
     body = response.json()
-    content = body["choices"][0]["message"]["content"]
     try:
-        return json.loads(content)
+        content = body["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError):
+        raise HTTPException(
+            status_code=502,
+            detail="Recipe import's LLM returned an unexpected response shape.",
+        )
+
+    try:
+        parsed = json.loads(content)
     except json.JSONDecodeError:
         raise HTTPException(
             status_code=502,
             detail="Recipe import's LLM returned an unparseable response.",
         )
+
+    if not isinstance(parsed, dict):
+        raise HTTPException(
+            status_code=502,
+            detail="Recipe import's LLM returned an unexpected response shape.",
+        )
+
+    return parsed
 
 
 def _visible_text(html: str, max_chars: int = 8000) -> str:
