@@ -1,32 +1,46 @@
 """
 email_utils.py
 --------------
-Async email sending for PakuPaku using aiosmtplib.
+Async email sending for PakuPaku via Resend's HTTPS API.
+
+Previously used aiosmtplib to talk to smtp.gmail.com directly. Switched
+because several common hosts (Render's free tier among them) block
+outbound SMTP on all the usual ports (25/465/587) to prevent spam abuse
+— the connection just times out, no amount of correct credentials fixes
+it. Resend's API is plain HTTPS, which isn't blocked.
 """
 
-import aiosmtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+import httpx
 from urllib.parse import quote
 
 from config import (
     BACKEND_PUBLIC_URL,
     FRONTEND_URL,
-    SMTP_FROM,
-    SMTP_HOST,
-    SMTP_PASSWORD,
-    SMTP_PORT,
-    SMTP_USER,
+    RESEND_API_KEY,
+    RESEND_FROM_EMAIL,
 )
+
+RESEND_API_URL = "https://api.resend.com/emails"
+
+
+async def _send(to_email: str, subject: str, text: str, html: str) -> None:
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.post(
+            RESEND_API_URL,
+            headers={"Authorization": f"Bearer {RESEND_API_KEY}"},
+            json={
+                "from": RESEND_FROM_EMAIL,
+                "to": [to_email],
+                "subject": subject,
+                "text": text,
+                "html": html,
+            },
+        )
+        response.raise_for_status()
 
 
 async def send_verification_email(to_email: str, token: str) -> None:
     verify_url = f"{BACKEND_PUBLIC_URL}/auth/verify-email?token={quote(token)}"
-
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = "Verify your PakuPaku account"
-    msg["From"]    = SMTP_FROM
-    msg["To"]      = to_email
 
     text = f"""\
 Hi there!
@@ -60,17 +74,7 @@ If you didn't create an account, you can safely ignore this email.
 </body></html>
 """
 
-    msg.attach(MIMEText(text, "plain"))
-    msg.attach(MIMEText(html, "html"))
-
-    async with aiosmtplib.SMTP(
-        hostname=SMTP_HOST,
-        port=SMTP_PORT,
-        username=SMTP_USER,
-        password=SMTP_PASSWORD,
-        start_tls=True,
-    ) as smtp:
-        await smtp.send_message(msg)
+    await _send(to_email, "Verify your PakuPaku account", text, html)
 
 
 async def send_password_reset_email(to_email: str, token: str) -> None:
@@ -78,11 +82,6 @@ async def send_password_reset_email(to_email: str, token: str) -> None:
     # the user to type a new one, so this can't be a simple GET-and-redirect
     # the way email verification is.
     reset_url = f"{FRONTEND_URL}/?reset={quote(token)}"
-
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = "Reset your PakuPaku password"
-    msg["From"]    = SMTP_FROM
-    msg["To"]      = to_email
 
     text = f"""\
 Hi there!
@@ -119,14 +118,4 @@ safely ignore this email — your password won't be changed.
 </body></html>
 """
 
-    msg.attach(MIMEText(text, "plain"))
-    msg.attach(MIMEText(html, "html"))
-
-    async with aiosmtplib.SMTP(
-        hostname=SMTP_HOST,
-        port=SMTP_PORT,
-        username=SMTP_USER,
-        password=SMTP_PASSWORD,
-        start_tls=True,
-    ) as smtp:
-        await smtp.send_message(msg)
+    await _send(to_email, "Reset your PakuPaku password", text, html)

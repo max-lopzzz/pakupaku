@@ -64,7 +64,7 @@ Important backend environment variables:
 - `BACKEND_PUBLIC_URL`: public backend base URL used in verification links.
 - `CORS_ALLOWED_ORIGINS`: comma-separated list of allowed browser origins.
 - `USDA_API_KEY`: USDA FoodData Central API key.
-- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`: email settings.
+- `RESEND_API_KEY`, `RESEND_FROM_EMAIL`: email settings — sent via Resend's HTTPS API rather than SMTP, since several common hosts block outbound SMTP.
 - `LLM_API_KEY`: API key for the LLM used as a fallback when a recipe blog has no schema.org/JSON-LD markup (recipe import feature). Optional — import returns a 503 for that fallback path when unset.
 - `LLM_BASE_URL`: Base URL for the LLM's OpenAI-compatible chat-completions endpoint. Defaults to Groq.
 - `LLM_MODEL`: Model name to request from the LLM endpoint.

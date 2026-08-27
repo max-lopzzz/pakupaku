@@ -63,8 +63,15 @@ Do these in order — each later step needs a value from the one before it.
    - `SECRET_KEY` — generate with
      `python3 -c "import secrets; print(secrets.token_hex(32))"` on your
      own machine; paste the output. Do not reuse any local-dev value.
-   - `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` — same Gmail
-     App Password already used for local dev.
+   - `RESEND_API_KEY`, `RESEND_FROM_EMAIL` — sign up free at
+     https://resend.com and get an API key from the dashboard. Direct
+     SMTP (the original design) doesn't work here: Render's free tier
+     blocks outbound SMTP entirely to prevent spam abuse (confirmed
+     live — registration succeeded but email sending failed with
+     `SMTPConnectTimeoutError`); Resend's API is plain HTTPS, which
+     isn't blocked. `RESEND_FROM_EMAIL` can stay at its default
+     (`PakuPaku <onboarding@resend.dev>`, Resend's shared sender —
+     works immediately, no domain verification needed).
    - `USDA_API_KEY` — your existing key.
    - `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` — optional. Only needed
      for the recipe-import LLM fallback path (used when a blog page
