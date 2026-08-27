@@ -188,9 +188,13 @@ function VerifyEmailGate({ email, justVerified, onVerified }: {
 }) {
   const [resendState, setResendState] = useState<"idle" | "sending" | "sent" | "error">("idle");
 
-  // If the page loaded with ?verified=true, proceed immediately
+  // If the page loaded with ?verified=true, proceed immediately. Only
+  // justVerified should retrigger this — onVerified is a fresh closure
+  // on every parent render, so including it would fire this on every
+  // re-render instead of just the justVerified transition.
   useEffect(() => {
     if (justVerified) onVerified();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [justVerified]);
 
   const handleResend = async () => {

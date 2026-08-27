@@ -784,8 +784,6 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
         <section className="body-stats-section">
           <h2 className="section-title">Body Statistics</h2>
           {(() => {
-            const latest = measurements.length > 0 ? measurements[measurements.length - 1] : null;
-
             // Age: calculate from birthday if available, otherwise fall back to stored age
             let age: string = "N/A";
             if (userProfile?.birthday) {
