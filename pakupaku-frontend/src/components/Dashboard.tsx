@@ -119,6 +119,7 @@ interface DashboardProps {
   onOpenRecipeBuilder: () => void;
   onOpenSettings: () => void;
   onOpenSharedRecipes: () => void;
+  onOpenBulkImport: () => void;
 }
 
 // ─── FoodLogInput component ───────────────────────────────
@@ -429,7 +430,7 @@ function CustomFoodInput({ category, logDate, onLogged }: CustomFoodInputProps) 
 
 // ─── Main component ───────────────────────────────────────
 
-export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuilder, onOpenSettings, onOpenSharedRecipes }: DashboardProps) {
+export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuilder, onOpenSettings, onOpenSharedRecipes, onOpenBulkImport }: DashboardProps) {
   const [meals, setMeals] = useState<Meal[]>([]);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [selectedRecipe, setSelectedRecipe] = useState<{ [key in MealCategory]: string }>({
@@ -680,6 +681,9 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
               Create recipe
             </button>
             <button type="button" className="secondary-button" onClick={onOpenSharedRecipes}>Shared recipes</button>
+            {userProfile?.is_admin && (
+              <button type="button" className="secondary-button" onClick={onOpenBulkImport}>Bulk Import</button>
+            )}
             <button type="button" className="secondary-button" onClick={onOpenSettings}>
               Settings
             </button>
