@@ -11,7 +11,7 @@ Route groups:
   /recipes    — custom recipe CRUD
 """
 
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import Optional, List
 import uuid
 import secrets
@@ -29,6 +29,7 @@ from database import get_db
 from models import User, FoodLog, Recipe, RecipeIngredient, BodyMeasurement
 from schemas import (
     RegisterRequest, LoginRequest, TokenResponse,
+    ForgotPasswordRequest, ResetPasswordRequest,
     UserResponse, UserUpdateRequest,
     NutritionProfileRequest, NutritionProfileResponse, CustomGoalsRequest,
     FoodLogCreateRequest, FoodLogResponse, DailySummaryResponse,
@@ -37,7 +38,7 @@ from schemas import (
     BodyMeasurementCreate, BodyMeasurementResponse,
 )
 from auth import hash_password, verify_password, create_access_token, get_current_user
-from email_utils import send_verification_email
+from email_utils import send_verification_email, send_password_reset_email
 from config import CORS_ALLOWED_ORIGINS, FRONTEND_URL, SECRET_KEY
 
 logger = logging.getLogger(__name__)
@@ -183,6 +184,58 @@ async def resend_verification(
     except Exception as exc:
         logger.warning("Could not send verification email: %s", exc)
         raise HTTPException(status_code=503, detail="Could not send email. Please try again later.")
+
+
+RESET_TOKEN_LIFETIME = timedelta(hours=1)
+
+
+@app.post("/auth/forgot-password", status_code=status.HTTP_204_NO_CONTENT)
+async def forgot_password(
+    payload: ForgotPasswordRequest,
+    db:      AsyncSession = Depends(get_db),
+):
+    """
+    Send a password reset email if the address is registered.
+
+    Always returns the same response whether or not the email exists —
+    revealing that would let anyone enumerate registered accounts.
+    """
+    email = _normalize_email(payload.email)
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+
+    if user:
+        user.reset_token = secrets.token_hex(32)
+        user.reset_token_expires_at = datetime.utcnow() + RESET_TOKEN_LIFETIME
+        await db.flush()
+        try:
+            await send_password_reset_email(user.email, user.reset_token)
+        except Exception as exc:
+            # Deliberately not surfaced to the caller — a different response
+            # here would leak whether this email has an account.
+            logger.warning("Could not send password reset email: %s", exc)
+
+
+@app.post("/auth/reset-password", status_code=status.HTTP_204_NO_CONTENT)
+async def reset_password(
+    payload: ResetPasswordRequest,
+    db:      AsyncSession = Depends(get_db),
+):
+    """Consume a password reset token and set a new password."""
+    result = await db.execute(select(User).where(User.reset_token == payload.token))
+    user = result.scalar_one_or_none()
+
+    if (
+        not user
+        or user.reset_token_expires_at is None
+        or user.reset_token_expires_at < datetime.utcnow()
+    ):
+        raise HTTPException(status_code=400, detail="Invalid or expired reset link.")
+
+    user.hashed_password = hash_password(payload.new_password)
+    user.reset_token = None
+    user.reset_token_expires_at = None
+    await db.flush()
 
 
 # ─────────────────────────────────────────────
