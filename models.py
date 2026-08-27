@@ -103,6 +103,7 @@ class User(Base):
         Boolean, default=False, nullable=False
     )
     # If True, calorie numbers are hidden in the frontend
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # ── Biometrics ────────────────────────────
     weight_kg: Mapped[Optional[float]]  = mapped_column(Float,   nullable=True)
@@ -255,6 +256,12 @@ class Recipe(Base):
     updated_at:  Mapped[datetime]   = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
+
+    image_url:    Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
+    source_url:   Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
+    instructions: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    diet_tags:    Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    is_shared:    Mapped[bool]          = mapped_column(Boolean, default=False, nullable=False)
 
     # ── Totals (per serving, auto-calculated) ─
     # Computed from ingredients and cached here for fast retrieval.

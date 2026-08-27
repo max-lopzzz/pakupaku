@@ -554,7 +554,7 @@ async def create_log(
         recipe_result = await db.execute(
             select(Recipe).where(
                 Recipe.id == payload.recipe_id,
-                Recipe.user_id == current_user.id,
+                (Recipe.user_id == current_user.id) | (Recipe.is_shared == True),  # noqa: E712
             )
         )
         if recipe_result.scalar_one_or_none() is None:
@@ -681,6 +681,10 @@ async def delete_log(
 #  RECIPE ROUTES
 # ─────────────────────────────────────────────
 
+def _diet_tags_to_str(tags: Optional[List[str]]) -> Optional[str]:
+    return ",".join(tags) if tags else None
+
+
 def _compute_recipe_totals(ingredients, servings: float) -> dict:
     """Sum nutrient values across all ingredients and divide by servings."""
     def safe_sum(field):
@@ -704,10 +708,15 @@ async def create_recipe(
 ):
     """Create a new custom recipe with ingredients."""
     recipe = Recipe(
-        user_id     = current_user.id,
-        name        = payload.name,
-        description = payload.description,
-        servings    = payload.servings,
+        user_id      = current_user.id,
+        name         = payload.name,
+        description  = payload.description,
+        servings     = payload.servings,
+        image_url    = payload.image_url,
+        source_url   = payload.source_url,
+        instructions = payload.instructions,
+        diet_tags    = _diet_tags_to_str(payload.diet_tags),
+        is_shared    = bool(payload.is_shared) and current_user.is_admin,
     )
     db.add(recipe)
     await db.flush()   # assigns recipe.id
@@ -777,6 +786,90 @@ async def list_recipes(
     return result.scalars().all()
 
 
+@app.get("/recipes/shared", response_model=List[RecipeResponse])
+async def list_shared_recipes(
+    current_user: User         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+):
+    """Every admin-curated shared recipe, for any logged-in user."""
+    result = await db.execute(
+        select(Recipe)
+        .where(Recipe.is_shared == True)  # noqa: E712  (SQLAlchemy needs == True, not `is True`)
+        .order_by(Recipe.created_at.desc())
+        .options(selectinload(Recipe.ingredients))
+    )
+    return result.scalars().all()
+
+
+@app.post("/recipes/{recipe_id}/copy", response_model=RecipeResponse, status_code=status.HTTP_201_CREATED)
+async def copy_recipe(
+    recipe_id:    uuid.UUID,
+    current_user: User         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+):
+    """Save an independent personal copy of a recipe you own or that's shared."""
+    result = await db.execute(
+        select(Recipe)
+        .where(
+            Recipe.id == recipe_id,
+            (Recipe.user_id == current_user.id) | (Recipe.is_shared == True),  # noqa: E712
+        )
+        .options(selectinload(Recipe.ingredients))
+    )
+    source = result.scalar_one_or_none()
+    if not source:
+        raise HTTPException(status_code=404, detail="Recipe not found.")
+
+    copy = Recipe(
+        user_id      = current_user.id,
+        name         = source.name,
+        description  = source.description,
+        servings     = source.servings,
+        image_url    = source.image_url,
+        source_url   = source.source_url,
+        instructions = source.instructions,
+        diet_tags    = source.diet_tags,
+        is_shared    = False,
+    )
+    db.add(copy)
+    await db.flush()
+
+    ingredient_objs = []
+    for ing in source.ingredients:
+        obj = RecipeIngredient(
+            recipe_id  = copy.id,
+            fdc_id     = ing.fdc_id,
+            food_name  = ing.food_name,
+            brand_name = ing.brand_name,
+            amount_g   = ing.amount_g,
+            calories   = ing.calories,
+            protein_g  = ing.protein_g,
+            fat_g      = ing.fat_g,
+            carbs_g    = ing.carbs_g,
+            fiber_g    = ing.fiber_g,
+        )
+        db.add(obj)
+        ingredient_objs.append(obj)
+
+    await db.flush()
+
+    totals = _compute_recipe_totals(ingredient_objs, copy.servings)
+    copy.total_calories  = totals["total_calories"]
+    copy.total_protein_g = totals["total_protein_g"]
+    copy.total_fat_g     = totals["total_fat_g"]
+    copy.total_carbs_g   = totals["total_carbs_g"]
+    copy.total_fiber_g   = totals["total_fiber_g"]
+
+    await db.flush()
+
+    result = await db.execute(
+        select(Recipe)
+        .where(Recipe.id == copy.id)
+        .options(selectinload(Recipe.ingredients))
+    )
+    return result.scalar_one()
+
+
 @app.get("/recipes/{recipe_id}", response_model=RecipeResponse)
 async def get_recipe(
     recipe_id:    uuid.UUID,
@@ -815,6 +908,13 @@ async def update_recipe(
     if payload.name        is not None: recipe.name        = payload.name
     if payload.description is not None: recipe.description = payload.description
     if payload.servings    is not None: recipe.servings    = payload.servings
+
+    if payload.image_url    is not None: recipe.image_url    = payload.image_url
+    if payload.source_url   is not None: recipe.source_url   = payload.source_url
+    if payload.instructions is not None: recipe.instructions = payload.instructions
+    if payload.diet_tags    is not None: recipe.diet_tags    = _diet_tags_to_str(payload.diet_tags)
+    if payload.is_shared    is not None:
+        recipe.is_shared = bool(payload.is_shared) and current_user.is_admin
 
     if payload.ingredients is not None:
         # Delete existing ingredients and replace

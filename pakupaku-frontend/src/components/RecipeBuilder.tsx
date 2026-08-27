@@ -166,6 +166,11 @@ interface RecipeResponse {
   total_fat_g?:    number;
   total_carbs_g?:  number;
   total_fiber_g?:  number;
+  image_url?:    string | null;
+  source_url?:   string | null;
+  instructions?: string | null;
+  diet_tags?:    string[];
+  is_shared?:    boolean;
   ingredients: SavedIngredient[];
 }
 
@@ -191,6 +196,7 @@ interface RecipeImportDraft {
   image_url:   string | null;
   ingredients: ImportedIngredient[];
   source_url:  string;
+  instructions?: string | null;
 }
 
 function rowFromImportedIngredient(ing: ImportedIngredient): IngredientRow {
@@ -216,11 +222,25 @@ function rowFromImportedIngredient(ing: ImportedIngredient): IngredientRow {
 
 interface RecipeBuilderProps {
   onBack: () => void;
+  userProfile: any;
+}
+
+const DIET_TAGS = [
+  "vegan", "vegetarian", "pescatarian", "flexitarian",
+  "gluten_free", "dairy_free", "nut_free", "soy_free", "egg_free", "shellfish_free",
+  "keto", "low_carb", "paleo", "whole30", "low_fodmap", "diabetic_friendly",
+  "low_sodium", "low_fat", "high_protein",
+  "halal", "kosher",
+  "mediterranean", "dash",
+];
+
+function toggleDietTag(tags: string[], tag: string): string[] {
+  return tags.includes(tag) ? tags.filter(t => t !== tag) : [...tags, tag];
 }
 
 // ─── Main component ───────────────────────────────────────
 
-export default function RecipeBuilder({ onBack }: RecipeBuilderProps) {
+export default function RecipeBuilder({ onBack, userProfile }: RecipeBuilderProps) {
   const [name, setName]             = useState("");
   const [description, setDescription] = useState("");
   const [servings, setServings]     = useState("1");
@@ -233,6 +253,11 @@ export default function RecipeBuilder({ onBack }: RecipeBuilderProps) {
   const [importUrl, setImportUrl]           = useState("");
   const [importing, setImporting]           = useState(false);
   const [importImageUrl, setImportImageUrl] = useState<string | null>(null);
+  const [imageUrl, setImageUrl]     = useState("");
+  const [sourceUrl, setSourceUrl]   = useState("");
+  const [instructions, setInstructions] = useState("");
+  const [dietTags, setDietTags]     = useState<string[]>([]);
+  const [isShared, setIsShared]     = useState(false);
 
   const fetchRecipes = async () => {
     try {
@@ -266,6 +291,11 @@ export default function RecipeBuilder({ onBack }: RecipeBuilderProps) {
     setName(recipe.name);
     setDescription(recipe.description ?? "");
     setServings(String(recipe.servings));
+    setImageUrl(recipe.image_url ?? "");
+    setSourceUrl(recipe.source_url ?? "");
+    setInstructions(recipe.instructions ?? "");
+    setDietTags(recipe.diet_tags ?? []);
+    setIsShared(recipe.is_shared ?? false);
     setError("");
     setMessage("");
     // Reconstruct ingredient rows from saved data — nutrients are already
@@ -303,6 +333,8 @@ export default function RecipeBuilder({ onBack }: RecipeBuilderProps) {
     setName(""); setDescription(""); setServings("1");
     setIngredients([blankRow()]);
     setImportImageUrl(null);
+    setImageUrl(""); setSourceUrl(""); setInstructions("");
+    setDietTags([]); setIsShared(false);
     setError(""); setMessage("");
   };
 
@@ -333,6 +365,9 @@ export default function RecipeBuilder({ onBack }: RecipeBuilderProps) {
       setServings(String(draft.servings));
       setDescription("");
       setImportImageUrl(draft.image_url);
+      setImageUrl(draft.image_url ?? "");
+      setSourceUrl(draft.source_url ?? "");
+      setInstructions(draft.instructions ?? "");
       setIngredients(
         draft.ingredients.length > 0
           ? draft.ingredients.map(rowFromImportedIngredient)
@@ -364,9 +399,14 @@ export default function RecipeBuilder({ onBack }: RecipeBuilderProps) {
     }
 
     const payload = {
-      name:        name.trim(),
-      description: description.trim() || undefined,
-      servings:    parseFloat(servings) || 1,
+      name:         name.trim(),
+      description:  description.trim() || undefined,
+      servings:     parseFloat(servings) || 1,
+      image_url:    imageUrl.trim(),
+      source_url:   sourceUrl.trim(),
+      instructions: instructions.trim(),
+      diet_tags:    dietTags,
+      is_shared:    isShared,
       ingredients: valid.map(r => {
         const amount_g = toGrams(r.amount, r.unit, r.portionsMap);
         return {
@@ -415,6 +455,8 @@ export default function RecipeBuilder({ onBack }: RecipeBuilderProps) {
       setName(""); setDescription(""); setServings("1");
       setIngredients([blankRow()]);
       setImportImageUrl(null);
+      setImageUrl(""); setSourceUrl(""); setInstructions("");
+      setDietTags([]); setIsShared(false);
     } catch (err: any) {
       setError(err.message || "Unable to save recipe.");
     } finally {
@@ -486,6 +528,54 @@ export default function RecipeBuilder({ onBack }: RecipeBuilderProps) {
               <input type="number" min="1" step="0.5" value={servings}
                 onChange={e => setServings(e.target.value)} />
             </label>
+            <label className="recipe-field">
+              <span>Image URL</span>
+              <input type="url" value={imageUrl}
+                onChange={e => setImageUrl(e.target.value)}
+                placeholder="https://example.com/photo.jpg" />
+            </label>
+            <label className="recipe-field">
+              <span>Source link</span>
+              <input type="url" value={sourceUrl}
+                onChange={e => setSourceUrl(e.target.value)}
+                placeholder="https://example.com/original-recipe" />
+            </label>
+            <label className="recipe-field">
+              <span>Instructions</span>
+              <textarea value={instructions}
+                onChange={e => setInstructions(e.target.value)}
+                placeholder={"One step per line\ne.g.\nHeat the broth.\nSeason and serve."} />
+            </label>
+            <div className="recipe-field">
+              <span>Diet tags</span>
+              <div className="diet-tags-grid">
+                {DIET_TAGS.map(tag => (
+                  <label key={tag} className="diet-tag-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={dietTags.includes(tag)}
+                      onChange={() => setDietTags(prev => toggleDietTag(prev, tag))}
+                    />
+                    {tag.replace(/_/g, " ")}
+                  </label>
+                ))}
+              </div>
+            </div>
+            {userProfile?.is_admin && (
+              <div className="recipe-field recipe-field-inline recipe-shared-toggle">
+                <span>Share in the shared recipe library</span>
+                <label className="toggle-switch">
+                  <input
+                    type="checkbox"
+                    checked={isShared}
+                    onChange={e => setIsShared(e.target.checked)}
+                  />
+                  <span className="toggle-track">
+                    <span className="toggle-thumb" />
+                  </span>
+                </label>
+              </div>
+            )}
 
             <div className="ingredient-section">
               <div className="section-heading">
@@ -556,6 +646,28 @@ export default function RecipeBuilder({ onBack }: RecipeBuilderProps) {
                     <span>{recipe.servings} serving{recipe.servings !== 1 ? "s" : ""}</span>
                   </div>
                   {recipe.description && <p>{recipe.description}</p>}
+                  {recipe.image_url && (
+                    <img src={recipe.image_url} alt="" className="saved-recipe-image" />
+                  )}
+                  {recipe.diet_tags && recipe.diet_tags.length > 0 && (
+                    <div className="saved-recipe-tags">
+                      {recipe.diet_tags.map(tag => (
+                        <span key={tag} className="diet-tag-pill">{tag.replace(/_/g, " ")}</span>
+                      ))}
+                    </div>
+                  )}
+                  {recipe.instructions && (
+                    <ol className="saved-recipe-instructions">
+                      {recipe.instructions.split("\n").filter(Boolean).map((step, i) => (
+                        <li key={i}>{step}</li>
+                      ))}
+                    </ol>
+                  )}
+                  {recipe.source_url && (
+                    <a href={recipe.source_url} target="_blank" rel="noreferrer" className="saved-recipe-source-link">
+                      View original
+                    </a>
+                  )}
                   <div className="saved-recipe-stats">
                     <span>{recipe.total_calories != null ? Math.round(recipe.total_calories) : "—"} cal</span>
                     <span>{recipe.total_protein_g != null ? Math.round(recipe.total_protein_g) : "—"}g P</span>

@@ -1,0 +1,172 @@
+/* ── Root ────────────────────────────────────────────────── */
+.shared-recipes-root {
+  min-height: 100vh;
+  padding: 2rem 1rem;
+  font-family: "MorningBreeze";
+}
+
+.shared-recipes-container {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.shared-recipes-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+/* .back-button is already defined globally by RecipeBuilder.css
+   (statically imported from App.tsx, so it's always in the bundle) -
+   reused as-is rather than redefined here to avoid a second,
+   possibly-diverging rule for the same class name. */
+
+.shared-recipes-title {
+  font-size: 2rem;
+  margin: 0;
+  color: #3a2a2a;
+}
+
+.shared-recipes-error,
+.shared-recipes-message {
+  font-family: "MorningBreeze";
+  margin: 0 0 1rem;
+}
+
+.shared-recipes-error {
+  color: #c0607a;
+}
+
+.shared-recipes-message {
+  color: #3a2a2a;
+}
+
+/* .empty-state is already defined globally by RecipeBuilder.css -
+   reused as-is for the same reason as .back-button above. */
+
+/* ── Grid / cards ─────────────────────────────────────────── */
+.shared-recipes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1rem;
+}
+
+.shared-recipe-card {
+  background: #ffffff;
+  border-radius: 20px;
+  border: 2px solid #badfdb;
+  box-shadow: 0 4px 20px rgba(186, 223, 219, 0.18);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.shared-recipe-card h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #3a2a2a;
+}
+
+.shared-recipe-card > span {
+  color: #8a6060;
+  font-size: 0.9rem;
+}
+
+/* Constrained so an image with an unusual aspect ratio can never grow
+   the card beyond this box: fixed height + object-fit: cover crops to
+   fill rather than stretching or overflowing. */
+.shared-recipe-image {
+  display: block;
+  width: 100%;
+  height: 140px;
+  max-height: 140px;
+  object-fit: cover;
+  border-radius: 12px;
+}
+
+.shared-recipe-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+/* .diet-tag-pill is already defined globally by RecipeBuilder.css -
+   reused as-is for the same reason as .back-button above. */
+
+/* .saved-recipe-instructions and .saved-recipe-source-link are also
+   already defined globally by RecipeBuilder.css - reused as-is for the
+   same reason as .back-button above. */
+
+.shared-recipe-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.shared-recipe-actions button {
+  flex: 1;
+  border: 2px solid #badfdb;
+  background: transparent;
+  color: #3a2a2a;
+  border-radius: 10px;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  font-family: "MorningBreeze";
+  font-size: 0.85rem;
+}
+
+.shared-recipe-actions button:hover {
+  background: #eaf5f3;
+}
+
+/* ── Inline log-now form ─────────────────────────────────── */
+.log-recipe-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border-top: 1px solid #eaf5f3;
+  padding-top: 0.5rem;
+}
+
+.log-recipe-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: #8a6060;
+}
+
+.log-recipe-form input,
+.log-recipe-form select {
+  width: 100%;
+  box-sizing: border-box;
+  border: 2px solid #badfdb;
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem;
+  font-family: "MorningBreeze";
+  color: #3a2a2a;
+  background: transparent;
+}
+
+.log-recipe-form button {
+  border: none;
+  background: #badfdb;
+  color: #3a2a2a;
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem;
+  cursor: pointer;
+  font-family: "MorningBreeze";
+  font-weight: 700;
+}
+
+.log-recipe-form button:hover {
+  opacity: 0.95;
+}
+
+@media (max-width: 640px) {
+  .shared-recipes-root {
+    padding: 1rem 0.75rem;
+  }
+}

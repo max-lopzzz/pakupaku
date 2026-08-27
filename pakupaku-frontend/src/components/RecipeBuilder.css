@@ -549,3 +549,135 @@
   border-radius: 8px;
   margin-top: 0.75rem;
 }
+
+/* ── Diet tags checkbox grid ─────────────────────────────── */
+.diet-tags-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.5rem;
+}
+
+.diet-tag-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: #3a2a2a;
+  cursor: pointer;
+}
+
+.diet-tag-checkbox input[type="checkbox"] {
+  accent-color: #badfdb;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+/* ── is_shared toggle row (admin-only) ───────────────────── */
+.recipe-shared-toggle {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 360px;
+}
+
+/* ── Toggle switch (matches Settings.tsx's .toggle-switch pattern) ── */
+.toggle-switch {
+  position: relative;
+  display: inline-flex;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-switch input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-track {
+  position: relative;
+  display: inline-block;
+  width: 48px;
+  height: 28px;
+  background: #e0d8d8;
+  border-radius: 999px;
+  transition: background 0.2s;
+}
+
+.toggle-switch input:checked + .toggle-track {
+  background: #badfdb;
+}
+
+.toggle-switch input:disabled + .toggle-track {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.toggle-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  background: #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.18);
+  transition: transform 0.2s;
+}
+
+.toggle-switch input:checked + .toggle-track .toggle-thumb {
+  transform: translateX(20px);
+}
+
+/* ── Saved-recipe card detail rendering ──────────────────── */
+.saved-recipe-image {
+  display: block;
+  width: 100%;
+  max-height: 160px;
+  object-fit: cover;
+  border-radius: 12px;
+  margin-top: 0.5rem;
+}
+
+.saved-recipe-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+.diet-tag-pill {
+  display: inline-flex;
+  padding: 0.3rem 0.7rem;
+  background: #eaf5f3;
+  color: #3a2a2a;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.saved-recipe-instructions {
+  margin: 0.75rem 0 0;
+  padding-left: 1.2rem;
+  color: #3a2a2a;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.saved-recipe-instructions li {
+  margin-bottom: 0.3rem;
+}
+
+.saved-recipe-source-link {
+  display: inline-block;
+  margin-top: 0.5rem;
+  color: #8a6060;
+  font-size: 0.85rem;
+  text-decoration: underline;
+}
+
+.saved-recipe-source-link:hover {
+  color: #ffbdbd;
+}
