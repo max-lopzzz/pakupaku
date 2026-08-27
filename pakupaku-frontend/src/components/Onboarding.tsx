@@ -1,12 +1,6 @@
 import { useState } from "react";
 import "./Onboarding.css";
 
-import puppyBlush   from "../assets/images/puppy_blush.png";
-import puppyNervous from "../assets/images/puppy_nervous.png";
-import puppyCheer   from "../assets/images/puppy_cheer.png";
-import puppyStrong  from "../assets/images/puppy_strong.png";
-import puppySparkle from "../assets/images/puppy_sparkle.png";
-import puppyProud   from "../assets/images/puppy_proud.png";
 import puppyNotes   from "../assets/images/puppy_notes.gif";
 import { apiFetch } from "../apiBase";
 
@@ -95,18 +89,18 @@ const CONDITIONS_LIST = [
 ];
 
 const STEP_MASCOT: Record<Step, { img: string; mood: string }> = {
-  welcome:      { img: puppyNotes,   mood: "notes" },
-  dietitian:    { img: puppyNotes,   mood: "notes" },
-  biometrics:   { img: puppyNotes,   mood: "notes" },
-  hormonal:     { img: puppySparkle, mood: "sparkle" },
-  hrt:          { img: puppyNervous, mood: "nervous" },
-  bodyshape:    { img: puppyNotes,   mood: "notes" },
-  measurements: { img: puppyStrong,  mood: "strong" },
-  activity:     { img: puppyCheer,   mood: "cheer" },
-  goal:         { img: puppySparkle, mood: "sparkle" },
-  pace:         { img: puppyNervous, mood: "nervous" },
-  conditions:   { img: puppyBlush,   mood: "blush" },
-  done:         { img: puppyProud,   mood: "proud" },
+  welcome:      { img: puppyNotes, mood: "notes" },
+  dietitian:    { img: puppyNotes, mood: "notes" },
+  biometrics:   { img: puppyNotes, mood: "notes" },
+  hormonal:     { img: puppyNotes, mood: "notes" },
+  hrt:          { img: puppyNotes, mood: "notes" },
+  bodyshape:    { img: puppyNotes, mood: "notes" },
+  measurements: { img: puppyNotes, mood: "notes" },
+  activity:     { img: puppyNotes, mood: "notes" },
+  goal:         { img: puppyNotes, mood: "notes" },
+  pace:         { img: puppyNotes, mood: "notes" },
+  conditions:   { img: puppyNotes, mood: "notes" },
+  done:         { img: puppyNotes, mood: "notes" },
 };
 
 // ─── Main component ───────────────────────────────────────
