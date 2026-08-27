@@ -490,3 +490,19 @@ class RecipeImportDraft(BaseModel):
     instructions: Optional[str] = None
     ingredients:  List[ImportedIngredient]
     source_url:   str
+
+
+class BulkDiscoverRequest(BaseModel):
+    url: str
+
+
+class BulkDiscoverResponse(BaseModel):
+    urls: List[str]
+
+
+class BulkExtractRequest(BaseModel):
+    urls: List[str]
+
+
+class BulkExtractResponse(BaseModel):
+    drafts: List[RecipeImportDraft]

@@ -35,6 +35,7 @@ from schemas import (
     FoodLogCreateRequest, FoodLogResponse, DailySummaryResponse,
     RecipeCreateRequest, RecipeUpdateRequest, RecipeResponse,
     ImportRecipeRequest, RecipeImportDraft,
+    BulkDiscoverRequest, BulkDiscoverResponse, BulkExtractRequest, BulkExtractResponse,
     BodyMeasurementCreate, BodyMeasurementResponse,
 )
 from auth import hash_password, verify_password, create_access_token, get_current_user
@@ -44,6 +45,7 @@ from config import CORS_ALLOWED_ORIGINS, FRONTEND_URL, SECRET_KEY
 logger = logging.getLogger(__name__)
 from usda import search_foods, get_food, get_foods_bulk, extract_nutrients
 from recipe_import import build_import_draft
+from recipe_bulk_import import discover_recipe_links, bulk_extract_drafts
 from nutrition_calculator import (
     calc_body_fat_navy, calc_bmr, interpolate_bmr_hrt,
     apply_metabolic_conditions, calc_tdee, calc_goal_adjustment,
@@ -769,6 +771,42 @@ async def import_recipe(
     recipe builder for review before the user calls POST /recipes.
     """
     return await build_import_draft(payload.url)
+
+
+@app.post("/recipes/bulk-import/discover", response_model=BulkDiscoverResponse)
+async def bulk_import_discover(
+    payload:      BulkDiscoverRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Fetch a blog index/archive URL and return the same-domain links on it
+    that look like individual recipe posts. Nothing is fetched beyond
+    this one page — the frontend shows the count and asks the admin to
+    confirm before POST /recipes/bulk-import/extract actually runs the
+    (potentially slow) extraction pass over them.
+    """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required.")
+    urls = await discover_recipe_links(payload.url)
+    return BulkDiscoverResponse(urls=urls)
+
+
+@app.post("/recipes/bulk-import/extract", response_model=BulkExtractResponse)
+async def bulk_import_extract(
+    payload:      BulkExtractRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Run the same extraction pipeline as POST /recipes/import over every
+    URL in payload.urls, concurrency-bounded. URLs with no recipe found
+    are silently dropped. Nothing is saved — the frontend opens the
+    resulting drafts in a one-at-a-time review queue before calling
+    POST /recipes for each one the admin keeps.
+    """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required.")
+    drafts = await bulk_extract_drafts(payload.urls)
+    return BulkExtractResponse(drafts=drafts)
 
 
 @app.get("/recipes", response_model=List[RecipeResponse])
