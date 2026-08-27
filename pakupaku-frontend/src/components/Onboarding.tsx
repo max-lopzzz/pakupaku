@@ -4,11 +4,11 @@ import "./Onboarding.css";
 import puppyWave    from "../assets/images/puppy_wave.png";
 import puppyBlush   from "../assets/images/puppy_blush.png";
 import puppyNervous from "../assets/images/puppy_nervous.png";
-import puppyShock   from "../assets/images/puppy_shock.png";
 import puppyCheer   from "../assets/images/puppy_cheer.png";
 import puppyStrong  from "../assets/images/puppy_strong.png";
 import puppySparkle from "../assets/images/puppy_sparkle.png";
 import puppyProud   from "../assets/images/puppy_proud.png";
+import puppyNotes   from "../assets/images/puppy_notes.gif";
 
 // All UI assets are served from /public — no webpack imports needed
 const PUB         = process.env.PUBLIC_URL || "";
@@ -97,10 +97,10 @@ const CONDITIONS_LIST = [
 const STEP_MASCOT: Record<Step, { img: string; mood: string }> = {
   welcome:      { img: puppyWave,    mood: "wave" },
   dietitian:    { img: puppyBlush,   mood: "blush" },
-  biometrics:   { img: puppyShock,   mood: "think" },
+  biometrics:   { img: puppyNotes,   mood: "notes" },
   hormonal:     { img: puppySparkle, mood: "sparkle" },
   hrt:          { img: puppyNervous, mood: "nervous" },
-  bodyshape:    { img: puppyShock,   mood: "think" },
+  bodyshape:    { img: puppyNotes,   mood: "notes" },
   measurements: { img: puppyStrong,  mood: "strong" },
   activity:     { img: puppyCheer,   mood: "cheer" },
   goal:         { img: puppySparkle, mood: "sparkle" },
