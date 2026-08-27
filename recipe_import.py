@@ -19,7 +19,7 @@ from bs4 import BeautifulSoup
 from fastapi import HTTPException
 
 from config import LLM_API_KEY, LLM_BASE_URL, LLM_MODEL
-from schemas import ImportedIngredient, ImportedIngredientCandidate
+from schemas import ImportedIngredient, ImportedIngredientCandidate, RecipeImportDraft
 from usda import extract_nutrients, get_food, search_foods
 
 
@@ -422,4 +422,73 @@ async def match_ingredient(parsed: ParsedIngredient) -> ImportedIngredient:
         food_name=parsed.food_name,
         best_match=_to_candidate(best_food, portions_map),
         alternates=[_to_candidate(f, {}) for f in alt_foods],
+    )
+
+
+# ─────────────────────────────────────────────
+#  ORCHESTRATION
+# ─────────────────────────────────────────────
+
+async def fetch_page(url: str) -> str:
+    """Fetch a blog URL and return its HTML. Raises HTTPException(422) on
+    any failure — dead link, timeout, non-HTML response, or a site that
+    blocks the request."""
+    if not url.strip().lower().startswith(("http://", "https://")):
+        raise HTTPException(
+            status_code=422, detail="Import URL must start with http:// or https://."
+        )
+
+    async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+        try:
+            response = await client.get(
+                url,
+                headers={"User-Agent": "Mozilla/5.0 (compatible; PakuPakuBot/1.0)"},
+            )
+            response.raise_for_status()
+        except httpx.TimeoutException:
+            raise HTTPException(status_code=422, detail="Timed out fetching that URL.")
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Could not fetch that URL ({e.response.status_code}).",
+            )
+        except httpx.RequestError:
+            raise HTTPException(status_code=422, detail="Could not fetch that URL.")
+
+    content_type = response.headers.get("content-type", "")
+    if "html" not in content_type:
+        raise HTTPException(
+            status_code=422, detail="That URL doesn't look like a web page."
+        )
+    return response.text
+
+
+async def build_import_draft(url: str) -> RecipeImportDraft:
+    """Fetch the URL, extract a recipe (structured markup first, LLM
+    fallback second), parse and match every ingredient line, and return
+    the assembled draft. Raises HTTPException(422) if no recipe could be
+    found at all."""
+    html = await fetch_page(url)
+
+    raw = extract_structured_recipe(html)
+    if raw is None:
+        raw = await extract_recipe_via_llm(html)
+    if raw is None:
+        raise HTTPException(status_code=422, detail="Couldn't find a recipe on that page.")
+
+    parsed_lines = []
+    for line in raw.ingredient_lines:
+        parsed = parse_ingredient_line(line)
+        if parsed is None:
+            parsed = await parse_ingredient_line_via_llm(line)
+        parsed_lines.append(parsed)
+
+    ingredients = await asyncio.gather(*(match_ingredient(p) for p in parsed_lines))
+
+    return RecipeImportDraft(
+        name=raw.name,
+        servings=raw.servings,
+        image_url=raw.image_url,
+        ingredients=list(ingredients),
+        source_url=url,
     )
