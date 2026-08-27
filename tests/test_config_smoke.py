@@ -10,6 +10,6 @@ def test_llm_config_has_defaults(monkeypatch):
     importlib.reload(config)
     try:
         assert config.LLM_BASE_URL == "https://api.groq.com/openai/v1"
-        assert config.LLM_MODEL == "llama-3.3-70b-versatile"
+        assert config.LLM_MODEL == "openai/gpt-oss-20b"
     finally:
         importlib.reload(config)  # restore real env for later tests

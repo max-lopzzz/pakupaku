@@ -18,6 +18,8 @@ from recipe_import import parse_ingredient_line
         ("1 kg potatoes", 1.0, "kg", "potatoes"),
         ("1 liter whole milk", 1.0, "l", "whole milk"),
         ("1 (14.5 oz) can diced tomatoes", 1.0, "can", "diced tomatoes"),
+        ("&frac12; cup sugar", 0.5, "cup", "sugar"),
+        ("1&frac12; cups flour", 1.5, "cup", "flour"),
     ],
 )
 def test_parses_common_ingredient_lines(line, quantity, unit, food_name):
@@ -38,6 +40,22 @@ def test_defaults_to_grams_when_no_unit_word_follows():
     assert parsed.quantity == 2.0
     assert parsed.unit == "g"
     assert parsed.food_name == "eggs"
+
+
+def test_decodes_html_entities_from_real_world_wordpress_recipe_markup():
+    # cookieandkate.com's JSON-LD recipeIngredient array ships fractions as
+    # unescaped HTML entities (a real recipe-plugin quirk, not a synthetic
+    # edge case) — without decoding, _QTY_RE finds no leading digit, the
+    # whole line falls through as food_name, and USDA search on that
+    # garbled text returns unrelated results (observed: matched a pork
+    # product for a cilantro line).
+    parsed = parse_ingredient_line(
+        "&frac12; cup finely chopped white onion (about &frac12; small onion)"
+    )
+    assert parsed is not None
+    assert parsed.quantity == 0.5
+    assert parsed.unit == "cup"
+    assert parsed.food_name == "finely chopped white onion"
 
 
 def test_returns_none_on_malformed_fraction_instead_of_raising():

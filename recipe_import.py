@@ -9,6 +9,7 @@ nothing is saved to the database here.
 """
 
 import asyncio
+import html
 import ipaddress
 import json
 import logging
@@ -194,6 +195,10 @@ def parse_ingredient_line(line: str) -> Optional[ParsedIngredient]:
     Returns None when there's no leading quantity to parse (e.g. "Salt
     to taste") — the caller falls back to an LLM for that one line.
     """
+    # Some recipe-plugin JSON-LD ships fractions as unescaped HTML entities
+    # (e.g. "&frac12;") rather than real Unicode characters — decode those
+    # before looking for a leading quantity.
+    line = html.unescape(line)
     line = _normalize_unicode_fractions(line)
     match = _QTY_RE.match(line)
     if not match:
