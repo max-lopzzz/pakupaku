@@ -1,5 +1,6 @@
 import { useState } from "react";
 import "./Login.css";
+import { apiFetch } from "../apiBase";
 
 interface LoginProps {
   onLoginSuccess: () => void;
@@ -29,7 +30,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
 
     try {
       if (mode === "forgotPassword") {
-        const res = await fetch("/auth/forgot-password", {
+        const res = await apiFetch("/auth/forgot-password", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email }),
@@ -50,7 +51,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
           ? { email, password }
           : { email, username, password };
 
-      const res = await fetch(endpoint, {
+      const res = await apiFetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),

@@ -3,6 +3,7 @@ import "./Dashboard.css";
 import puppyHungry from "../assets/images/puppy_hungry.gif";
 import puppyFull   from "../assets/images/puppy_full.gif";
 import puppyHappy  from "../assets/images/puppy_happy.gif";
+import { apiFetch } from "../apiBase";
 
 const MOOD_IMAGES: Record<"hungry" | "full" | "happy", string> = {
   hungry: puppyHungry,
@@ -157,7 +158,7 @@ function FoodLogInput({ category, logDate, onLogged }: FoodLogInputProps) {
     debounceRef.current = setTimeout(async () => {
       try {
         const token = localStorage.getItem("token");
-        const res = await fetch(
+        const res = await apiFetch(
           `/foods/search?query=${encodeURIComponent(value.trim())}&page_size=50`,
           { headers: { Authorization: `Bearer ${token ?? ""}` } }
         );
@@ -193,7 +194,7 @@ function FoodLogInput({ category, logDate, onLogged }: FoodLogInputProps) {
 
     const fetchPortions = async (fdc_id: number): Promise<Record<string, number> | null> => {
       try {
-        const res = await fetch(`/foods/${fdc_id}`, { headers });
+        const res = await apiFetch(`/foods/${fdc_id}`, { headers });
         if (!res.ok) return null;
         const detail = await res.json();
         const map: Record<string, number> = {};
@@ -207,7 +208,7 @@ function FoodLogInput({ category, logDate, onLogged }: FoodLogInputProps) {
     let portions = await fetchPortions(food.fdc_id);
     if (!portions) {
       try {
-        const res = await fetch(
+        const res = await apiFetch(
           `/foods/search?query=${encodeURIComponent(food.description)}&page_size=20`,
           { headers }
         );
@@ -239,7 +240,7 @@ function FoodLogInput({ category, logDate, onLogged }: FoodLogInputProps) {
     const sc = (v: number | null) => v != null ? Math.round((v * amount_g / 100) * 10) / 10 : 0;
     const token = localStorage.getItem("token");
     try {
-      const res = await fetch("/logs", {
+      const res = await apiFetch("/logs", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token ?? ""}` },
         body: JSON.stringify({
@@ -357,7 +358,7 @@ function CustomFoodInput({ category, logDate, onLogged }: CustomFoodInputProps) 
     setLogging(true);
     const token = localStorage.getItem("token");
     try {
-      const res = await fetch("/logs", {
+      const res = await apiFetch("/logs", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token ?? ""}` },
         body: JSON.stringify({
@@ -467,7 +468,7 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
       }
 
       try {
-        const res = await fetch("/recipes", {
+        const res = await apiFetch("/recipes", {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!res.ok) {
@@ -491,7 +492,7 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
       const token = localStorage.getItem("token");
       if (!token) { setMeals([]); return; }
       try {
-        const res = await fetch(`/logs?log_date=${selectedDate}`, {
+        const res = await apiFetch(`/logs?log_date=${selectedDate}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!res.ok) { setMeals([]); return; }
@@ -517,7 +518,7 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
       const token = localStorage.getItem("token");
       if (!token) return;
       try {
-        const res = await fetch("/measurements", {
+        const res = await apiFetch("/measurements", {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (res.ok) setMeasurements(await res.json());
@@ -536,7 +537,7 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
     if (!token) return;
     setMeasSaving(true);
     try {
-      const res = await fetch("/measurements", {
+      const res = await apiFetch("/measurements", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
@@ -565,7 +566,7 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
     const token = localStorage.getItem("token");
     if (!token) return;
     try {
-      const res = await fetch(`/logs?log_date=${selectedDate}`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await apiFetch(`/logs?log_date=${selectedDate}`, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) return;
       const logs = await res.json();
       setMeals(logs.map((log: any) => ({
@@ -589,7 +590,7 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
     const token = localStorage.getItem("token");
     if (!token) return;
     try {
-      const res = await fetch("/logs", {
+      const res = await apiFetch("/logs", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import "./Login.css";
+import { apiFetch } from "../apiBase";
 
 interface ResetPasswordProps {
   token: string;
@@ -24,7 +25,7 @@ export default function ResetPassword({ token, onDone }: ResetPasswordProps) {
 
     setLoading(true);
     try {
-      const res = await fetch("/auth/reset-password", {
+      const res = await apiFetch("/auth/reset-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token, new_password: password }),
