@@ -417,9 +417,13 @@ whole point of a tag set is that it means something consistent."
   `image_url`/`source_url`/`instructions`/`diet_tags`/`is_shared` (the
   last one only when `current_user.is_admin`); every recipe-returning
   route serializes `diet_tags` from the stored comma-joined string into
-  a list. A helper `_diet_tags_to_list(raw: Optional[str]) -> List[str]`
-  and its inverse `_diet_tags_to_str(tags: Optional[List[str]]) -> Optional[str]`
-  — later tasks (`GET /recipes/shared`) reuse `_diet_tags_to_list`.
+  a list via a `RecipeResponse` pre-validator (Step 5), not a route-level
+  helper. A helper `_diet_tags_to_str(tags: Optional[List[str]]) -> Optional[str]`
+  (list → stored string, the write direction) is the only one needed —
+  there's no read-direction helper, because the pre-validator handles
+  every route that returns a `Recipe` through `RecipeResponse`
+  automatically, including `GET /recipes/shared` (Task 4) and
+  `POST /recipes/{id}/copy` (Task 5).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -541,19 +545,20 @@ they default via the model, so more likely: the test's assertions on
 in the response, are `None`/`False` regardless of what was sent, since
 nothing wires the payload through yet).
 
-- [ ] **Step 3: Add the diet-tags helpers and wire the new fields into `create_recipe`**
+- [ ] **Step 3: Add the diet-tags write helper and wire the new fields into `create_recipe`**
 
 Near the top of `main.py`, close to `_compute_recipe_totals` (find it
 with `grep -n "_compute_recipe_totals" main.py`), add:
 
 ```python
-def _diet_tags_to_list(raw: Optional[str]) -> List[str]:
-    return [t for t in raw.split(",") if t] if raw else []
-
-
 def _diet_tags_to_str(tags: Optional[List[str]]) -> Optional[str]:
     return ",".join(tags) if tags else None
 ```
+
+(This is the write direction only — list to stored string. The read
+direction, converting the stored string back to a list for API
+responses, is handled once for every route in Step 5 below via a
+`RecipeResponse` pre-validator, not a second helper function here.)
 
 In `create_recipe`, change the `Recipe(...)` construction to:
 
@@ -607,12 +612,12 @@ before type validation. In `schemas.py`, on `RecipeResponse`, add:
         return v
 ```
 
-This means `_diet_tags_to_list()` (Step 3) isn't actually needed inside
-route handlers that just return a `Recipe` ORM object through
-`RecipeResponse` — Pydantic handles the split automatically now. It's
-still useful as a name for Task 4's `GET /recipes/shared`, which builds
-its own response list; keep the helper function from Step 3, but this
-validator is what actually fixes `create_recipe`/`update_recipe`/
+Every route that returns a `Recipe` (or list of them) through
+`RecipeResponse` gets the split for free from this validator — no
+per-route conversion code needed, including in Task 4's
+`GET /recipes/shared` and Task 5's `POST /recipes/{id}/copy`, both of
+which just return ORM objects the same way `create_recipe` already
+does. This validator is what actually fixes `create_recipe`/`update_recipe`/
 `list_recipes`/`get_recipe`'s responses without editing each one.
 
 - [ ] **Step 6: Run the tests to verify they pass**
@@ -662,7 +667,9 @@ non-admin PATCHing is_shared:true on their own recipe doesn't flip it."
 - Test: `tests/test_shared_recipe_routes.py` (append)
 
 **Interfaces:**
-- Consumes: `client`/`db_session` fixtures; `_diet_tags_to_list` (Task 3)
+- Consumes: `client`/`db_session` fixtures; the `RecipeResponse`
+  pre-validator (Task 3, Step 5) that converts stored `diet_tags`
+  strings to lists — this route needs no diet-tags handling of its own
 - Produces: `GET /recipes/shared` route, `response_model=List[RecipeResponse]`
 
 - [ ] **Step 1: Write the failing test**
@@ -2291,8 +2298,9 @@ the "100" nominal default two other log-creation call sites in
 **Type consistency:** `RecipeResponse` (Python, Task 2) and
 `RecipeResponse`/`SharedRecipe` (TypeScript, Tasks 8–9) field names
 match exactly (`image_url`, `source_url`, `instructions`, `diet_tags`,
-`is_shared`). `_diet_tags_to_list`/`_diet_tags_to_str` (Task 3) are
-named consistently across Tasks 3–4. `SharedRecipe.id` (TS) and the
+`is_shared`). `_diet_tags_to_str` (Task 3) and the `RecipeResponse`
+pre-validator it pairs with are each used exactly where the plan says —
+confirmed no task defines a helper it never calls. `SharedRecipe.id` (TS) and the
 backend's `uuid.UUID` response field are both consumed as plain strings
 in the frontend, consistent with how `RecipeResponse.id` is already
 handled elsewhere in `RecipeBuilder.tsx`.
