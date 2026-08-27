@@ -29,7 +29,7 @@ from database import get_db
 from models import User, FoodLog, Recipe, RecipeIngredient, BodyMeasurement
 from schemas import (
     RegisterRequest, LoginRequest, TokenResponse,
-    UserResponse, UserUpdateRequest,
+    UserResponse, UserUpdateRequest, ChangePasswordRequest,
     NutritionProfileRequest, NutritionProfileResponse, CustomGoalsRequest,
     FoodLogCreateRequest, FoodLogResponse, DailySummaryResponse,
     RecipeCreateRequest, RecipeUpdateRequest, RecipeResponse,
@@ -227,6 +227,58 @@ async def update_me(
 
     await db.flush()
     return current_user
+
+
+@app.post("/users/me/change-password", status_code=status.HTTP_204_NO_CONTENT)
+async def change_password(
+    payload: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Change password for the logged-in user. Requires the current
+    password — unlike /auth/reset-password (which exists for when the
+    user doesn't have it), this is not a substitute for that flow."""
+    if not verify_password(payload.current_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Current password is incorrect.")
+
+    current_user.hashed_password = hash_password(payload.new_password)
+    await db.flush()
+
+
+@app.get("/users/me/export")
+async def export_my_data(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return all of the current user's data as JSON — profile, recipes
+    (with ingredients), food logs, and body measurements."""
+    recipes_result = await db.execute(
+        select(Recipe)
+        .where(Recipe.user_id == current_user.id)
+        .options(selectinload(Recipe.ingredients))
+    )
+    logs_result = await db.execute(
+        select(FoodLog).where(FoodLog.user_id == current_user.id)
+    )
+    measurements_result = await db.execute(
+        select(BodyMeasurement).where(BodyMeasurement.user_id == current_user.id)
+    )
+
+    return {
+        "user": UserResponse.model_validate(current_user).model_dump(mode="json"),
+        "recipes": [
+            RecipeResponse.model_validate(r).model_dump(mode="json")
+            for r in recipes_result.scalars().all()
+        ],
+        "food_logs": [
+            FoodLogResponse.model_validate(l).model_dump(mode="json")
+            for l in logs_result.scalars().all()
+        ],
+        "measurements": [
+            BodyMeasurementResponse.model_validate(m).model_dump(mode="json")
+            for m in measurements_result.scalars().all()
+        ],
+    }
 
 
 # ─────────────────────────────────────────────

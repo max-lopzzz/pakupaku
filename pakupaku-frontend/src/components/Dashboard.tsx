@@ -1,5 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import "./Dashboard.css";
+import puppyHungry from "../assets/images/puppy_hungry.gif";
+import puppyFull   from "../assets/images/puppy_full.gif";
+import puppyHappy  from "../assets/images/puppy_happy.gif";
+
+const MOOD_IMAGES: Record<"hungry" | "full" | "happy", string> = {
+  hungry: puppyHungry,
+  full:   puppyFull,
+  happy:  puppyHappy,
+};
 
 // ─── USDA nutrient extraction (mirrors RecipeBuilder) ─────
 
@@ -107,6 +116,7 @@ interface DashboardProps {
   nutritionData: NutritionData;
   userProfile: any;
   onOpenRecipeBuilder: () => void;
+  onOpenSettings: () => void;
 }
 
 // ─── FoodLogInput component ───────────────────────────────
@@ -417,7 +427,7 @@ function CustomFoodInput({ category, logDate, onLogged }: CustomFoodInputProps) 
 
 // ─── Main component ───────────────────────────────────────
 
-export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuilder }: DashboardProps) {
+export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuilder, onOpenSettings }: DashboardProps) {
   const [meals, setMeals] = useState<Meal[]>([]);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [selectedRecipe, setSelectedRecipe] = useState<{ [key in MealCategory]: string }>({
@@ -636,6 +646,20 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
     return Math.min((consumed / goal) * 100, 100);
   };
 
+  // safe_mode hides calorie/macro numbers — a mascot reacting "you haven't
+  // eaten enough" / "you ate too much" is exactly the kind of judgment-coded
+  // signal that exists to prevent, so it stays "happy" here too rather than
+  // just hiding the numbers next to it.
+  const safeMode = !!userProfile?.safe_mode;
+  const calorieRatio = totalConsumed.calories / (nutritionData.calories.goal || 1);
+  const calorieMood: "hungry" | "full" | "happy" = safeMode
+    ? "happy"
+    : calorieRatio < 0.7
+    ? "hungry"
+    : calorieRatio > 1.15
+    ? "full"
+    : "happy";
+
   return (
     <div className="dashboard-root" style={{
       backgroundImage: `url(${process.env.PUBLIC_URL}/polka_dots.png)`,
@@ -649,9 +673,14 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
             <h1 className="dashboard-title">Welcome back! 👋</h1>
             <p className="dashboard-subtitle">Track your nutrition journey</p>
           </div>
-          <button type="button" className="secondary-button" onClick={onOpenRecipeBuilder}>
-            Create recipe
-          </button>
+          <div className="dashboard-header-actions">
+            <button type="button" className="secondary-button" onClick={onOpenRecipeBuilder}>
+              Create recipe
+            </button>
+            <button type="button" className="secondary-button" onClick={onOpenSettings}>
+              Settings
+            </button>
+          </div>
         </header>
 
         {/* Date navigation */}
@@ -701,9 +730,10 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
         <section className="overall-calorie-section">
           <h2 className="section-title">Calorie Progress</h2>
           <div className="overall-progress-card">
+            <img src={MOOD_IMAGES[calorieMood]} alt="" className="calorie-mascot" />
             <div className="overall-progress-label">
               <span>Today</span>
-              <strong>{totalConsumed.calories} / {nutritionData.calories.goal} cal</strong>
+              {!safeMode && <strong>{totalConsumed.calories} / {nutritionData.calories.goal} cal</strong>}
             </div>
             <div className="overall-progress-bar">
               <div
@@ -721,9 +751,11 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
             <div className="nutrition-card">
               <div className="macro-header">
                 <span className="macro-name">Calories</span>
-                <span className="macro-values">
-                  {totalConsumed.calories} / {nutritionData.calories.goal}
-                </span>
+                {!safeMode && (
+                  <span className="macro-values">
+                    {totalConsumed.calories} / {nutritionData.calories.goal}
+                  </span>
+                )}
               </div>
               <div className="progress-bar">
                 <div
@@ -736,9 +768,11 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
             <div className="nutrition-card">
               <div className="macro-header">
                 <span className="macro-name">Protein</span>
-                <span className="macro-values">
-                  {totalConsumed.protein}g / {nutritionData.protein.goal}g
-                </span>
+                {!safeMode && (
+                  <span className="macro-values">
+                    {totalConsumed.protein}g / {nutritionData.protein.goal}g
+                  </span>
+                )}
               </div>
               <div className="progress-bar">
                 <div
@@ -751,9 +785,11 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
             <div className="nutrition-card">
               <div className="macro-header">
                 <span className="macro-name">Carbs</span>
-                <span className="macro-values">
-                  {totalConsumed.carbs}g / {nutritionData.carbs.goal}g
-                </span>
+                {!safeMode && (
+                  <span className="macro-values">
+                    {totalConsumed.carbs}g / {nutritionData.carbs.goal}g
+                  </span>
+                )}
               </div>
               <div className="progress-bar">
                 <div
@@ -766,9 +802,11 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
             <div className="nutrition-card">
               <div className="macro-header">
                 <span className="macro-name">Fat</span>
-                <span className="macro-values">
-                  {totalConsumed.fat}g / {nutritionData.fat.goal}g
-                </span>
+                {!safeMode && (
+                  <span className="macro-values">
+                    {totalConsumed.fat}g / {nutritionData.fat.goal}g
+                  </span>
+                )}
               </div>
               <div className="progress-bar">
                 <div

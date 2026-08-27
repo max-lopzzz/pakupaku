@@ -197,6 +197,13 @@ class UserUpdateRequest(BaseModel):
         return _validate_username(v)
 
 
+class ChangePasswordRequest(BaseModel):
+    """Change password while logged in — requires the current password so
+    a hijacked session can't silently lock the real owner out."""
+    current_password: str
+    new_password:      str = Field(..., min_length=8)
+
+
 # ─────────────────────────────────────────────
 #  FOOD LOG
 # ─────────────────────────────────────────────

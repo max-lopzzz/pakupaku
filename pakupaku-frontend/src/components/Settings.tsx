@@ -1,6 +1,5 @@
 import { useState } from "react";
 import "./Settings.css";
-import { apiUpdateMe, apiChangePassword, apiDeleteAccount, apiExportData } from "../services/api";
 
 interface SettingsProps {
   userProfile: any;
@@ -9,15 +8,31 @@ interface SettingsProps {
   onProfileUpdate: (updated: any) => void;
 }
 
+function authHeaders(extra: Record<string, string> = {}) {
+  const token = localStorage.getItem("token");
+  return { Authorization: token ? `Bearer ${token}` : "", ...extra };
+}
+
+async function errorDetail(res: Response, fallback: string): Promise<string> {
+  const body = await res.json().catch(() => null);
+  return typeof body?.detail === "string" ? body.detail : fallback;
+}
+
 export default function Settings({ userProfile, onBack, onLogout, onProfileUpdate }: SettingsProps) {
   // ── Safe mode ──────────────────────────────────────────────────────────────
-  const [safeMode, setSafeMode]       = useState<boolean>(userProfile?.safe_mode === 1);
+  const [safeMode, setSafeMode]       = useState<boolean>(!!userProfile?.safe_mode);
   const [safeSaving, setSafeSaving]   = useState(false);
 
   const handleSafeModeToggle = async (checked: boolean) => {
     setSafeSaving(true);
     try {
-      const result = await apiUpdateMe({ safe_mode: checked ? 1 : 0 });
+      const res = await fetch("/users/me", {
+        method: "PATCH",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ safe_mode: checked }),
+      });
+      if (!res.ok) throw new Error(await errorDetail(res, "Failed to update safe mode."));
+      const result = await res.json();
       setSafeMode(checked);
       onProfileUpdate(result);
     } catch { /* non-fatal */ } finally {
@@ -37,7 +52,13 @@ export default function Settings({ userProfile, onBack, onLogout, onProfileUpdat
     if (!newUsername.trim()) { setUsernameError("Username cannot be empty."); return; }
     setUsernameSaving(true);
     try {
-      const result = await apiUpdateMe({ username: newUsername.trim() });
+      const res = await fetch("/users/me", {
+        method: "PATCH",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ username: newUsername.trim() }),
+      });
+      if (!res.ok) throw new Error(await errorDetail(res, "Failed to update username."));
+      const result = await res.json();
       onProfileUpdate(result);
       setUsernameMsg("Username updated!");
       setNewUsername("");
@@ -49,6 +70,7 @@ export default function Settings({ userProfile, onBack, onLogout, onProfileUpdat
   };
 
   // ── Change password ────────────────────────────────────────────────────────
+  const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword,    setNewPassword]    = useState("");
   const [confirmPw,      setConfirmPw]      = useState("");
   const [passwordMsg,    setPasswordMsg]    = useState("");
@@ -58,12 +80,22 @@ export default function Settings({ userProfile, onBack, onLogout, onProfileUpdat
   const handlePasswordChange = async () => {
     setPasswordMsg("");
     setPasswordError("");
+    if (!currentPassword.trim()) { setPasswordError("Enter your current password."); return; }
     if (!newPassword.trim()) { setPasswordError("Password cannot be empty."); return; }
     if (newPassword !== confirmPw) { setPasswordError("Passwords do not match."); return; }
     setPasswordSaving(true);
     try {
-      await apiChangePassword(newPassword);
+      const res = await fetch("/users/me/change-password", {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({
+          current_password: currentPassword,
+          new_password:      newPassword,
+        }),
+      });
+      if (!res.ok) throw new Error(await errorDetail(res, "Failed to update password."));
       setPasswordMsg("Password updated!");
+      setCurrentPassword("");
       setNewPassword("");
       setConfirmPw("");
     } catch (e: any) {
@@ -75,11 +107,15 @@ export default function Settings({ userProfile, onBack, onLogout, onProfileUpdat
 
   // ── Export data ────────────────────────────────────────────────────────────
   const [exportLoading, setExportLoading] = useState(false);
+  const [exportError, setExportError] = useState("");
 
   const handleExport = async () => {
     setExportLoading(true);
+    setExportError("");
     try {
-      const data = await apiExportData();
+      const res = await fetch("/users/me/export", { headers: authHeaders() });
+      if (!res.ok) throw new Error(await errorDetail(res, "Failed to export data."));
+      const data = await res.json();
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const url  = URL.createObjectURL(blob);
       const a    = document.createElement("a");
@@ -89,18 +125,26 @@ export default function Settings({ userProfile, onBack, onLogout, onProfileUpdat
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-    } catch { /* non-fatal */ } finally {
+    } catch (e: any) {
+      setExportError(e.message || "Failed to export data.");
+    } finally {
       setExportLoading(false);
     }
   };
 
   // ── Delete account ─────────────────────────────────────────────────────────
+  const [deleteError, setDeleteError] = useState("");
+
   const handleDeleteAccount = async () => {
     if (!window.confirm("This will permanently delete your account and all data. Are you sure?")) return;
+    setDeleteError("");
     try {
-      await apiDeleteAccount();
+      const res = await fetch("/users/me", { method: "DELETE", headers: authHeaders() });
+      if (!res.ok) throw new Error(await errorDetail(res, "Failed to delete account."));
       onLogout();
-    } catch { /* non-fatal */ }
+    } catch (e: any) {
+      setDeleteError(e.message || "Failed to delete account.");
+    }
   };
 
   return (
@@ -195,6 +239,13 @@ export default function Settings({ userProfile, onBack, onLogout, onProfileUpdat
                 <input
                   type="password"
                   className="settings-input"
+                  placeholder="Current password"
+                  value={currentPassword}
+                  onChange={e => setCurrentPassword(e.target.value)}
+                />
+                <input
+                  type="password"
+                  className="settings-input"
                   placeholder="New password"
                   value={newPassword}
                   onChange={e => setNewPassword(e.target.value)}
@@ -234,6 +285,16 @@ export default function Settings({ userProfile, onBack, onLogout, onProfileUpdat
               >
                 {exportLoading ? "Exporting…" : "Export data"}
               </button>
+              {exportError && <p className="settings-error">{exportError}</p>}
+            </div>
+
+            <div className="settings-divider" />
+
+            {/* Log out */}
+            <div className="settings-sub-section">
+              <button type="button" className="settings-secondary-button" onClick={onLogout}>
+                Log out
+              </button>
             </div>
 
             <div className="settings-divider" />
@@ -249,6 +310,7 @@ export default function Settings({ userProfile, onBack, onLogout, onProfileUpdat
               >
                 Delete account
               </button>
+              {deleteError && <p className="settings-error">{deleteError}</p>}
             </div>
 
           </div>

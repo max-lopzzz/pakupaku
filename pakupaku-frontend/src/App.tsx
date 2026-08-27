@@ -3,6 +3,7 @@ import Login from "./components/Login";
 import Onboarding from "./components/Onboarding";
 import Dashboard from "./components/Dashboard";
 import RecipeBuilder from "./components/RecipeBuilder";
+import Settings from "./components/Settings";
 
 interface NutritionData {
   calories: { consumed: number; goal: number };
@@ -11,7 +12,7 @@ interface NutritionData {
   fat:      { consumed: number; goal: number };
 }
 
-type AppView = "login" | "verifyEmail" | "onboarding" | "dashboard" | "recipeBuilder";
+type AppView = "login" | "verifyEmail" | "onboarding" | "dashboard" | "recipeBuilder" | "settings";
 
 // ─── Helpers ─────────────────────────────────────────────
 
@@ -122,6 +123,12 @@ function App() {
     setView("dashboard");
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    setUserProfile(null);
+    setView("login");
+  };
+
   // ── Verify email gate view ────────────────────────────
   if (view === "verifyEmail") {
     return <VerifyEmailGate
@@ -147,6 +154,16 @@ function App() {
       nutritionData={nutritionData}
       userProfile={userProfile}
       onOpenRecipeBuilder={() => setView("recipeBuilder")}
+      onOpenSettings={() => setView("settings")}
+    />;
+  }
+
+  if (view === "settings") {
+    return <Settings
+      userProfile={userProfile}
+      onBack={() => setView("dashboard")}
+      onLogout={handleLogout}
+      onProfileUpdate={(updated: any) => setUserProfile(updated)}
     />;
   }
 
