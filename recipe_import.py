@@ -8,12 +8,17 @@ each one against USDA FoodData Central. Returns a RecipeImportDraft —
 nothing is saved to the database here.
 """
 
+import asyncio
 import json
 import re
 from dataclasses import dataclass
 from typing import List, Optional
 
+import httpx
 from bs4 import BeautifulSoup
+from fastapi import HTTPException
+
+from config import LLM_API_KEY, LLM_BASE_URL, LLM_MODEL
 
 
 # ─────────────────────────────────────────────
@@ -194,4 +199,112 @@ def parse_ingredient_line(line: str) -> Optional[ParsedIngredient]:
 
     return ParsedIngredient(
         raw_line=line, quantity=quantity, unit=unit, food_name=food_name
+    )
+
+
+# ─────────────────────────────────────────────
+#  LLM FALLBACK
+# ─────────────────────────────────────────────
+
+_EXTRACT_SYSTEM_PROMPT = (
+    "You extract recipe data from a web page's visible text. Respond "
+    "with ONLY a JSON object of the form "
+    '{"name": string or null, "servings": number or null, '
+    '"ingredient_lines": [string, ...]}. ingredient_lines should be the '
+    "ingredient list exactly as written on the page, one string per "
+    "ingredient, including quantities and units. If the page has no "
+    'recipe, respond with {"name": null, "servings": null, '
+    '"ingredient_lines": []}.'
+)
+
+_LINE_SYSTEM_PROMPT = (
+    "You split one recipe ingredient line into quantity, unit, and food "
+    "name. Respond with ONLY a JSON object of the form "
+    '{"quantity": number, "unit": string, "food_name": string}. unit '
+    "should be one of g, ml, oz, cup, tbsp, tsp, or a short natural unit "
+    'like "clove" or "slice" if no standard unit applies. If the line '
+    'has no usable quantity (e.g. "salt to taste"), respond with '
+    'quantity 1, unit "g", and food_name set to the food itself.'
+)
+
+
+async def _call_llm_json(system_prompt: str, user_content: str) -> dict:
+    """POST a chat-completion request to the configured OpenAI-compatible
+    LLM endpoint and parse its JSON content. Raises HTTPException(503) if
+    no LLM_API_KEY is configured, or HTTPException(502) if the request
+    fails or the model doesn't return valid JSON."""
+    api_key = (LLM_API_KEY or "").strip()
+    if not api_key:
+        raise HTTPException(
+            status_code=503,
+            detail="Recipe import's LLM fallback is not configured on the server.",
+        )
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.post(
+                f"{LLM_BASE_URL}/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={
+                    "model": LLM_MODEL,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_content},
+                    ],
+                    "response_format": {"type": "json_object"},
+                    "temperature": 0,
+                },
+            )
+            response.raise_for_status()
+        except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as e:
+            raise HTTPException(
+                status_code=502, detail=f"Recipe import's LLM request failed: {e}"
+            )
+
+    body = response.json()
+    content = body["choices"][0]["message"]["content"]
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=502,
+            detail="Recipe import's LLM returned an unparseable response.",
+        )
+
+
+def _visible_text(html: str, max_chars: int = 8000) -> str:
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup(["script", "style", "nav", "footer", "header"]):
+        tag.decompose()
+    text = " ".join(soup.get_text(separator=" ").split())
+    return text[:max_chars]
+
+
+async def extract_recipe_via_llm(html: str) -> Optional[RawRecipe]:
+    """Called only when extract_structured_recipe() finds no JSON-LD
+    Recipe markup. Sends the page's visible text to the LLM."""
+    text = _visible_text(html)
+    data = await _call_llm_json(_EXTRACT_SYSTEM_PROMPT, text)
+
+    lines = data.get("ingredient_lines") or []
+    if not data.get("name") or not lines:
+        return None
+
+    return RawRecipe(
+        name=str(data["name"]).strip(),
+        servings=float(data.get("servings") or 1),
+        image_url=None,
+        ingredient_lines=[str(l).strip() for l in lines if str(l).strip()],
+    )
+
+
+async def parse_ingredient_line_via_llm(line: str) -> ParsedIngredient:
+    """Called only when parse_ingredient_line() can't find a leading
+    quantity in a line (e.g. "a pinch of saffron")."""
+    data = await _call_llm_json(_LINE_SYSTEM_PROMPT, line)
+    return ParsedIngredient(
+        raw_line=line,
+        quantity=float(data.get("quantity") or 1),
+        unit=str(data.get("unit") or "g").strip(),
+        food_name=str(data.get("food_name") or line).strip(),
     )
