@@ -404,6 +404,14 @@ class RecipeResponse(BaseModel):
     diet_tags:    List[str]
     is_shared:    bool
 
+    @validator("diet_tags", pre=True)
+    def _split_diet_tags(cls, v):
+        if v is None:
+            return []
+        if isinstance(v, str):
+            return [t for t in v.split(",") if t]
+        return v
+
     class Config:
         from_attributes = True
 

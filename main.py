@@ -681,6 +681,10 @@ async def delete_log(
 #  RECIPE ROUTES
 # ─────────────────────────────────────────────
 
+def _diet_tags_to_str(tags: Optional[List[str]]) -> Optional[str]:
+    return ",".join(tags) if tags else None
+
+
 def _compute_recipe_totals(ingredients, servings: float) -> dict:
     """Sum nutrient values across all ingredients and divide by servings."""
     def safe_sum(field):
@@ -704,10 +708,15 @@ async def create_recipe(
 ):
     """Create a new custom recipe with ingredients."""
     recipe = Recipe(
-        user_id     = current_user.id,
-        name        = payload.name,
-        description = payload.description,
-        servings    = payload.servings,
+        user_id      = current_user.id,
+        name         = payload.name,
+        description  = payload.description,
+        servings     = payload.servings,
+        image_url    = payload.image_url,
+        source_url   = payload.source_url,
+        instructions = payload.instructions,
+        diet_tags    = _diet_tags_to_str(payload.diet_tags),
+        is_shared    = bool(payload.is_shared) and current_user.is_admin,
     )
     db.add(recipe)
     await db.flush()   # assigns recipe.id
@@ -815,6 +824,13 @@ async def update_recipe(
     if payload.name        is not None: recipe.name        = payload.name
     if payload.description is not None: recipe.description = payload.description
     if payload.servings    is not None: recipe.servings    = payload.servings
+
+    if payload.image_url    is not None: recipe.image_url    = payload.image_url
+    if payload.source_url   is not None: recipe.source_url   = payload.source_url
+    if payload.instructions is not None: recipe.instructions = payload.instructions
+    if payload.diet_tags    is not None: recipe.diet_tags    = _diet_tags_to_str(payload.diet_tags)
+    if payload.is_shared    is not None:
+        recipe.is_shared = bool(payload.is_shared) and current_user.is_admin
 
     if payload.ingredients is not None:
         # Delete existing ingredients and replace
