@@ -533,7 +533,7 @@ export default function RecipeEditForm({
       </div>
 
       {(validationError || submitError) && <p className="recipe-error">{validationError || submitError}</p>}
-      {submitMessage && <p className="recipe-success">{submitMessage}</p>}
+      {submitMessage && !validationError && !submitError && <p className="recipe-success">{submitMessage}</p>}
       <button type="button" className="save-recipe-button"
         onClick={handleSubmit} disabled={saving}>
         {saving ? savingLabel : submitLabel}

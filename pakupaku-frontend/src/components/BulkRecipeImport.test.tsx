@@ -151,6 +151,30 @@ test("zero extracted drafts shows a found-0 message instead of an empty saved-co
   expect(screen.queryByText("Saved 0 of 0.")).not.toBeInTheDocument();
 });
 
+test("queue step pre-checks is_shared even though extracted drafts default it to false", async () => {
+  render(<BulkRecipeImport onBack={() => {}} userProfile={{ is_admin: true }} />);
+
+  fireEvent.change(screen.getByPlaceholderText("https://example.com/recipes/"), {
+    target: { value: "https://example.com/recipes/" },
+  });
+  fireEvent.click(screen.getByText("Find Recipes"));
+
+  await waitFor(() => {
+    expect(screen.getByText("Found 2 candidate links on this page.")).toBeInTheDocument();
+  });
+
+  fireEvent.click(screen.getByText("Extract 2 Recipes"));
+
+  await waitFor(() => {
+    expect(screen.getByText("Recipe 1 of 2")).toBeInTheDocument();
+  });
+
+  const shareLabel = screen.getByText("Share in the shared recipe library");
+  const toggle = shareLabel.closest(".recipe-shared-toggle") as HTMLElement;
+  const checkbox = toggle.querySelector('input[type="checkbox"]') as HTMLInputElement;
+  expect(checkbox.checked).toBe(true);
+});
+
 test("zero candidate links shows a message instead of an empty confirm screen", async () => {
   (global.fetch as jest.Mock).mockImplementationOnce((url: RequestInfo | URL) => {
     if (String(url) === "/recipes/bulk-import/discover") {
