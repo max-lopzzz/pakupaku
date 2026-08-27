@@ -130,3 +130,64 @@ def test_shared_recipes_visible_to_non_owner(client, db_session):
         assert names == ["Shared one"]
     finally:
         app.dependency_overrides.pop(get_current_user, None)
+
+
+def test_copy_shared_recipe_is_independent(client, db_session):
+    import asyncio
+
+    async def _setup():
+        admin = await _make_user(db_session, is_admin=True)
+        copier = await _make_user(db_session)
+        return admin, copier
+
+    admin, copier = asyncio.get_event_loop().run_until_complete(_setup())
+    try:
+        original = _as(client, admin).post(
+            "/recipes",
+            json={
+                "name": "Original",
+                "servings": 1,
+                "ingredients": [{"food_name": "rice", "amount_g": 100}],
+                "is_shared": True,
+            },
+        ).json()
+
+        copy_res = _as(client, copier).post(f"/recipes/{original['id']}/copy")
+        assert copy_res.status_code == 201
+        copy = copy_res.json()
+        assert copy["id"] != original["id"]
+        assert copy["name"] == "Original"
+        assert copy["is_shared"] is False
+        assert copy["user_id"] == str(copier.id)
+
+        # Editing the copy must not touch the original
+        _as(client, copier).patch(f"/recipes/{copy['id']}", json={"name": "My version"})
+        original_after = _as(client, admin).get(f"/recipes/{original['id']}").json()
+        assert original_after["name"] == "Original"
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+def test_copy_of_private_recipe_you_dont_own_404s(client, db_session):
+    import asyncio
+
+    async def _setup():
+        owner = await _make_user(db_session)
+        other = await _make_user(db_session)
+        return owner, other
+
+    owner, other = asyncio.get_event_loop().run_until_complete(_setup())
+    try:
+        private = _as(client, owner).post(
+            "/recipes",
+            json={
+                "name": "Private",
+                "servings": 1,
+                "ingredients": [{"food_name": "rice", "amount_g": 100}],
+            },
+        ).json()
+
+        res = _as(client, other).post(f"/recipes/{private['id']}/copy")
+        assert res.status_code == 404
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
