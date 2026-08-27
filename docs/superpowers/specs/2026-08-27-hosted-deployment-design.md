@@ -81,12 +81,15 @@ dev.
   feature added (`beautifulsoup4`, `pytest`, `pytest-asyncio`); there has
   never been a full pinned requirements file for the app. This spec adds
   one covering every runtime dependency (`fastapi`, `uvicorn`,
-  `sqlalchemy`, `asyncpg`, `aiosqlite`, `pydantic`, `python-jose`,
-  `passlib`, `bcrypt`, `aiosmtplib`, `python-dotenv`,
-  `python-multipart`, `beautifulsoup4`), pinned to the versions already
-  proven working in this repo's dev venv. (`fastapi-users` is installed
-  in the dev venv but unused by any code — confirmed via `grep` — and is
-  excluded.)
+  `sqlalchemy`, `asyncpg`, `aiosqlite`, `pydantic`, `email-validator`,
+  `python-jose`, `passlib`, `bcrypt`, `aiosmtplib`, `python-dotenv`,
+  `beautifulsoup4`, `httpx`), pinned to the versions already proven
+  working in this repo's dev venv. `aiosqlite` is reached only via
+  `DATABASE_URL`'s `sqlite+aiosqlite://` scheme (used by the desktop
+  build), not a direct import — easy to miss by grepping imports alone,
+  the same class of miss as `email-validator`. (`fastapi-users` is
+  installed in the dev venv but unused by any code — confirmed via
+  `grep` — and is excluded.)
 - **`.env.example`** — documents every env var Render/Neon need set,
   without real values, so the deploy runbook has a single source of
   truth for what to paste where.

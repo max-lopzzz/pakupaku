@@ -17,9 +17,26 @@ Do these in order — each later step needs a value from the one before it.
    Copy it — you'll paste it into Render next.
 4. This app's `DATABASE_URL` needs the `+asyncpg` driver marker, which
    Neon's own connection string doesn't include by default. Rewrite the
-   scheme from `postgresql://` to `postgresql+asyncpg://`, keeping
-   everything else the same. Save this rewritten string — it's the
-   `DATABASE_URL` value for step 2.
+   scheme from `postgresql://` to `postgresql+asyncpg://`, **and also
+   remove the `?sslmode=require` query string entirely** — SQLAlchemy's
+   asyncpg dialect passes the URL's query string straight into
+   `asyncpg.connect(**opts)`, and asyncpg's `connect()` has no
+   `sslmode` keyword argument, so leaving it in crashes the very first
+   query with `TypeError: connect() got an unexpected keyword argument
+   'sslmode'`. Dropping it is safe: asyncpg negotiates TLS to Neon
+   automatically, and Neon requires TLS on all connections regardless
+   of whether `sslmode` is present in the URL.
+
+   Before (Neon's default string):
+   ```
+   postgresql://alice:s3cr3t@ep-cool-lab-123456.us-east-2.aws.neon.tech/neondb?sslmode=require
+   ```
+   After (this app's `DATABASE_URL`):
+   ```
+   postgresql+asyncpg://alice:s3cr3t@ep-cool-lab-123456.us-east-2.aws.neon.tech/neondb
+   ```
+
+   Save this rewritten string — it's the `DATABASE_URL` value for step 2.
 
 ## 2. Render — API
 
@@ -40,16 +57,53 @@ Do these in order — each later step needs a value from the one before it.
    - `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` — same Gmail
      App Password already used for local dev.
    - `USDA_API_KEY` — your existing key.
+   - `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` — optional. Only needed
+     for the recipe-import LLM fallback path (used when a blog page
+     lacks schema.org/JSON-LD Recipe markup); that path returns a 503
+     if these are unset, but everything else in the app works fine
+     without them.
+   - `PYTHON_VERSION` = `3.8.19` — pins Render's build to the same
+     Python version `requirements.txt`'s pinned package versions were
+     validated against, instead of whatever default interpreter Render
+     would otherwise pick.
    - `FRONTEND_URL`, `CORS_ALLOWED_ORIGINS`, `BACKEND_PUBLIC_URL` —
      leave these for now; you'll fill them in during step 3, once the
      Cloudflare Pages URL and this Render service's own URL both exist.
      (Render assigns this service's public URL immediately on first
      deploy, e.g. `https://pakupaku-api.onrender.com` — visible at the
      top of the service's dashboard page.)
-5. Deploy. First build installs `requirements.txt` and starts uvicorn.
-   Watch the deploy log for `Application startup complete` — that
-   confirms `create_all()` ran and the app is serving.
-6. Sanity check from your own machine:
+5. Pre-Deploy Command — this app has no lifespan hook that creates
+   database tables (that logic only exists in `backend_entry.py`, used
+   by the desktop build), so without this step the API would boot fine
+   against a fresh Neon database but the first `/auth/register` call
+   would fail with `relation "users" does not exist`. In Render's
+   dashboard, set the **Pre-Deploy Command** field (distinct from the
+   Start Command above — it runs once per deploy, before the new
+   instance receives traffic) to:
+   ```
+   python3 -c "
+   import asyncio
+   from database import Base, engine
+
+   async def _create_tables():
+       async with engine.begin() as conn:
+           await conn.run_sync(Base.metadata.create_all)
+
+   asyncio.run(_create_tables())
+   "
+   ```
+   This mirrors the same `create_all()` pattern `backend_entry.py`
+   already uses for the desktop build. It creates the schema on Neon
+   (empty on first deploy) and is safe to leave configured permanently:
+   `create_all()` only creates tables that don't already exist, so it's
+   a no-op on every deploy after the first.
+6. Deploy. First build installs `requirements.txt`, runs the
+   Pre-Deploy Command above, then starts uvicorn. A Pre-Deploy Command
+   that exits successfully is what confirms the schema was created —
+   watch for it to complete without error in the deploy log. Seeing
+   `Application startup complete` afterward only confirms uvicorn
+   itself started serving; it says nothing about the tables.
+7. Sanity check from your own machine:
    `curl https://<your-render-url>/docs` should return the FastAPI
    Swagger UI HTML, not an error page.
 
@@ -66,10 +120,17 @@ Do these in order — each later step needs a value from the one before it.
 4. Before the first build, the frontend needs to know the Render API's
    URL. This repo's `pakupaku-frontend/package.json` uses a `"proxy"`
    field for local dev only — that doesn't apply to a production static
-   build. Set an environment variable on the Cloudflare Pages project:
-   `REACT_APP_API_URL` = your Render URL from step 2. (This requires one
-   small code change this plan doesn't cover — see the note at the
-   bottom of this file.)
+   build. Set environment variables on the Cloudflare Pages project:
+   - `REACT_APP_API_URL` = your Render URL from step 2. (This requires
+     one small code change this plan doesn't cover — see the note at
+     the bottom of this file.)
+   - `NODE_VERSION` = `20` — pins the build to a Node version known to
+     work with `react-scripts` 5.0.1, instead of whatever default
+     Cloudflare Pages would otherwise pick. (Unlike `PYTHON_VERSION` in
+     section 2, this isn't independently verified against this exact
+     dev environment — `pakupaku-frontend/package.json` has no
+     `engines` field to pin from — it's a reasonable current-LTS
+     default.)
 5. Deploy. Cloudflare assigns a URL like
    `https://pakupaku.pages.dev`.
 
@@ -94,6 +155,13 @@ Now that both URLs exist:
 - [ ] Wait ~20 minutes idle, then make a request — confirm it succeeds
       after the free-tier cold-start delay (don't confuse a slow first
       response with a broken deployment)
+- [ ] CORS actually restricts: from a browser console on a different
+      origin, or via
+      `curl -H "Origin: https://example.com" https://<your-render-url>/docs`,
+      confirm the response lacks an `Access-Control-Allow-Origin`
+      header for that origin (a request from the real Cloudflare Pages
+      origin succeeding isn't enough on its own — it doesn't rule out
+      CORS being wide open to everyone)
 
 ## Known gap this doesn't solve
 
