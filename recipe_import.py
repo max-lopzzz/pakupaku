@@ -350,7 +350,7 @@ async def _fetch_portions_map(fdc_id: int, description: str) -> Dict[str, float]
     result for the same description (some Foundation foods 404 on the
     detail endpoint, a known USDA data inconsistency)."""
     try:
-        detail = await get_food(fdc_id)
+        detail = await get_food(fdc_id, format="full")
         portions = extract_nutrients(detail).get("portions", [])
         if portions:
             return {p["unit"]: p["grams_per_unit"] for p in portions}
@@ -366,7 +366,7 @@ async def _fetch_portions_map(fdc_id: int, description: str) -> Dict[str, float]
         if food.get("dataType") not in _RELIABLE_PORTION_DATA_TYPES:
             continue
         try:
-            detail = await get_food(food["fdcId"])
+            detail = await get_food(food["fdcId"], format="full")
         except HTTPException:
             continue
         portions = extract_nutrients(detail).get("portions", [])
