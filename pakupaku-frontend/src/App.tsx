@@ -175,7 +175,7 @@ function App() {
   }
 
   if (view === "recipeBuilder") {
-    return <RecipeBuilder onBack={() => setView("dashboard")} />;
+    return <RecipeBuilder onBack={() => setView("dashboard")} userProfile={userProfile} />;
   }
 
   if (view === "dashboard") {
