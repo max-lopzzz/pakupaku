@@ -9,6 +9,7 @@ import puppyStrong  from "../assets/images/puppy_strong.png";
 import puppySparkle from "../assets/images/puppy_sparkle.png";
 import puppyProud   from "../assets/images/puppy_proud.png";
 import puppyNotes   from "../assets/images/puppy_notes.gif";
+import { apiFetch } from "../apiBase";
 
 // All UI assets are served from /public — no webpack imports needed
 const PUB         = process.env.PUBLIC_URL || "";
@@ -223,7 +224,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
     setErrors({});
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("/users/me/onboarding/custom", {
+      const res = await apiFetch("/users/me/onboarding/custom", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
@@ -255,7 +256,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
     setErrors({});
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("/users/me/onboarding/calculate", {
+      const res = await apiFetch("/users/me/onboarding/calculate", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({

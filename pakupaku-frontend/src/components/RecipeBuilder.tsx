@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import "./RecipeBuilder.css";
+import { apiFetch } from "../apiBase";
 
 // ─── Unit conversion ──────────────────────────────────────
 
@@ -219,7 +220,7 @@ export default function RecipeBuilder({ onBack }: RecipeBuilderProps) {
   const fetchRecipes = async () => {
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("/recipes", {
+      const res = await apiFetch("/recipes", {
         headers: { Authorization: token ? `Bearer ${token}` : "" },
       });
       if (!res.ok) throw new Error("Could not load recipes.");
@@ -296,7 +297,7 @@ export default function RecipeBuilder({ onBack }: RecipeBuilderProps) {
     setError(""); setMessage(""); setImporting(true);
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("/recipes/import", {
+      const res = await apiFetch("/recipes/import", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -372,7 +373,7 @@ export default function RecipeBuilder({ onBack }: RecipeBuilderProps) {
       const url    = isEdit ? `/recipes/${editingId}` : "/recipes";
       const method = isEdit ? "PATCH" : "POST";
 
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method,
         headers: {
           "Content-Type": "application/json",
@@ -598,7 +599,7 @@ function IngredientInput({ row, onUpdate, onRemove }: IngredientInputProps) {
         const hasBrand = brand.trim().length > 0;
         let url = `/foods/search?query=${encodeURIComponent(query.trim())}&page_size=50`;
         if (hasBrand) url += `&brand_owner=${encodeURIComponent(brand.trim())}`;
-        const res = await fetch(url, { headers: { Authorization: token ? `Bearer ${token}` : "" } });
+        const res = await apiFetch(url, { headers: { Authorization: token ? `Bearer ${token}` : "" } });
         if (!res.ok) return;
         const data = await res.json();
 
@@ -630,7 +631,7 @@ function IngredientInput({ row, onUpdate, onRemove }: IngredientInputProps) {
         const token = localStorage.getItem("token");
         // Use the food query if we have one, otherwise use the brand text as the query
         const q = foodQuery.trim().length >= 2 ? foodQuery.trim() : brandText.trim();
-        const res = await fetch(
+        const res = await apiFetch(
           `/foods/search?query=${encodeURIComponent(q)}&page_size=100`,
           { headers: { Authorization: token ? `Bearer ${token}` : "" } }
         );
@@ -696,7 +697,7 @@ function IngredientInput({ row, onUpdate, onRemove }: IngredientInputProps) {
 
     const fetchPortions = async (fdc_id: number): Promise<Record<string, number> | null> => {
       try {
-        const res = await fetch(`/foods/${fdc_id}`, { headers });
+        const res = await apiFetch(`/foods/${fdc_id}`, { headers });
         if (!res.ok) return null;
         const detail = await res.json();
         const map: Record<string, number> = {};
@@ -719,7 +720,7 @@ function IngredientInput({ row, onUpdate, onRemove }: IngredientInputProps) {
     if (!portionsMap) {
       try {
         const q   = encodeURIComponent(food.description);
-        const res = await fetch(
+        const res = await apiFetch(
           `/foods/search?query=${q}&page_size=20`,
           { headers },
         );

@@ -5,6 +5,7 @@ import Dashboard from "./components/Dashboard";
 import RecipeBuilder from "./components/RecipeBuilder";
 import Settings from "./components/Settings";
 import ResetPassword from "./components/ResetPassword";
+import { apiFetch } from "./apiBase";
 
 interface NutritionData {
   calories: { consumed: number; goal: number };
@@ -60,7 +61,7 @@ function App() {
   const loadUser = async (): Promise<any | null> => {
     const token = localStorage.getItem("token");
     if (!token) return null;
-    const res = await fetch("/users/me", {
+    const res = await apiFetch("/users/me", {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) {
@@ -218,7 +219,7 @@ function VerifyEmailGate({ email, justVerified, onVerified }: {
     setResendState("sending");
     const token = localStorage.getItem("token");
     try {
-      const res = await fetch("/auth/resend-verification", {
+      const res = await apiFetch("/auth/resend-verification", {
         method: "POST",
         headers: { Authorization: token ? `Bearer ${token}` : "" },
       });

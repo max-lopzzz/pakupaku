@@ -1,5 +1,6 @@
 import { useState } from "react";
 import "./Settings.css";
+import { apiFetch } from "../apiBase";
 
 interface SettingsProps {
   userProfile: any;
@@ -26,7 +27,7 @@ export default function Settings({ userProfile, onBack, onLogout, onProfileUpdat
   const handleSafeModeToggle = async (checked: boolean) => {
     setSafeSaving(true);
     try {
-      const res = await fetch("/users/me", {
+      const res = await apiFetch("/users/me", {
         method: "PATCH",
         headers: authHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({ safe_mode: checked }),
@@ -52,7 +53,7 @@ export default function Settings({ userProfile, onBack, onLogout, onProfileUpdat
     if (!newUsername.trim()) { setUsernameError("Username cannot be empty."); return; }
     setUsernameSaving(true);
     try {
-      const res = await fetch("/users/me", {
+      const res = await apiFetch("/users/me", {
         method: "PATCH",
         headers: authHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({ username: newUsername.trim() }),
@@ -85,7 +86,7 @@ export default function Settings({ userProfile, onBack, onLogout, onProfileUpdat
     if (newPassword !== confirmPw) { setPasswordError("Passwords do not match."); return; }
     setPasswordSaving(true);
     try {
-      const res = await fetch("/users/me/change-password", {
+      const res = await apiFetch("/users/me/change-password", {
         method: "POST",
         headers: authHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({
@@ -113,7 +114,7 @@ export default function Settings({ userProfile, onBack, onLogout, onProfileUpdat
     setExportLoading(true);
     setExportError("");
     try {
-      const res = await fetch("/users/me/export", { headers: authHeaders() });
+      const res = await apiFetch("/users/me/export", { headers: authHeaders() });
       if (!res.ok) throw new Error(await errorDetail(res, "Failed to export data."));
       const data = await res.json();
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -139,7 +140,7 @@ export default function Settings({ userProfile, onBack, onLogout, onProfileUpdat
     if (!window.confirm("This will permanently delete your account and all data. Are you sure?")) return;
     setDeleteError("");
     try {
-      const res = await fetch("/users/me", { method: "DELETE", headers: authHeaders() });
+      const res = await apiFetch("/users/me", { method: "DELETE", headers: authHeaders() });
       if (!res.ok) throw new Error(await errorDetail(res, "Failed to delete account."));
       onLogout();
     } catch (e: any) {
