@@ -1,9 +1,22 @@
-# Dependencies added by the Recipe URL Import feature.
-#
-# This is not a full requirements file for the app (no existing
-# requirements.txt was tracked before this feature landed) — it captures
-# only what recipe_import.py and its test suite need, so a fresh checkout
-# of this branch can install them and boot.
+# Full runtime dependencies for the PakuPaku FastAPI backend.
+# Versions pinned to what's proven working in this repo's dev venv.
+
+fastapi==0.124.4
+uvicorn==0.33.0
+sqlalchemy==2.0.49
+asyncpg==0.30.0
+aiosqlite==0.20.0
+pydantic==2.10.6
+email-validator==2.1.2
+python-jose==3.4.0
+passlib==1.7.4
+bcrypt==4.1.2
+aiosmtplib==3.0.2
+python-dotenv==1.0.1
 beautifulsoup4==4.15.0
+httpx==0.28.1
+
+# Test-only, kept here so `pip install -r requirements.txt` alone is
+# enough to run the suite locally.
 pytest==8.3.5
 pytest-asyncio==0.24.0
