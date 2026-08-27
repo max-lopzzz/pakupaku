@@ -6,6 +6,7 @@ const draft = {
   servings: 4,
   image_url: null,
   source_url: "https://example.com/pancakes",
+  instructions: "Mix ingredients.\nCook on a griddle.",
   ingredients: [
     {
       raw_line: "2 cups flour",
@@ -48,7 +49,7 @@ afterEach(() => {
 });
 
 test("importing a URL pre-fills the recipe form", async () => {
-  render(<RecipeBuilder onBack={() => {}} />);
+  render(<RecipeBuilder onBack={() => {}} userProfile={{ is_admin: false }} />);
 
   const urlInput = screen.getByPlaceholderText("https://example.com/some-recipe");
   fireEvent.change(urlInput, {
@@ -61,4 +62,25 @@ test("importing a URL pre-fills the recipe form", async () => {
   });
   expect(screen.getByDisplayValue("Flour, wheat, all-purpose")).toBeInTheDocument();
   expect(screen.getByDisplayValue("2")).toBeInTheDocument();
+});
+
+test("is_shared checkbox only appears for admins", () => {
+  const { rerender } = render(<RecipeBuilder onBack={() => {}} userProfile={{ is_admin: false }} />);
+  expect(screen.queryByText("Share in the shared recipe library")).not.toBeInTheDocument();
+
+  rerender(<RecipeBuilder onBack={() => {}} userProfile={{ is_admin: true }} />);
+  expect(screen.getByText("Share in the shared recipe library")).toBeInTheDocument();
+});
+
+test("importing a URL carries instructions into the form", async () => {
+  render(<RecipeBuilder onBack={() => {}} userProfile={{ is_admin: false }} />);
+
+  const urlInput = screen.getByPlaceholderText("https://example.com/some-recipe");
+  fireEvent.change(urlInput, { target: { value: "https://example.com/pancakes" } });
+  fireEvent.click(screen.getByText("Import"));
+
+  await waitFor(() => {
+    const textarea = screen.getByPlaceholderText(/One step per line/) as HTMLTextAreaElement;
+    expect(textarea.value).toBe("Mix ingredients.\nCook on a griddle.");
+  });
 });

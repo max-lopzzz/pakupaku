@@ -40,6 +40,7 @@ class RawRecipe:
     servings: float
     image_url: Optional[str]
     ingredient_lines: List[str]
+    instructions: Optional[str] = None
 
 
 def _parse_servings(raw_yield) -> float:
@@ -63,6 +64,31 @@ def _parse_image(raw_image) -> Optional[str]:
     if isinstance(raw_image, str):
         return raw_image or None
     return None
+
+
+def _parse_instructions(raw_instructions) -> Optional[str]:
+    """recipeInstructions can be a bare string, a list of strings, or a
+    list of HowToStep objects (each with a "text" key). Nested
+    HowToSection groupings (a list of sections, each containing its own
+    itemListElement) aren't handled - rare enough on real recipe blogs
+    that falling back to no instructions for that shape is an acceptable
+    gap, same tradeoff this file already makes elsewhere for uncommon
+    markup variants."""
+    if isinstance(raw_instructions, str):
+        return raw_instructions.strip() or None
+    if not isinstance(raw_instructions, list):
+        return None
+    steps = []
+    for item in raw_instructions:
+        if isinstance(item, str):
+            text = item.strip()
+        elif isinstance(item, dict):
+            text = str(item.get("text", "")).strip()
+        else:
+            text = ""
+        if text:
+            steps.append(text)
+    return "\n".join(steps) if steps else None
 
 
 def _find_recipe_node(data) -> Optional[dict]:
@@ -113,6 +139,7 @@ def extract_structured_recipe(html: str) -> Optional[RawRecipe]:
             ingredient_lines=[
                 str(i).strip() for i in ingredients if str(i).strip()
             ],
+            instructions=_parse_instructions(node.get("recipeInstructions")),
         )
     return None
 
@@ -246,11 +273,13 @@ _EXTRACT_SYSTEM_PROMPT = (
     "You extract recipe data from a web page's visible text. Respond "
     "with ONLY a JSON object of the form "
     '{"name": string or null, "servings": number or null, '
-    '"ingredient_lines": [string, ...]}. ingredient_lines should be the '
-    "ingredient list exactly as written on the page, one string per "
-    "ingredient, including quantities and units. If the page has no "
-    'recipe, respond with {"name": null, "servings": null, '
-    '"ingredient_lines": []}.'
+    '"ingredient_lines": [string, ...], "steps": [string, ...]}. '
+    "ingredient_lines should be the ingredient list exactly as written "
+    "on the page, one string per ingredient, including quantities and "
+    "units. steps should be the cooking instructions, one step per "
+    "string, in order — omit steps entirely (empty list) if the page "
+    'has no instructions. If the page has no recipe, respond with '
+    '{"name": null, "servings": null, "ingredient_lines": [], "steps": []}.'
 )
 
 _LINE_SYSTEM_PROMPT = (
@@ -341,10 +370,12 @@ async def extract_recipe_via_llm(html: str) -> Optional[RawRecipe]:
     if not data.get("name") or not lines:
         return None
 
+    steps = data.get("steps") or []
     return RawRecipe(
         name=str(data["name"]).strip(),
         servings=float(data.get("servings") or 1),
         image_url=None,
+        instructions="\n".join(str(s).strip() for s in steps if str(s).strip()) or None,
         ingredient_lines=[str(l).strip() for l in lines if str(l).strip()],
     )
 
@@ -624,6 +655,7 @@ async def build_import_draft(url: str) -> RecipeImportDraft:
         name=raw.name,
         servings=raw.servings,
         image_url=raw.image_url,
+        instructions=raw.instructions,
         ingredients=list(ingredients),
         source_url=url,
     )
