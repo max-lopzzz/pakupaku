@@ -95,19 +95,15 @@ Do these in order — each later step needs a value from the one before it.
    including `DATABASE_URL`, to the build step just like it does at
    runtime):
    ```
-   pip install -r requirements.txt && python3 -c "
-   import asyncio
-   from database import Base, engine
-
-   async def _create_tables():
-       async with engine.begin() as conn:
-           await conn.run_sync(Base.metadata.create_all)
-
-   asyncio.run(_create_tables())
-   "
+   pip install -r requirements.txt && python3 create_tables.py
    ```
-   This mirrors the same `create_all()` pattern `backend_entry.py`
-   already uses for the desktop build. It creates the schema on Neon
+   `create_tables.py` (in this repo) mirrors the same `create_all()`
+   pattern `backend_entry.py` already uses for the desktop build. An
+   inline multi-line `python3 -c "..."` string is tempting here but
+   fragile in practice — Render's Build Command field collapses embedded
+   newlines, breaking Python's indentation-sensitive syntax with an
+   `IndentationError`. A real script file sidesteps that entirely, which
+   is why this repo has one instead. It creates the schema on Neon
    (empty on first deploy) and is safe to leave configured permanently:
    `create_all()` only creates tables that don't already exist, so it's
    a no-op on every build after the first — the tradeoff versus a true
