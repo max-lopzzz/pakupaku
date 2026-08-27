@@ -842,11 +842,15 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
             // Height: from latest measurement with height, or onboarding value
             const height = lastWith("height_cm") ?? userProfile?.height_cm ?? null;
 
-            // Weight: from latest measurement with weight
-            const weight = lastWith("weight_kg");
+            // Weight: from latest measurement with weight, or onboarding value
+            const weight = lastWith("weight_kg") ?? userProfile?.weight_kg ?? null;
 
-            // Body fat: from latest measurement with body_fat_pct, or onboarding value
-            const bf = lastWith("body_fat_pct") ?? userProfile?.body_fat_pct ?? null;
+            // Body fat: from latest measurement with body_fat_pct, or onboarding value.
+            // Measurement rows are stored pre-rounded (see main.py), but the
+            // onboarding-value fallback isn't — round here so both paths display
+            // the same way instead of occasionally showing raw float precision.
+            const bfRaw = lastWith("body_fat_pct") ?? userProfile?.body_fat_pct ?? null;
+            const bf = bfRaw != null ? Math.round(bfRaw * 10) / 10 : null;
 
             return (
               <div className="body-stats-grid">
@@ -905,13 +909,18 @@ export default function Dashboard({ nutritionData, userProfile, onOpenRecipeBuil
                   })}
                   {/* Line */}
                   <polyline points={polyline} fill="none" stroke="#badfdb" strokeWidth="2.5" strokeLinejoin="round" />
-                  {/* Dots + x labels */}
+                  {/* Dots + x labels + body fat % */}
                   {pts.map((p, i) => {
                     const x = toX(i), y = toY(p.weight_kg as number);
                     const label = p.measured_at.slice(5); // MM-DD
                     return (
                       <g key={p.id}>
                         <circle cx={x} cy={y} r="4" fill="#ffbdbd" />
+                        {p.body_fat_pct != null && (
+                          <text x={x} y={y - 8} textAnchor="middle" fontSize="9" fill="#c98a8a">
+                            {Math.round(p.body_fat_pct * 10) / 10}%
+                          </text>
+                        )}
                         <text x={x} y={H - PAD.b + 12} textAnchor="middle" fontSize="9" fill="#8a6060">
                           {label}
                         </text>
