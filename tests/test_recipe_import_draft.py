@@ -77,3 +77,41 @@ def test_raises_422_when_neither_extraction_finds_a_recipe(monkeypatch):
     with pytest.raises(HTTPException) as exc_info:
         asyncio.run(build_import_draft("https://example.com/recipe"))
     assert exc_info.value.status_code == 422
+
+
+def test_contains_ingredient_match_failures(monkeypatch):
+    """Verify that if match_ingredient raises an exception for some
+    ingredients, the gather doesn't fail the whole import — instead,
+    those ingredients get best_match=None."""
+    structured = RawRecipe(
+        name="Test Recipe",
+        servings=1.0,
+        image_url=None,
+        ingredient_lines=["1 cup flour", "2 eggs", "1 tsp salt"],
+    )
+
+    async def fake_fetch_page(url):
+        return "<html>fake page</html>"
+
+    def fake_parse_line(line):
+        return ParsedIngredient(raw_line=line, quantity=1.0, unit="g", food_name=line)
+
+    async def failing_match_ingredient(parsed):
+        raise RuntimeError("Network failure: dropped connection")
+
+    monkeypatch.setattr(recipe_import, "fetch_page", fake_fetch_page)
+    monkeypatch.setattr(
+        recipe_import, "extract_structured_recipe", lambda html: structured
+    )
+    monkeypatch.setattr(recipe_import, "parse_ingredient_line", fake_parse_line)
+    monkeypatch.setattr(recipe_import, "match_ingredient", failing_match_ingredient)
+
+    # Should not raise — _safe_match_ingredient catches the exception
+    draft = asyncio.run(build_import_draft("https://example.com/recipe"))
+
+    assert draft.name == "Test Recipe"
+    assert len(draft.ingredients) == 3
+    # All ingredients should have best_match=None because match_ingredient failed
+    for ingredient in draft.ingredients:
+        assert ingredient.best_match is None
+        assert ingredient.alternates == []

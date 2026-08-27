@@ -425,6 +425,25 @@ async def match_ingredient(parsed: ParsedIngredient) -> ImportedIngredient:
     )
 
 
+async def _safe_match_ingredient(parsed: ParsedIngredient) -> ImportedIngredient:
+    """Wraps match_ingredient so a USDA network failure for one ingredient
+    (e.g. a dropped connection that isn't a timeout or HTTP error status,
+    which usda.py's error handling doesn't cover) can't sink the whole
+    asyncio.gather() and fail the entire import. Mirrors match_ingredient's
+    own no-match return shape so the caller can't tell the difference."""
+    try:
+        return await match_ingredient(parsed)
+    except Exception:
+        return ImportedIngredient(
+            raw_line=parsed.raw_line,
+            quantity=parsed.quantity,
+            unit=parsed.unit,
+            food_name=parsed.food_name,
+            best_match=None,
+            alternates=[],
+        )
+
+
 # ─────────────────────────────────────────────
 #  ORCHESTRATION
 # ─────────────────────────────────────────────
@@ -483,7 +502,7 @@ async def build_import_draft(url: str) -> RecipeImportDraft:
             parsed = await parse_ingredient_line_via_llm(line)
         parsed_lines.append(parsed)
 
-    ingredients = await asyncio.gather(*(match_ingredient(p) for p in parsed_lines))
+    ingredients = await asyncio.gather(*(_safe_match_ingredient(p) for p in parsed_lines))
 
     return RecipeImportDraft(
         name=raw.name,
