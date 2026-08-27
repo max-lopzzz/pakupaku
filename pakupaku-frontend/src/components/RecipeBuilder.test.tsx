@@ -28,6 +28,16 @@ const draft = {
   ],
 };
 
+const brandedGochujangSearch = {
+  foods: [
+    { fdcId: 1, description: "Gochujang", dataType: "Branded", brandOwner: "CJ", foodNutrients: [] },
+    { fdcId: 2, description: "Gochujang", dataType: "Branded", brandOwner: "Sempio", foodNutrients: [] },
+    { fdcId: 3, description: "Gochujang", dataType: "Branded", brandOwner: "Annie Chun's", foodNutrients: [] },
+    { fdcId: 4, description: "Gochujang", dataType: "Branded", brandOwner: "Trader Joe's", foodNutrients: [] },
+    { fdcId: 5, description: "Gochujang Hot Pepper Paste", dataType: "Branded", brandOwner: "Chung Jung One", foodNutrients: [] },
+  ],
+};
+
 beforeEach(() => {
   localStorage.setItem("token", "test-token");
   global.fetch = jest.fn((url: RequestInfo | URL) => {
@@ -37,6 +47,9 @@ beforeEach(() => {
     }
     if (u === "/recipes/import") {
       return Promise.resolve({ ok: true, json: async () => draft } as Response);
+    }
+    if (u.startsWith("/foods/search?query=gochujang")) {
+      return Promise.resolve({ ok: true, json: async () => brandedGochujangSearch } as Response);
     }
     return Promise.reject(new Error(`Unexpected fetch: ${u}`));
   }) as jest.Mock;
@@ -61,4 +74,27 @@ test("importing a URL pre-fills the recipe form", async () => {
   });
   expect(screen.getByDisplayValue("Flour, wheat, all-purpose")).toBeInTheDocument();
   expect(screen.getByDisplayValue("2")).toBeInTheDocument();
+});
+
+test("branded-only search results with the same description collapse to one suggestion", async () => {
+  render(<RecipeBuilder onBack={() => {}} />);
+
+  const searchInput = screen.getByPlaceholderText("Search food…");
+  fireEvent.change(searchInput, { target: { value: "gochujang" } });
+
+  await waitFor(
+    () => {
+      expect(screen.getAllByText("Gochujang").length).toBeGreaterThan(0);
+    },
+    { timeout: 2000 }
+  );
+
+  // 5 branded results came back, 4 sharing the exact description "Gochujang"
+  // (from CJ/Sempio/Annie Chun's/Trader Joe's) and 1 with a distinct
+  // description ("Gochujang Hot Pepper Paste") — expect the 4 duplicates
+  // collapsed to 1, so 2 suggestion rows total, not 5.
+  const items = document.querySelectorAll(".autocomplete-item");
+  expect(items.length).toBe(2);
+  expect(screen.getByText("Gochujang")).toBeInTheDocument();
+  expect(screen.getByText("Gochujang Hot Pepper Paste")).toBeInTheDocument();
 });

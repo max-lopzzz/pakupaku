@@ -64,6 +64,23 @@ const NUTRIENT_ID_MAP: Record<number, keyof NutrientData> = {
   1079: "fiber_per_100g",
 };
 
+// When no generic (Foundation/SR Legacy/Survey) result exists for a query,
+// runSearch() falls back to branded results — which for a common ingredient
+// like "gochujang" can mean five near-identical branded products cluttering
+// the dropdown. Collapse them to one entry per unique description, keeping
+// the first (USDA's own relevance-ranked order) match for each.
+function dedupeByDescription(foods: any[]): any[] {
+  const seen = new Set<string>();
+  const out: any[] = [];
+  for (const f of foods) {
+    const key = String(f.description ?? "").trim().toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(f);
+  }
+  return out;
+}
+
 function extractNutrients(foodNutrients: any[]): NutrientData {
   const result: NutrientData = {
     calories_per_100g: null,
@@ -603,11 +620,16 @@ function IngredientInput({ row, onUpdate, onRemove }: IngredientInputProps) {
         if (!res.ok) return;
         const data = await res.json();
 
-        // Prefer generic foods; fall back to branded if no generic results exist
+        // Prefer generic foods; fall back to branded if no generic results exist.
+        // The branded fallback is deduped by description — with no brand filter
+        // active, the user is picking "an ingredient", not "a specific product",
+        // so five branded listings that all just say "Gochujang" collapse to one.
+        // An explicit brand filter (hasBrand) is a deliberate narrowing to that
+        // brand's own catalog, so its results are left exactly as returned.
         const all     = data.foods ?? [];
         const generic = all.filter((f: any) => f.dataType !== "Branded");
         const branded = all.filter((f: any) => f.dataType === "Branded");
-        const pool    = hasBrand ? branded : (generic.length > 0 ? generic : branded);
+        const pool    = hasBrand ? branded : (generic.length > 0 ? generic : dedupeByDescription(branded));
 
         const suggestions: FoodSuggestion[] = pool.map((f: any) => ({
           fdc_id:      f.fdcId,
