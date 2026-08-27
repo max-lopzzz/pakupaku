@@ -1,0 +1,9 @@
+# Dependencies added by the Recipe URL Import feature.
+#
+# This is not a full requirements file for the app (no existing
+# requirements.txt was tracked before this feature landed) — it captures
+# only what recipe_import.py and its test suite need, so a fresh checkout
+# of this branch can install them and boot.
+beautifulsoup4==4.15.0
+pytest==8.3.5
+pytest-asyncio==0.24.0

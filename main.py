@@ -33,6 +33,7 @@ from schemas import (
     NutritionProfileRequest, NutritionProfileResponse, CustomGoalsRequest,
     FoodLogCreateRequest, FoodLogResponse, DailySummaryResponse,
     RecipeCreateRequest, RecipeUpdateRequest, RecipeResponse,
+    ImportRecipeRequest, RecipeImportDraft,
     BodyMeasurementCreate, BodyMeasurementResponse,
 )
 from auth import hash_password, verify_password, create_access_token, get_current_user
@@ -41,6 +42,7 @@ from config import CORS_ALLOWED_ORIGINS, FRONTEND_URL, SECRET_KEY
 
 logger = logging.getLogger(__name__)
 from usda import search_foods, get_food, get_foods_bulk, extract_nutrients
+from recipe_import import build_import_draft
 from nutrition_calculator import (
     calc_body_fat_navy, calc_bmr, interpolate_bmr_hrt,
     apply_metabolic_conditions, calc_tdee, calc_goal_adjustment,
@@ -625,6 +627,19 @@ async def create_recipe(
         .options(selectinload(Recipe.ingredients))
     )
     return result.scalar_one()
+
+
+@app.post("/recipes/import", response_model=RecipeImportDraft)
+async def import_recipe(
+    payload:      ImportRecipeRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Fetch a blog URL and return a draft recipe with ingredients matched
+    to USDA foods. Nothing is saved — the frontend opens this in the
+    recipe builder for review before the user calls POST /recipes.
+    """
+    return await build_import_draft(payload.url)
 
 
 @app.get("/recipes", response_model=List[RecipeResponse])

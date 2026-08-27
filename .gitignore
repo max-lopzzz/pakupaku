@@ -13,6 +13,8 @@ venv/
 .venv-1/
 pakupaku-frontend/venv/
 
+.worktrees/
+
 build/
 dist/
 dist-backend/
