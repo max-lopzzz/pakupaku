@@ -806,3 +806,33 @@ async def list_measurements(
         .order_by(BodyMeasurement.measured_at)
     )
     return result.scalars().all()
+
+
+# ─────────────────────────────────────────────
+#  DESKTOP: SERVE THE BUNDLED REACT BUILD
+# ─────────────────────────────────────────────
+# Only active inside the PyInstaller-frozen desktop build (see
+# backend_entry.py / pakupaku.spec) — the hosted deployment runs
+# `uvicorn main:app` directly and never sets sys.frozen, so this block
+# is a no-op there. Serves the compiled React app and falls back to
+# index.html for any path that isn't a static asset, so client-side
+# routing works on a direct/refreshed URL.
+
+import sys as _sys
+
+if getattr(_sys, "frozen", False):
+    import os as _os
+    from fastapi.staticfiles import StaticFiles
+    from fastapi.responses import FileResponse
+
+    _frontend_dir = _os.path.join(getattr(_sys, "_MEIPASS", ""), "frontend_build")
+    _static_dir = _os.path.join(_frontend_dir, "static")
+    if _os.path.isdir(_static_dir):
+        app.mount("/static", StaticFiles(directory=_static_dir), name="static_assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_desktop_frontend(full_path: str):
+        candidate = _os.path.join(_frontend_dir, full_path)
+        if _os.path.isfile(candidate):
+            return FileResponse(candidate)
+        return FileResponse(_os.path.join(_frontend_dir, "index.html"))
