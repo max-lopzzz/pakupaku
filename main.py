@@ -450,6 +450,21 @@ async def onboarding_calculate(
     current_user.carbs_g              = macros["carbs_g"]
     current_user.uses_custom_goals    = False
 
+    # Also log these as the user's first body measurement entry — without
+    # this, the Weight Timeline and Body Statistics cards on the dashboard
+    # stay empty until the user logs a measurement manually, even though
+    # they just entered all of this during onboarding.
+    db.add(BodyMeasurement(
+        user_id      = current_user.id,
+        measured_at  = date.today(),
+        weight_kg    = payload.weight_kg,
+        height_cm    = payload.height_cm,
+        waist_cm     = payload.waist_cm,
+        neck_cm      = payload.neck_cm,
+        hip_cm       = payload.hip_cm,
+        body_fat_pct = round(body_fat_pct, 1),
+    ))
+
     await db.flush()
 
     return NutritionProfileResponse(

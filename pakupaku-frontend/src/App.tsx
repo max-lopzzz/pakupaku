@@ -136,14 +136,16 @@ function App() {
     if (user) routeUser(user); else setView("login");
   };
 
-  const handleOnboardingComplete = (data: any) => {
-    setNutritionData({
-      calories: { consumed: 0, goal: data.target_kcal || 2000 },
-      protein:  { consumed: 0, goal: data.protein_g   || 150  },
-      carbs:    { consumed: 0, goal: data.carbs_g     || 250  },
-      fat:      { consumed: 0, goal: data.fat_g       || 67   },
-    });
-    setView("dashboard");
+  const handleOnboardingComplete = async () => {
+    // Re-fetch rather than build nutritionData from the calculate
+    // endpoint's response: that response has target_kcal/protein_g/etc.
+    // but not weight_kg/height_cm/birthday/body_fat_pct, so userProfile
+    // would stay stuck at its pre-onboarding (all-null) values and the
+    // dashboard's Body Statistics would show N/A despite the user having
+    // just entered all of it. routeUser() (same as login) picks up
+    // everything onboarding just persisted, in one fetch.
+    const user = await loadUser().catch(() => null);
+    if (user) routeUser(user); else setView("login");
   };
 
   const handleLogout = () => {
