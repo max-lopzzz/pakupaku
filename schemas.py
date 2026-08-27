@@ -15,7 +15,7 @@ Schema families:
 
 import uuid
 from datetime import datetime, date
-from typing import Optional, List
+from typing import Optional, List, Dict
 from pydantic import BaseModel, EmailStr, Field, validator
 
 
@@ -52,6 +52,15 @@ class TokenResponse(BaseModel):
 
 class TokenData(BaseModel):
     user_id: Optional[str] = None
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token:        str
+    new_password: str = Field(..., min_length=8)
 
 
 # ─────────────────────────────────────────────
@@ -380,3 +389,40 @@ class BodyMeasurementResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ─────────────────────────────────────────────
+#  RECIPE IMPORT (AI extraction from a blog URL)
+# ─────────────────────────────────────────────
+
+class ImportRecipeRequest(BaseModel):
+    url: str
+
+
+class ImportedIngredientCandidate(BaseModel):
+    fdc_id:      int
+    description: str
+    brand:       Optional[str] = None
+    calories_per_100g: Optional[float] = None
+    protein_per_100g:  Optional[float] = None
+    fat_per_100g:      Optional[float] = None
+    carbs_per_100g:    Optional[float] = None
+    fiber_per_100g:    Optional[float] = None
+    portions_map: Dict[str, float] = {}
+
+
+class ImportedIngredient(BaseModel):
+    raw_line:  str
+    quantity:  float
+    unit:      str
+    food_name: str
+    best_match: Optional[ImportedIngredientCandidate] = None
+    alternates: List[ImportedIngredientCandidate] = []
+
+
+class RecipeImportDraft(BaseModel):
+    name:        str
+    servings:    float
+    image_url:   Optional[str] = None
+    ingredients: List[ImportedIngredient]
+    source_url:  str

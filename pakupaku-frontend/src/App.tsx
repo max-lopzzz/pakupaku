@@ -4,6 +4,7 @@ import Onboarding from "./components/Onboarding";
 import Dashboard from "./components/Dashboard";
 import RecipeBuilder from "./components/RecipeBuilder";
 import Settings from "./components/Settings";
+import ResetPassword from "./components/ResetPassword";
 
 interface NutritionData {
   calories: { consumed: number; goal: number };
@@ -12,7 +13,7 @@ interface NutritionData {
   fat:      { consumed: number; goal: number };
 }
 
-type AppView = "login" | "verifyEmail" | "onboarding" | "dashboard" | "recipeBuilder" | "settings";
+type AppView = "login" | "verifyEmail" | "onboarding" | "dashboard" | "recipeBuilder" | "settings" | "resetPassword";
 
 // ─── Helpers ─────────────────────────────────────────────
 
@@ -52,6 +53,7 @@ function App() {
   });
   const [userProfile, setUserProfile] = useState<any>(null);
   const [justVerified, setJustVerified] = useState(false);
+  const [resetToken, setResetToken] = useState("");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ── Fetch user and route ──────────────────────────────
@@ -75,12 +77,32 @@ function App() {
   };
 
   // ── Initial load ──────────────────────────────────────
+  const didInitialLoad = useRef(false);
   useEffect(() => {
+    // Guard against StrictMode's dev-only double-invocation: this effect
+    // reads window.location.search and then mutates it (replaceState), so
+    // a second invocation would see the already-stripped URL and silently
+    // fall through to the wrong branch below, clobbering the view a first
+    // invocation had already set from ?reset=/?verified=.
+    if (didInitialLoad.current) return;
+    didInitialLoad.current = true;
+
     // Check for ?verified= redirect from email link
     const params = new URLSearchParams(window.location.search);
     const v = params.get("verified");
     if (v === "true")  setJustVerified(true);
     if (v) window.history.replaceState({}, "", window.location.pathname);
+
+    // Check for ?reset= redirect from the password-reset email link. This
+    // is an unauthenticated flow — it doesn't matter whether a login
+    // token exists, so it's handled before that check below.
+    const resetTokenParam = params.get("reset");
+    if (resetTokenParam) {
+      window.history.replaceState({}, "", window.location.pathname);
+      setResetToken(resetTokenParam);
+      setView("resetPassword");
+      return;
+    }
 
     const token = localStorage.getItem("token");
     if (!token) { setView("login"); return; }
@@ -139,6 +161,10 @@ function App() {
         loadUser().then(u => { if (u) routeUser(u); });
       }}
     />;
+  }
+
+  if (view === "resetPassword") {
+    return <ResetPassword token={resetToken} onDone={() => setView("login")} />;
   }
 
   if (view === "login") {

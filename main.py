@@ -11,7 +11,7 @@ Route groups:
   /recipes    — custom recipe CRUD
 """
 
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import Optional, List
 import uuid
 import secrets
@@ -29,18 +29,21 @@ from database import get_db
 from models import User, FoodLog, Recipe, RecipeIngredient, BodyMeasurement
 from schemas import (
     RegisterRequest, LoginRequest, TokenResponse,
+    ForgotPasswordRequest, ResetPasswordRequest,
     UserResponse, UserUpdateRequest, ChangePasswordRequest,
     NutritionProfileRequest, NutritionProfileResponse, CustomGoalsRequest,
     FoodLogCreateRequest, FoodLogResponse, DailySummaryResponse,
     RecipeCreateRequest, RecipeUpdateRequest, RecipeResponse,
+    ImportRecipeRequest, RecipeImportDraft,
     BodyMeasurementCreate, BodyMeasurementResponse,
 )
 from auth import hash_password, verify_password, create_access_token, get_current_user
-from email_utils import send_verification_email
+from email_utils import send_verification_email, send_password_reset_email
 from config import CORS_ALLOWED_ORIGINS, FRONTEND_URL, SECRET_KEY
 
 logger = logging.getLogger(__name__)
 from usda import search_foods, get_food, get_foods_bulk, extract_nutrients
+from recipe_import import build_import_draft
 from nutrition_calculator import (
     calc_body_fat_navy, calc_bmr, interpolate_bmr_hrt,
     apply_metabolic_conditions, calc_tdee, calc_goal_adjustment,
@@ -181,6 +184,58 @@ async def resend_verification(
     except Exception as exc:
         logger.warning("Could not send verification email: %s", exc)
         raise HTTPException(status_code=503, detail="Could not send email. Please try again later.")
+
+
+RESET_TOKEN_LIFETIME = timedelta(hours=1)
+
+
+@app.post("/auth/forgot-password", status_code=status.HTTP_204_NO_CONTENT)
+async def forgot_password(
+    payload: ForgotPasswordRequest,
+    db:      AsyncSession = Depends(get_db),
+):
+    """
+    Send a password reset email if the address is registered.
+
+    Always returns the same response whether or not the email exists —
+    revealing that would let anyone enumerate registered accounts.
+    """
+    email = _normalize_email(payload.email)
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+
+    if user:
+        user.reset_token = secrets.token_hex(32)
+        user.reset_token_expires_at = datetime.utcnow() + RESET_TOKEN_LIFETIME
+        await db.flush()
+        try:
+            await send_password_reset_email(user.email, user.reset_token)
+        except Exception as exc:
+            # Deliberately not surfaced to the caller — a different response
+            # here would leak whether this email has an account.
+            logger.warning("Could not send password reset email: %s", exc)
+
+
+@app.post("/auth/reset-password", status_code=status.HTTP_204_NO_CONTENT)
+async def reset_password(
+    payload: ResetPasswordRequest,
+    db:      AsyncSession = Depends(get_db),
+):
+    """Consume a password reset token and set a new password."""
+    result = await db.execute(select(User).where(User.reset_token == payload.token))
+    user = result.scalar_one_or_none()
+
+    if (
+        not user
+        or user.reset_token_expires_at is None
+        or user.reset_token_expires_at < datetime.utcnow()
+    ):
+        raise HTTPException(status_code=400, detail="Invalid or expired reset link.")
+
+    user.hashed_password = hash_password(payload.new_password)
+    user.reset_token = None
+    user.reset_token_expires_at = None
+    await db.flush()
 
 
 # ─────────────────────────────────────────────
@@ -679,6 +734,19 @@ async def create_recipe(
     return result.scalar_one()
 
 
+@app.post("/recipes/import", response_model=RecipeImportDraft)
+async def import_recipe(
+    payload:      ImportRecipeRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Fetch a blog URL and return a draft recipe with ingredients matched
+    to USDA foods. Nothing is saved — the frontend opens this in the
+    recipe builder for review before the user calls POST /recipes.
+    """
+    return await build_import_draft(payload.url)
+
+
 @app.get("/recipes", response_model=List[RecipeResponse])
 async def list_recipes(
     current_user: User         = Depends(get_current_user),
@@ -858,3 +926,33 @@ async def list_measurements(
         .order_by(BodyMeasurement.measured_at)
     )
     return result.scalars().all()
+
+
+# ─────────────────────────────────────────────
+#  DESKTOP: SERVE THE BUNDLED REACT BUILD
+# ─────────────────────────────────────────────
+# Only active inside the PyInstaller-frozen desktop build (see
+# backend_entry.py / pakupaku.spec) — the hosted deployment runs
+# `uvicorn main:app` directly and never sets sys.frozen, so this block
+# is a no-op there. Serves the compiled React app and falls back to
+# index.html for any path that isn't a static asset, so client-side
+# routing works on a direct/refreshed URL.
+
+import sys as _sys
+
+if getattr(_sys, "frozen", False):
+    import os as _os
+    from fastapi.staticfiles import StaticFiles
+    from fastapi.responses import FileResponse
+
+    _frontend_dir = _os.path.join(getattr(_sys, "_MEIPASS", ""), "frontend_build")
+    _static_dir = _os.path.join(_frontend_dir, "static")
+    if _os.path.isdir(_static_dir):
+        app.mount("/static", StaticFiles(directory=_static_dir), name="static_assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_desktop_frontend(full_path: str):
+        candidate = _os.path.join(_frontend_dir, full_path)
+        if _os.path.isfile(candidate):
+            return FileResponse(candidate)
+        return FileResponse(_os.path.join(_frontend_dir, "index.html"))

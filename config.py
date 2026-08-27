@@ -29,6 +29,15 @@ CORS_ALLOWED_ORIGINS = _split_csv_env(
 # ── USDA ──────────────────────────────────────
 USDA_API_KEY = os.getenv("USDA_API_KEY")
 
+# ── LLM (recipe import fallback) ──────────────
+# Used only when a blog page has no schema.org/JSON-LD Recipe markup.
+# Any OpenAI-compatible chat-completions endpoint works — Groq is the
+# default because it hosts open-weight models behind that API shape with
+# a genuinely free tier (no card/deposit required).
+LLM_API_KEY  = os.getenv("LLM_API_KEY")
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.groq.com/openai/v1")
+LLM_MODEL    = os.getenv("LLM_MODEL", "openai/gpt-oss-20b")
+
 # ── Database ──────────────────────────────────
 DATABASE_URL = os.getenv("DATABASE_URL")
 
