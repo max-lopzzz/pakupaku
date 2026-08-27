@@ -44,8 +44,17 @@ Do these in order — each later step needs a value from the one before it.
    makes connecting the repo in the next step a one-click picker).
 2. New → Web Service → connect the `pakupaku` GitHub repo.
 3. Settings:
+   - **Branch:** `main`
+   - **Root Directory:** leave blank. `main.py` and `requirements.txt`
+     live at the repo root, not in a subdirectory — do not type `main`
+     here by mistake (that's the branch, a separate field above); doing
+     so fails the clone step with "Root directory 'main' does not
+     exist."
    - **Runtime:** Python 3
-   - **Build Command:** `pip install -r requirements.txt`
+   - **Build Command:** see step 5 below — it extends the plain
+     `pip install -r requirements.txt` command with a schema-creation
+     step, since Render's Pre-Deploy Command field (the more natural
+     place for this) is a paid-instance-only feature.
    - **Start Command:** `uvicorn main:app --host 0.0.0.0 --port $PORT`
    - **Instance Type:** Free
 4. Environment variables — open `.env.example` in this repo and add
@@ -72,37 +81,41 @@ Do these in order — each later step needs a value from the one before it.
      (Render assigns this service's public URL immediately on first
      deploy, e.g. `https://pakupaku-api.onrender.com` — visible at the
      top of the service's dashboard page.)
-5. Pre-Deploy Command — this app has no lifespan hook that creates
-   database tables (that logic only exists in `backend_entry.py`, used
-   by the desktop build), so without this step the API would boot fine
+5. Build Command — this app has no lifespan hook that creates database
+   tables (that logic only exists in `backend_entry.py`, used by the
+   desktop build), so without an extra step the API would boot fine
    against a fresh Neon database but the first `/auth/register` call
-   would fail with `relation "users" does not exist`. In Render's
-   dashboard, set the **Pre-Deploy Command** field (distinct from the
-   Start Command above — it runs once per deploy, before the new
-   instance receives traffic) to:
-   ```
-   python3 -c "
-   import asyncio
-   from database import Base, engine
+   would fail with `relation "users" does not exist`.
 
-   async def _create_tables():
-       async with engine.begin() as conn:
-           await conn.run_sync(Base.metadata.create_all)
-
-   asyncio.run(_create_tables())
-   "
+   Render's Pre-Deploy Command field is the natural place for a
+   once-per-deploy setup step like this, but it's a **paid-instance-only
+   feature** — not available on the Free tier this runbook uses. Fold
+   the same logic into the **Build Command** field instead (available on
+   every tier, and Render exposes the service's configured env vars,
+   including `DATABASE_URL`, to the build step just like it does at
+   runtime):
    ```
-   This mirrors the same `create_all()` pattern `backend_entry.py`
-   already uses for the desktop build. It creates the schema on Neon
+   pip install -r requirements.txt && python3 create_tables.py
+   ```
+   `create_tables.py` (in this repo) mirrors the same `create_all()`
+   pattern `backend_entry.py` already uses for the desktop build. An
+   inline multi-line `python3 -c "..."` string is tempting here but
+   fragile in practice — Render's Build Command field collapses embedded
+   newlines, breaking Python's indentation-sensitive syntax with an
+   `IndentationError`. A real script file sidesteps that entirely, which
+   is why this repo has one instead. It creates the schema on Neon
    (empty on first deploy) and is safe to leave configured permanently:
    `create_all()` only creates tables that don't already exist, so it's
-   a no-op on every deploy after the first.
-6. Deploy. First build installs `requirements.txt`, runs the
-   Pre-Deploy Command above, then starts uvicorn. A Pre-Deploy Command
-   that exits successfully is what confirms the schema was created —
-   watch for it to complete without error in the deploy log. Seeing
-   `Application startup complete` afterward only confirms uvicorn
-   itself started serving; it says nothing about the tables.
+   a no-op on every build after the first — the tradeoff versus a true
+   Pre-Deploy Command is that this now reruns on every deploy rather than
+   once, which costs a fraction of a second and nothing else.
+6. Deploy. The build step above installs `requirements.txt` and creates
+   the schema in one command, then Render starts uvicorn per the Start
+   Command. The build step exiting successfully is what confirms the
+   schema was created — watch for it to complete without error in the
+   build log. Seeing `Application startup complete` afterward only
+   confirms uvicorn itself started serving; it says nothing about the
+   tables.
 7. Sanity check from your own machine:
    `curl https://<your-render-url>/docs` should return the FastAPI
    Swagger UI HTML, not an error page.
