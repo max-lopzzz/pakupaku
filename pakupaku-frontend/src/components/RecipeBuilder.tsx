@@ -385,10 +385,10 @@ export default function RecipeBuilder({ onBack, userProfile }: RecipeBuilderProp
       name:         name.trim(),
       description:  description.trim() || undefined,
       servings:     parseFloat(servings) || 1,
-      image_url:    imageUrl.trim() || undefined,
-      source_url:   sourceUrl.trim() || undefined,
-      instructions: instructions.trim() || undefined,
-      diet_tags:    dietTags.length > 0 ? dietTags : undefined,
+      image_url:    imageUrl.trim(),
+      source_url:   sourceUrl.trim(),
+      instructions: instructions.trim(),
+      diet_tags:    dietTags,
       is_shared:    isShared,
       ingredients: valid.map(r => {
         const amount_g = toGrams(r.amount, r.unit, r.portionsMap);

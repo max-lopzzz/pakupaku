@@ -95,6 +95,10 @@
 /* .diet-tag-pill is already defined globally by RecipeBuilder.css -
    reused as-is for the same reason as .back-button above. */
 
+/* .saved-recipe-instructions and .saved-recipe-source-link are also
+   already defined globally by RecipeBuilder.css - reused as-is for the
+   same reason as .back-button above. */
+
 .shared-recipe-actions {
   display: flex;
   gap: 0.5rem;

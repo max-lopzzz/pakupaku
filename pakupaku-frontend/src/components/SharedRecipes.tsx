@@ -8,6 +8,8 @@ interface SharedRecipe {
   servings: number;
   image_url?: string | null;
   diet_tags?: string[];
+  instructions?: string | null;
+  source_url?: string | null;
   total_calories?: number;
   total_protein_g?: number;
   total_fat_g?: number;
@@ -119,6 +121,18 @@ export default function SharedRecipes({ onBack }: SharedRecipesProps) {
                       <span key={tag} className="diet-tag-pill">{tag.replace(/_/g, " ")}</span>
                     ))}
                   </div>
+                )}
+                {recipe.instructions && (
+                  <ol className="saved-recipe-instructions">
+                    {recipe.instructions.split("\n").filter(Boolean).map((step, i) => (
+                      <li key={i}>{step}</li>
+                    ))}
+                  </ol>
+                )}
+                {recipe.source_url && (
+                  <a href={recipe.source_url} target="_blank" rel="noreferrer" className="saved-recipe-source-link">
+                    View original
+                  </a>
                 )}
                 <div className="shared-recipe-actions">
                   <button type="button" onClick={() => startLogging(recipe)}>Log now</button>

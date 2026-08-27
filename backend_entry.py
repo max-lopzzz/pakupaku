@@ -69,11 +69,14 @@ from sqlalchemy import text  # noqa: E402
 
 async def _add_missing_columns(conn):
     """Additive-only schema safety net: adds columns that exist on the
-    model but not in the live table. Only covers nullable-column
-    additions — the one shape of schema drift this app has hit in
-    practice. A NOT NULL addition or a column type change needs a real
-    migration; if one of those ever ships, handle it explicitly here
-    rather than relying on this loop."""
+    model but not in the live table. Covers nullable-column additions,
+    and NOT NULL additions that carry a usable scalar default (emitted as
+    `ALTER TABLE ... ADD COLUMN ... NOT NULL DEFAULT <literal>`, which
+    SQLite supports) — these are the shapes of schema drift this app has
+    hit in practice. A NOT NULL column with no usable default (or a
+    non-scalar/computed default) still needs a real migration; if one of
+    those ever ships, handle it explicitly here rather than relying on
+    this loop."""
     for table in Base.metadata.sorted_tables:
         rows = (await conn.execute(text(f"PRAGMA table_info({table.name})"))).fetchall()
         existing_columns = {row[1] for row in rows}
@@ -83,7 +86,17 @@ async def _add_missing_columns(conn):
             if column.name in existing_columns:
                 continue
             coltype = column.type.compile(dialect=conn.dialect)
-            await conn.execute(text(f"ALTER TABLE {table.name} ADD COLUMN {column.name} {coltype}"))
+            ddl = f"ALTER TABLE {table.name} ADD COLUMN {column.name} {coltype}"
+            if not column.nullable and column.default is not None and getattr(column.default, "is_scalar", False):
+                default_arg = column.default.arg
+                if default_arg is True:
+                    default_sql = "1"
+                elif default_arg is False:
+                    default_sql = "0"
+                else:
+                    default_sql = repr(default_arg)
+                ddl += f" NOT NULL DEFAULT {default_sql}"
+            await conn.execute(text(ddl))
             if column.unique:
                 index_name = f"ix_{table.name}_{column.name}"
                 await conn.execute(text(

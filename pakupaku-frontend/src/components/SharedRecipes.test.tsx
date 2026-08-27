@@ -7,6 +7,8 @@ const sharedRecipe = {
   servings: 2,
   image_url: null,
   diet_tags: ["vegan", "gluten_free"],
+  instructions: "Step one.\nStep two.",
+  source_url: "https://example.com/recipe",
   total_calories: 200,
   total_protein_g: 10,
   total_fat_g: 5,
@@ -42,6 +44,10 @@ test("lists shared recipes and their diet tags", async () => {
   });
   expect(screen.getByText("vegan")).toBeInTheDocument();
   expect(screen.getByText("gluten free")).toBeInTheDocument();
+  expect(screen.getByText("Step one.")).toBeInTheDocument();
+  expect(screen.getByText("Step two.")).toBeInTheDocument();
+  const sourceLink = screen.getByText("View original");
+  expect(sourceLink).toHaveAttribute("href", "https://example.com/recipe");
 });
 
 test("save a copy calls the copy endpoint", async () => {
