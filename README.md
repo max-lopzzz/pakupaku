@@ -5,7 +5,7 @@ PakuPaku is an inclusive nutrition-tracking app with two main parts:
 - A FastAPI backend for auth, user profiles, recipes, logs, measurements, and USDA food lookups.
 - A React/Capacitor frontend in `pakupaku-frontend/` for iOS and Android.
 
-For a deeper walkthrough, see [docs/architecture.md](/Users/hanniamabellopezmontano/projects/pakupaku/pakupaku/docs/architecture.md).
+For a deeper walkthrough, see [docs/architecture.md](docs/architecture.md).
 
 ## Repository Layout
 
@@ -52,7 +52,7 @@ The entry point is `pakupaku-frontend/src/App.tsx`, which decides whether the us
 - dashboard
 - recipe builder
 
-See the frontend-specific guide in [pakupaku-frontend/README.md](/Users/hanniamabellopezmontano/projects/pakupaku/pakupaku/pakupaku-frontend/README.md).
+See the frontend-specific guide in [pakupaku-frontend/README.md](pakupaku-frontend/README.md).
 
 ## Environment Variables
 
