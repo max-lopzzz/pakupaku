@@ -5,6 +5,7 @@ import Dashboard from "./components/Dashboard";
 import RecipeBuilder from "./components/RecipeBuilder";
 import Settings from "./components/Settings";
 import SharedRecipes from "./components/SharedRecipes";
+import BulkRecipeImport from "./components/BulkRecipeImport";
 import ResetPassword from "./components/ResetPassword";
 import { apiFetch } from "./apiBase";
 
@@ -15,7 +16,7 @@ interface NutritionData {
   fat:      { consumed: number; goal: number };
 }
 
-type AppView = "login" | "verifyEmail" | "onboarding" | "dashboard" | "recipeBuilder" | "settings" | "resetPassword" | "sharedRecipes";
+type AppView = "login" | "verifyEmail" | "onboarding" | "dashboard" | "recipeBuilder" | "settings" | "resetPassword" | "sharedRecipes" | "bulkImport";
 
 // ─── Helpers ─────────────────────────────────────────────
 
@@ -186,6 +187,7 @@ function App() {
       onOpenRecipeBuilder={() => setView("recipeBuilder")}
       onOpenSettings={() => setView("settings")}
       onOpenSharedRecipes={() => setView("sharedRecipes")}
+      onOpenBulkImport={() => setView("bulkImport")}
     />;
   }
 
@@ -200,6 +202,10 @@ function App() {
 
   if (view === "sharedRecipes") {
     return <SharedRecipes onBack={() => setView("dashboard")} />;
+  }
+
+  if (view === "bulkImport") {
+    return <BulkRecipeImport onBack={() => setView("dashboard")} userProfile={userProfile} />;
   }
 
   return <Onboarding onComplete={handleOnboardingComplete} />;
