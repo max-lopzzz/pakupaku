@@ -175,6 +175,122 @@ test("queue step pre-checks is_shared even though extracted drafts default it to
   expect(checkbox.checked).toBe(true);
 });
 
+function makeUrls(n: number): string[] {
+  return Array.from({ length: n }, (_, i) => `https://example.com/recipes/r${i + 1}/`);
+}
+
+function draftForUrl(url: string) {
+  const n = url.match(/r(\d+)/)![1];
+  return {
+    name: `Recipe ${n}`,
+    servings: 4,
+    image_url: null,
+    source_url: url,
+    instructions: null,
+    ingredients: [],
+  };
+}
+
+test("extraction runs in chunks and the progress bar advances as each chunk finishes", async () => {
+  const urls = makeUrls(30);
+  let extractCalls = 0;
+  let releaseSecondChunk: () => void = () => {};
+  const secondChunkGate = new Promise<void>(resolve => {
+    releaseSecondChunk = resolve;
+  });
+
+  (global.fetch as jest.Mock).mockImplementation((url: RequestInfo | URL, opts?: RequestInit) => {
+    const u = String(url);
+    if (u === "/recipes/bulk-import/discover") {
+      return Promise.resolve({ ok: true, json: async () => ({ urls }) } as Response);
+    }
+    if (u === "/recipes/bulk-import/extract") {
+      extractCalls += 1;
+      const body = JSON.parse(String(opts!.body)) as { urls: string[] };
+      const drafts = body.urls.map(draftForUrl);
+      if (extractCalls === 1) {
+        return Promise.resolve({ ok: true, json: async () => ({ drafts }) } as Response);
+      }
+      return secondChunkGate.then(
+        () => ({ ok: true, json: async () => ({ drafts }) } as Response),
+      );
+    }
+    return Promise.reject(new Error(`Unexpected fetch: ${u}`));
+  });
+
+  render(<BulkRecipeImport onBack={() => {}} userProfile={{ is_admin: true }} />);
+  fireEvent.change(screen.getByPlaceholderText("https://example.com/recipes/"), {
+    target: { value: "https://example.com/recipes/" },
+  });
+  fireEvent.click(screen.getByText("Find Recipes"));
+  await waitFor(() => {
+    expect(screen.getByText("Found 30 candidate links on this page.")).toBeInTheDocument();
+  });
+
+  fireEvent.click(screen.getByText("Extract 30 Recipes"));
+
+  // First chunk (15) resolved, second still pending: the bar sits at 15/30.
+  await waitFor(() => {
+    expect(screen.getByText("Processing 15 of 30 links…")).toBeInTheDocument();
+  });
+  expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "50");
+
+  releaseSecondChunk();
+
+  await waitFor(() => {
+    expect(screen.getByText("Recipe 1 of 30")).toBeInTheDocument();
+  });
+  expect(extractCalls).toBe(2);
+});
+
+test("a failed chunk keeps the earlier chunk's drafts and offers them for review", async () => {
+  const urls = makeUrls(30);
+  let extractCalls = 0;
+
+  (global.fetch as jest.Mock).mockImplementation((url: RequestInfo | URL, opts?: RequestInit) => {
+    const u = String(url);
+    if (u === "/recipes/bulk-import/discover") {
+      return Promise.resolve({ ok: true, json: async () => ({ urls }) } as Response);
+    }
+    if (u === "/recipes/bulk-import/extract") {
+      extractCalls += 1;
+      if (extractCalls === 1) {
+        const body = JSON.parse(String(opts!.body)) as { urls: string[] };
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ drafts: body.urls.map(draftForUrl) }),
+        } as Response);
+      }
+      return Promise.resolve({
+        ok: false,
+        json: async () => ({ detail: "extraction failed" }),
+      } as Response);
+    }
+    return Promise.reject(new Error(`Unexpected fetch: ${u}`));
+  });
+
+  render(<BulkRecipeImport onBack={() => {}} userProfile={{ is_admin: true }} />);
+  fireEvent.change(screen.getByPlaceholderText("https://example.com/recipes/"), {
+    target: { value: "https://example.com/recipes/" },
+  });
+  fireEvent.click(screen.getByText("Find Recipes"));
+  await waitFor(() => {
+    expect(screen.getByText("Found 30 candidate links on this page.")).toBeInTheDocument();
+  });
+
+  fireEvent.click(screen.getByText("Extract 30 Recipes"));
+
+  await waitFor(() => {
+    expect(screen.getByText(/stopped early/i)).toBeInTheDocument();
+  });
+
+  fireEvent.click(screen.getByText("Review 15 recipes"));
+
+  await waitFor(() => {
+    expect(screen.getByText("Recipe 1 of 15")).toBeInTheDocument();
+  });
+});
+
 test("zero candidate links shows a message instead of an empty confirm screen", async () => {
   (global.fetch as jest.Mock).mockImplementationOnce((url: RequestInfo | URL) => {
     if (String(url) === "/recipes/bulk-import/discover") {
