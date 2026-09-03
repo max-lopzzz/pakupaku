@@ -779,11 +779,12 @@ async def bulk_import_discover(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Fetch a blog index/archive URL and return the same-domain links on it
-    that look like individual recipe posts. Nothing is fetched beyond
-    this one page — the frontend shows the count and asks the admin to
-    confirm before POST /recipes/bulk-import/extract actually runs the
-    (potentially slow) extraction pass over them.
+    Fetch a blog index/archive URL, walk its pagination, and return the
+    same-domain links across every page that look like individual recipe
+    posts. Only the archive pages are fetched here, one at a time — the
+    frontend shows the count and asks the admin to confirm before POST
+    /recipes/bulk-import/extract actually runs the (potentially slow)
+    extraction pass over them.
     """
     if not current_user.is_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required.")

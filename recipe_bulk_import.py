@@ -52,31 +52,25 @@ def _is_excluded_path(path: str) -> bool:
     return any(p.search(lowered) for p in _EXCLUDED_PATH_PATTERNS)
 
 
-async def discover_recipe_links(index_url: str) -> List[str]:
-    """Fetch index_url and return same-domain links that look like
-    individual post pages: not the index page itself, not a bare
-    fragment, not a tag/category/author/pagination/search URL, not a
-    non-HTML file, and not cross-domain. Deduped, in first-seen order.
+def _extract_candidate_links(
+    soup: BeautifulSoup, page_url: str, base_host: Optional[str]
+) -> List[str]:
+    """Same-domain <a> hrefs on one archive page that look like individual
+    post pages: not the page itself, not a bare fragment, not a
+    tag/category/author/pagination/search URL, not a non-HTML file, and
+    not cross-domain. In first-seen order; may repeat within the page —
+    discover_recipe_links() dedupes across the whole crawl."""
+    normalized_page = page_url.split("#")[0]
 
-    This is a permissive heuristic, not a recipe classifier — pages that
-    slip through get filtered for real by bulk_extract_drafts(), which
-    only keeps URLs where build_import_draft() actually found a recipe.
-    """
-    html = await fetch_page(index_url)
-    soup = BeautifulSoup(html, "html.parser")
-    base_host = urlparse(index_url).hostname
-    normalized_index = index_url.split("#")[0]
-
-    seen = set()
-    candidates: List[str] = []
+    links: List[str] = []
     for tag in soup.find_all("a", href=True):
         href = tag["href"].strip()
         if not href or href.startswith("#"):
             continue
 
-        absolute = urljoin(index_url, href)
+        absolute = urljoin(page_url, href)
         normalized = absolute.split("#")[0]
-        if not normalized or normalized == normalized_index:
+        if not normalized or normalized == normalized_page:
             continue
 
         parsed = urlparse(normalized)
@@ -86,11 +80,81 @@ async def discover_recipe_links(index_url: str) -> List[str]:
             continue
         if _is_excluded_path(parsed.path):
             continue
-        if normalized in seen:
-            continue
 
-        seen.add(normalized)
-        candidates.append(normalized)
+        links.append(normalized)
+
+    return links
+
+
+def _find_next_page_url(
+    soup: BeautifulSoup, page_url: str, base_host: Optional[str]
+) -> Optional[str]:
+    """The "next page" link on a paginated archive, if any: a
+    <link rel="next">, an <a rel="next">, or the standard WordPress
+    <a class="next page-numbers">. Resolved to an absolute same-host URL;
+    None if there's no next page or it points off-domain."""
+    hrefs: List[str] = []
+    for finder in (
+        lambda: soup.find("link", rel=lambda v: bool(v) and "next" in v),
+        lambda: soup.find("a", rel=lambda v: bool(v) and "next" in v),
+        lambda: soup.select_one("a.next.page-numbers, a.page-numbers.next"),
+    ):
+        tag = finder()
+        if tag and tag.get("href"):
+            hrefs.append(tag["href"].strip())
+
+    for href in hrefs:
+        if not href or href.startswith("#"):
+            continue
+        normalized = urljoin(page_url, href).split("#")[0]
+        parsed = urlparse(normalized)
+        if parsed.scheme in ("http", "https") and parsed.hostname == base_host:
+            return normalized
+
+    return None
+
+
+async def discover_recipe_links(index_url: str) -> List[str]:
+    """Starting from index_url, walk the archive's pagination (following
+    each page's "next page" link) and return every same-domain link that
+    looks like an individual post page. Deduped, in first-seen order.
+
+    Pages are fetched one at a time, in order. Already-visited archive
+    pages are tracked so a pagination cycle can't loop forever. If the
+    first page can't be fetched the error propagates; if a later page
+    fails, whatever was discovered up to that point is returned.
+
+    This is a permissive heuristic, not a recipe classifier — pages that
+    slip through get filtered for real by bulk_extract_drafts(), which
+    only keeps URLs where build_import_draft() actually found a recipe.
+    """
+    base_host = urlparse(index_url).hostname
+
+    seen: set = set()
+    candidates: List[str] = []
+    visited_pages: set = set()
+
+    next_url: Optional[str] = index_url.split("#")[0]
+    while next_url and next_url not in visited_pages:
+        visited_pages.add(next_url)
+        try:
+            html = await fetch_page(next_url)
+        except HTTPException:
+            if not candidates and len(visited_pages) == 1:
+                raise
+            logger.warning(
+                "discover_recipe_links: stopping early, failed to fetch %r", next_url
+            )
+            break
+
+        soup = BeautifulSoup(html, "html.parser")
+        for link in _extract_candidate_links(soup, next_url, base_host):
+            if link in seen or link in visited_pages:
+                continue
+            seen.add(link)
+            candidates.append(link)
+
+        next_url = _find_next_page_url(soup, next_url, base_host)
 
     return candidates
 
