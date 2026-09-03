@@ -52,3 +52,23 @@
   font-weight: 600;
   margin: 0 0 0.5rem;
 }
+
+.bulk-import-progress-bar {
+  height: 12px;
+  border-radius: 999px;
+  background: #eaf5f3;
+  overflow: hidden;
+}
+
+.bulk-import-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--paku-mint, #6bbcb3);
+  transition: width 0.3s ease;
+}
+
+.bulk-import-subtle {
+  font-size: 0.9rem;
+  color: #8a6060;
+  margin: 0;
+}

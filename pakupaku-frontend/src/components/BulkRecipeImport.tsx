@@ -17,6 +17,13 @@ interface BulkRecipeImportProps {
 
 type Step = "input" | "confirm" | "extracting" | "queue" | "summary";
 
+// The /recipes/bulk-import/extract endpoint returns every draft in one
+// blocking response, so we send the candidate URLs a chunk at a time and
+// advance a progress bar as each chunk comes back. A blog archive can
+// now yield hundreds of links (pagination is followed during discovery),
+// and that request would otherwise look frozen for minutes.
+const EXTRACT_CHUNK_SIZE = 15;
+
 export default function BulkRecipeImport({ onBack, userProfile }: BulkRecipeImportProps) {
   const [step, setStep] = useState<Step>("input");
   const [indexUrl, setIndexUrl] = useState("");
@@ -28,6 +35,9 @@ export default function BulkRecipeImport({ onBack, userProfile }: BulkRecipeImpo
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [savedCount, setSavedCount] = useState(0);
+  const [processedCount, setProcessedCount] = useState(0);
+  const [foundCount, setFoundCount] = useState(0);
+  const [extractNotice, setExtractNotice] = useState("");
 
   const runDiscover = async () => {
     if (!indexUrl.trim()) {
@@ -62,32 +72,72 @@ export default function BulkRecipeImport({ onBack, userProfile }: BulkRecipeImpo
 
   const runExtract = async () => {
     setError("");
+    setExtractNotice("");
+    setProcessedCount(0);
+    setFoundCount(0);
     setStep("extracting");
-    try {
-      const token = localStorage.getItem("token");
-      const res = await apiFetch("/recipes/bulk-import/extract", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: token ? `Bearer ${token}` : "",
-        },
-        body: JSON.stringify({ urls: candidateUrls }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        throw new Error(body?.detail || "Extraction failed.");
-      }
-      const data = await res.json();
-      const extracted: RecipeImportDraft[] = data.drafts ?? [];
-      setDrafts(extracted);
-      setQueueIndex(0);
-      setSavedCount(0);
-      setStep(extracted.length > 0 ? "queue" : "summary");
-    } catch (err: any) {
-      setError(err.message || "Extraction failed.");
-      setStep("confirm");
+
+    const token = localStorage.getItem("token");
+    const chunks: string[][] = [];
+    for (let i = 0; i < candidateUrls.length; i += EXTRACT_CHUNK_SIZE) {
+      chunks.push(candidateUrls.slice(i, i + EXTRACT_CHUNK_SIZE));
     }
+
+    const collected: RecipeImportDraft[] = [];
+    let processed = 0;
+
+    for (const chunk of chunks) {
+      let res: Response | null = null;
+      try {
+        res = await apiFetch("/recipes/bulk-import/extract", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: token ? `Bearer ${token}` : "",
+          },
+          body: JSON.stringify({ urls: chunk }),
+        });
+      } catch {
+        res = null;
+      }
+
+      if (!res || !res.ok) {
+        if (collected.length > 0) {
+          // Keep the chunks that did come back — the admin can review
+          // those now rather than losing the whole run to one bad batch.
+          setDrafts(collected);
+          setQueueIndex(0);
+          setSavedCount(0);
+          setExtractNotice(
+            `Extraction stopped early — processed ${processed} of ${candidateUrls.length} ` +
+            `link${candidateUrls.length !== 1 ? "s" : ""}. ${collected.length} ` +
+            `recipe${collected.length !== 1 ? "s" : ""} ready to review.`,
+          );
+        } else {
+          const body = res ? await res.json().catch(() => null) : null;
+          setError(body?.detail || "Extraction failed.");
+          setStep("confirm");
+        }
+        return;
+      }
+
+      const data = await res.json();
+      const chunkDrafts: RecipeImportDraft[] = data.drafts ?? [];
+      collected.push(...chunkDrafts);
+      processed += chunk.length;
+      setProcessedCount(processed);
+      setFoundCount(collected.length);
+    }
+
+    setDrafts(collected);
+    setQueueIndex(0);
+    setSavedCount(0);
+    setStep(collected.length > 0 ? "queue" : "summary");
   };
+
+  const extractPct = candidateUrls.length
+    ? Math.round((processedCount / candidateUrls.length) * 100)
+    : 0;
 
   const advanceQueue = () => {
     setSaveError("");
@@ -135,6 +185,9 @@ export default function BulkRecipeImport({ onBack, userProfile }: BulkRecipeImpo
     setDrafts([]);
     setQueueIndex(0);
     setSavedCount(0);
+    setProcessedCount(0);
+    setFoundCount(0);
+    setExtractNotice("");
     setError("");
     setSaveError("");
   };
@@ -197,9 +250,45 @@ export default function BulkRecipeImport({ onBack, userProfile }: BulkRecipeImpo
 
         {step === "extracting" && (
           <div className="bulk-import-card">
-            <p className="bulk-import-count">
-              Extracting recipes from {candidateUrls.length} link{candidateUrls.length !== 1 ? "s" : ""}…
-            </p>
+            {extractNotice ? (
+              <>
+                <p className="recipe-error">{extractNotice}</p>
+                <div className="bulk-import-actions">
+                  <button
+                    type="button"
+                    className="save-recipe-button"
+                    onClick={() => setStep(drafts.length > 0 ? "queue" : "summary")}
+                  >
+                    Review {drafts.length} recipe{drafts.length !== 1 ? "s" : ""}
+                  </button>
+                  <button type="button" className="cancel-edit-button" onClick={startOver}>
+                    Start over
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="bulk-import-count">
+                  Processing {processedCount} of {candidateUrls.length} link
+                  {candidateUrls.length !== 1 ? "s" : ""}…
+                </p>
+                <div
+                  className="bulk-import-progress-bar"
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={extractPct}
+                >
+                  <div
+                    className="bulk-import-progress-fill"
+                    style={{ width: `${extractPct}%` }}
+                  />
+                </div>
+                <p className="bulk-import-subtle">
+                  {foundCount} recipe{foundCount !== 1 ? "s" : ""} found so far
+                </p>
+              </>
+            )}
           </div>
         )}
 
