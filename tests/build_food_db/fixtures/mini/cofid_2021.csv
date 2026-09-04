@@ -1,0 +1,5 @@
+Food Code,Food Name,Description,Group,Energy (kcal) (kcal),Energy (kJ) (kJ),Protein (g),Fat (g),Carbohydrate (g),AOAC fibre (g),Total sugars (g),Sodium (mg),Calcium (mg),Iron (mg),Vitamin C (mg),Vitamin D (µg),Vitamin B12 (µg)
+13-001,"Broccoli, raw","Calabrese, raw",AR,33,140,4.4,0.9,1.8,2.6,1.5,8,56,1.7,87,0,0
+13-002,"raw broccoli","Calabrese, raw, duplicate row",AR,35,150,4.6,1.0,2.0,2.8,1.6,9,58,1.8,89,0,0
+13-100,"Carrots, raw","Flesh and skin, raw",DF,35,150,0.6,0.5,7.9,2.4,7.4,25,25,0.3,4,0,0
+13-101,"raw carrots","Flesh and skin, raw, duplicate row",DF,37,155,0.7,0.4,8.1,2.5,7.6,27,27,0.4,5,0,0
