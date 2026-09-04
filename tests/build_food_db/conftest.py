@@ -16,6 +16,19 @@ def usda_raw_dir(tmp_path):
     return str(d)
 
 
+def cnf_raw_dir(tmp_path):
+    """Copy the committed CNF *_slice.csv fixtures into tmp_path/cnf/ under
+    the real multi-file relational release names, and return that dir."""
+    d = tmp_path / "cnf"
+    d.mkdir()
+    shutil.copy(os.path.join(FIX, "cnf_food_name_slice.csv"), d / "FOOD NAME.csv")
+    shutil.copy(os.path.join(FIX, "cnf_nutrient_name_slice.csv"),
+                d / "NUTRIENT NAME.csv")
+    shutil.copy(os.path.join(FIX, "cnf_nutrient_amount_slice.csv"),
+                d / "NUTRIENT AMOUNT.csv")
+    return str(d)
+
+
 def single_file_raw_dir(tmp_path, source_id, fixture_name, real_name):
     """Copy one committed fixture slice into tmp_path/<source_id>/<real_name>
     and return that dir as a str. Used by the single-file extractors."""

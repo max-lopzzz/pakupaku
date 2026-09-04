@@ -3,6 +3,7 @@ import os
 from scripts.build_food_db.sources.base import to_mg, to_mcg, kj_to_kcal
 from scripts.build_food_db.sources.usda import SOURCE as USDA
 from scripts.build_food_db.sources.cofid import SOURCE as COFID
+from scripts.build_food_db.sources.cnf import SOURCE as CNF
 
 FIX = os.path.join(os.path.dirname(__file__), "fixtures")
 
@@ -63,3 +64,26 @@ def test_cofid_extractor_reads_broccoli(tmp_path):
     # energy falls back to kJ->kcal when the kcal column is blank
     chicken = by_key["breast chicken"]
     assert round(chicken.calories_per_100g, 1) == 156.1
+
+
+def test_cnf_extractor_joins_amount_to_food_and_nutrient(tmp_path):
+    from tests.build_food_db.conftest import cnf_raw_dir
+    raw = cnf_raw_dir(tmp_path)
+
+    rows = CNF.extract(raw)
+
+    by_key = {r.canonical_key: r for r in rows}
+    assert "broccoli" in by_key
+    broc = by_key["broccoli"]
+    assert broc.source_id == "cnf"
+    assert broc.source_food_id == "2"
+    assert broc.calories_per_100g == 34.0
+    assert broc.protein_per_100g == 2.82
+    assert broc.sodium_mg_per_100g == 33.0
+    assert broc.vitamin_c_mg_per_100g == 89.2
+    assert broc.vitamin_b12_mcg_per_100g == 0.0
+    assert broc.prep_state == "raw"
+
+    # chicken has no kcal row, only kJ -> converted
+    chicken = by_key["breast chicken meat only"]
+    assert round(chicken.calories_per_100g, 1) == 164.9

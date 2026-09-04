@@ -11,8 +11,10 @@ from typing import List
 from scripts.build_food_db.sources.base import Source
 from scripts.build_food_db.sources.usda import SOURCE as USDA
 from scripts.build_food_db.sources.cofid import SOURCE as COFID
+from scripts.build_food_db.sources.cnf import SOURCE as CNF
 
 ALL_SOURCES: List[Source] = [
     USDA,
     COFID,
+    CNF,
 ]
