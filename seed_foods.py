@@ -21,6 +21,9 @@ from models import Food
 
 logger = logging.getLogger(__name__)
 
+# TODO(plan1-task9): bundle data/foods.sqlite + resolve ARTIFACT_PATH via
+# sys._MEIPASS — this CWD-relative path yields an empty index in the
+# packaged desktop (PyInstaller) app.
 ARTIFACT_PATH = "data/foods.sqlite"
 _COLS = [c.name for c in Food.__table__.columns]
 
