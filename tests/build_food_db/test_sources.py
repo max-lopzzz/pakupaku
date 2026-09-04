@@ -104,7 +104,7 @@ def test_cnf_extractor_joins_amount_to_food_and_nutrient(tmp_path):
 
 def test_read_xlsx_rows_maps_headers_to_dicts():
     path = os.path.join(FIX, "ciqual_slice.xlsx")
-    rows = list(read_xlsx_rows(path, "Table Ciqual 2025"))
+    rows = list(read_xlsx_rows(path, "composition nutritionnelle"))
     assert len(rows) == 10
     first = rows[0]
     assert first["alim_nom_fr"] == "Brocoli, cru"
@@ -163,7 +163,7 @@ def test_frida_extractor_reads_xlsx(tmp_path):
     from scripts.build_food_db.sources.frida import SOURCE as FRIDA
     from tests.build_food_db.conftest import single_file_raw_dir
     raw = single_file_raw_dir(tmp_path, "frida", "frida_slice.xlsx",
-                              "Frida_5.3.xlsx")
+                              "Frida_6.1.xlsx")
 
     rows = FRIDA.extract(raw)
 

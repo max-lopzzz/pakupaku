@@ -7,26 +7,27 @@ from scripts.build_food_db.sources.base import (
     Source, read_csv_rows, parse_float, kj_to_kcal,
 )
 
-# Canadian Nutrient File (CNF) 2015 — a multi-file relational CSV release.
-# The 2015 files use spaces in their names; confirm on download.
+# Canadian Nutrient File (CNF), 2026 full-file CSV release (open.canada.ca
+# dataset 1b6139bd-ed7e-4043-bc28-ff00e10f3109). Files ship with a UTF-8 BOM,
+# hence encoding="utf-8-sig" below.
 FILES = {
-    "food": "FOOD NAME.csv",
-    "nutrient": "NUTRIENT NAME.csv",
-    "amount": "NUTRIENT AMOUNT.csv",
+    "food": "food_name.csv",
+    "nutrient": "nutrient_name.csv",
+    "amount": "nutrient_amount.csv",
 }
 COLS = {
     "food": {
-        "id": "FoodID",
-        "name": "FoodDescription",
-        "category": "FoodGroupID",
+        "id": "Food_Code",
+        "name": "Food_Description_EN",
+        "category": "CNF_Food_Group_Code",
     },
     "amount": {
-        "food_id": "FoodID",
-        "nutrient_id": "NutrientID",
-        "value": "NutrientValue",
+        "food_id": "Food_Code",
+        "nutrient_id": "Nutrient_Code",
+        "value": "Nutrient_Amount",
     },
 }
-# CNF NutrientID -> NormalisedRow field. NUTRIENT AMOUNT values are already
+# CNF Nutrient_Code -> NormalisedRow field. NUTRIENT AMOUNT values are already
 # per 100 g edible portion in the nutrient's own unit (g for macros, mg for
 # minerals, ug for vitamin D / B-12), so no scaling is needed. Energy id 268
 # (kJ) is used only as a fallback when 208 (kcal) is absent.
@@ -54,7 +55,7 @@ class _Cnf(Source):
         fc = COLS["food"]
         ac = COLS["amount"]
         rows: Dict[str, NormalisedRow] = {}
-        for f in read_csv_rows(os.path.join(raw_dir, FILES["food"])):
+        for f in read_csv_rows(os.path.join(raw_dir, FILES["food"]), encoding="utf-8-sig"):
             fid = (f.get(fc["id"]) or "").strip()
             if not fid:
                 continue
@@ -64,7 +65,7 @@ class _Cnf(Source):
                 category=None,  # raw source categories aren't reconciled yet (Plan-2)
             )
         kj_energy: Dict[str, float] = {}
-        for a in read_csv_rows(os.path.join(raw_dir, FILES["amount"])):
+        for a in read_csv_rows(os.path.join(raw_dir, FILES["amount"]), encoding="utf-8-sig"):
             fid = (a.get(ac["food_id"]) or "").strip()
             row = rows.get(fid)
             if row is None:

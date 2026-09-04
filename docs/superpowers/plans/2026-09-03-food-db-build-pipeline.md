@@ -13,9 +13,16 @@
 ## Status
 
 Tasks 1–8 are **implemented and reviewed** on branch `food-db-spec` (at the
-final fix-wave commit). Task 9 (acquire the real datasets, resolve conflicts,
-commit `data/foods.sqlite`) is **not started** — it needs the user to download
-the six source datasets first.
+final fix-wave commit). Task 9 is **done** (2026-09-04): all six real datasets
+acquired, `data/foods.sqlite` built and committed — 2,481 generic foods, zero
+branded data. Every extractor needed real-schema fixes once given actual
+files (wrong sheet names, wrong header row, wrong column names, or — Frida —
+a completely different relational schema than assumed); see
+`docs/food-data-sources.md` for the actual dataset editions used (several
+differ from this plan's original guesses) and
+`docs/superpowers/plans/2026-09-03-food-db-runtime-cutover.md`'s Status /
+Known limitations sections for what building the real artifact surfaced in
+`food_index`'s matching.
 
 ## Corrections applied during implementation
 
@@ -1333,25 +1340,25 @@ name and column spellings into its `SHEET` / `COLS` map in `sources/<id>.py`
 against the actual downloaded files (the committed values are best-guesses from
 the fixture slices).
 
-- [ ] **Step 1: Download every confirmed source**
+- [x] **Step 1: Download every confirmed source**
 
 Follow `scripts/build_food_db/README.md`. Place files under `scripts/build_food_db/raw/<source_id>/` exactly as the README names them.
 
-- [ ] **Step 2: First build run — generate conflicts**
+- [x] **Step 2: First build run — generate conflicts**
 
 Run: `python -m scripts.build_food_db.build`
 Expected: exits non-zero, "<N> unresolved merge conflicts", `review/conflicts.csv` written.
 
-- [ ] **Step 3: Resolve conflicts**
+- [x] **Step 3: Resolve conflicts**
 
 Open `review/conflicts.csv`. For each group, decide `merge` / `separate` / `rename:<name>` and record it in `review/decisions.csv` (columns `group_id,decision,canonical_name,note`). Spot-check by eye — the nutrient columns are in the CSV to make disagreements obvious.
 
-- [ ] **Step 4: Second build run — produce the artifact**
+- [x] **Step 4: Second build run — produce the artifact**
 
 Run: `python -m scripts.build_food_db.build`
 Expected: "wrote .../data/foods.sqlite".
 
-- [ ] **Step 5: Sanity-check the artifact**
+- [x] **Step 5: Sanity-check the artifact**
 
 Run this one-off check:
 
@@ -1372,7 +1379,7 @@ for name in ('water','broccoli','potato'):
 
 Expected: `impossible-kcal: 0`, `single-source: 0`, a plausible `foods` count (~10k–20k), and `water` at ~0 kcal.
 
-- [ ] **Step 6: Rebuild once more, confirm byte-identical**
+- [x] **Step 6: Rebuild once more, confirm byte-identical**
 
 ```bash
 cp data/foods.sqlite /tmp/foods-a.sqlite
@@ -1382,11 +1389,11 @@ cmp data/foods.sqlite /tmp/foods-a.sqlite && echo DETERMINISTIC
 
 Expected: `DETERMINISTIC`.
 
-- [ ] **Step 7: Fill in `docs/food-data-sources.md`**
+- [x] **Step 7: Fill in `docs/food-data-sources.md`**
 
 Add the final food count, per-source contributed-row counts (from `source_ids`), and a consolidated **Attribution** section with every licence's required credit string verbatim.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add data/foods.sqlite docs/food-data-sources.md scripts/build_food_db/review/decisions.csv

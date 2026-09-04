@@ -1,4 +1,4 @@
-FoodID,FoodCode,FoodGroupID,FoodSourceID,FoodDescription,FoodDescriptionF,FoodDateOfEntry,FoodDateOfPublication,CountryCode,ScientificName
+Food_Code,FoodCode,CNF_Food_Group_Code,FoodSourceID,Food_Description_EN,FoodDescriptionF,FoodDateOfEntry,FoodDateOfPublication,CountryCode,ScientificName
 2,2,11,4,"Broccoli, raw","Brocoli, cru",1982-01-01,,,Brassica oleracea
 3,3,11,4,"Carrots, raw","Carottes, crues",1982-01-01,,,Daucus carota
 4,4,11,4,"Potato, flesh and skin, raw","Pomme de terre, chair et pelure, crue",1982-01-01,,,Solanum tuberosum

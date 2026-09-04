@@ -1,13 +1,9 @@
 import { useState } from "react";
 import "./BulkRecipeImport.css";
-// RecipeEditForm.tsx imports RecipeBuilder.css directly, and this file
-// always renders RecipeEditForm, so classes like .back-button,
-// .recipe-field, .recipe-error, .save-recipe-button, .cancel-edit-button,
-// .empty-state, and .recipe-edit-banner (used directly below, not just by
-// RecipeEditForm) are guaranteed to be in the bundle via that import chain.
+import "./RecipeBuilder.css";
 import { apiFetch } from "../apiBase";
-import RecipeEditForm, {
-  RecipeImportDraft, RecipeSavePayload, formValuesFromDraft,
+import {
+  RecipeImportDraft, formValuesFromDraft, payloadFromFormValues,
 } from "./RecipeEditForm";
 
 interface BulkRecipeImportProps {
@@ -15,7 +11,7 @@ interface BulkRecipeImportProps {
   userProfile: any;
 }
 
-type Step = "input" | "confirm" | "extracting" | "queue" | "summary";
+type Step = "input" | "confirm" | "extracting" | "saving" | "summary";
 
 // The /recipes/bulk-import/extract endpoint returns every draft in one
 // blocking response, so we send the candidate URLs a chunk at a time and
@@ -31,10 +27,9 @@ export default function BulkRecipeImport({ onBack, userProfile }: BulkRecipeImpo
   const [candidateUrls, setCandidateUrls] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [drafts, setDrafts] = useState<RecipeImportDraft[]>([]);
-  const [queueIndex, setQueueIndex] = useState(0);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState("");
+  const [savingIndex, setSavingIndex] = useState(0);
   const [savedCount, setSavedCount] = useState(0);
+  const [failedCount, setFailedCount] = useState(0);
   const [processedCount, setProcessedCount] = useState(0);
   const [foundCount, setFoundCount] = useState(0);
   const [extractNotice, setExtractNotice] = useState("");
@@ -103,15 +98,13 @@ export default function BulkRecipeImport({ onBack, userProfile }: BulkRecipeImpo
 
       if (!res || !res.ok) {
         if (collected.length > 0) {
-          // Keep the chunks that did come back — the admin can review
+          // Keep the chunks that did come back — the admin can still save
           // those now rather than losing the whole run to one bad batch.
           setDrafts(collected);
-          setQueueIndex(0);
-          setSavedCount(0);
           setExtractNotice(
             `Extraction stopped early — processed ${processed} of ${candidateUrls.length} ` +
             `link${candidateUrls.length !== 1 ? "s" : ""}. ${collected.length} ` +
-            `recipe${collected.length !== 1 ? "s" : ""} ready to review.`,
+            `recipe${collected.length !== 1 ? "s" : ""} ready to save.`,
           );
         } else {
           const body = res ? await res.json().catch(() => null) : null;
@@ -130,66 +123,77 @@ export default function BulkRecipeImport({ onBack, userProfile }: BulkRecipeImpo
     }
 
     setDrafts(collected);
-    setQueueIndex(0);
-    setSavedCount(0);
-    setStep(collected.length > 0 ? "queue" : "summary");
+    if (collected.length > 0) {
+      await autoSaveAll(collected);
+    } else {
+      setStep("summary");
+    }
   };
 
   const extractPct = candidateUrls.length
     ? Math.round((processedCount / candidateUrls.length) * 100)
     : 0;
 
-  const advanceQueue = () => {
-    setSaveError("");
-    setQueueIndex(prev => {
-      const next = prev + 1;
-      if (next >= drafts.length) setStep("summary");
-      return next;
-    });
-  };
+  // Every extracted recipe is saved automatically (as a shared recipe) —
+  // no per-recipe review step. A bad ingredient match can be fixed
+  // afterwards from the recipe editor.
+  const autoSaveAll = async (toSave: RecipeImportDraft[]) => {
+    setStep("saving");
+    setSavingIndex(0);
+    setSavedCount(0);
+    setFailedCount(0);
+    const token = localStorage.getItem("token");
+    let saved = 0;
+    let failed = 0;
 
-  const handleSaveCurrent = async (payload: RecipeSavePayload) => {
-    setSaveError("");
-    setSaving(true);
-    try {
-      const token = localStorage.getItem("token");
-      const res = await apiFetch("/recipes", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: token ? `Bearer ${token}` : "",
-        },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        throw new Error(body?.detail || "Failed to save recipe.");
+    for (let i = 0; i < toSave.length; i++) {
+      setSavingIndex(i + 1);
+      const values = { ...formValuesFromDraft(toSave[i]), isShared: true };
+      const result = payloadFromFormValues(values);
+      if ("error" in result) {
+        failed += 1;
+        setFailedCount(failed);
+        continue;
       }
-      setSavedCount(n => n + 1);
-      advanceQueue();
-    } catch (err: any) {
-      setSaveError(err.message || "Unable to save recipe.");
-    } finally {
-      setSaving(false);
+      try {
+        const res = await apiFetch("/recipes", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: token ? `Bearer ${token}` : "",
+          },
+          body: JSON.stringify(result.payload),
+        });
+        if (res.ok) {
+          saved += 1;
+          setSavedCount(saved);
+        } else {
+          failed += 1;
+          setFailedCount(failed);
+        }
+      } catch {
+        failed += 1;
+        setFailedCount(failed);
+      }
     }
+
+    setStep("summary");
   };
 
-  const handleSkipCurrent = () => {
-    advanceQueue();
-  };
+  const savingPct = drafts.length ? Math.round((savingIndex / drafts.length) * 100) : 0;
 
   const startOver = () => {
     setStep("input");
     setIndexUrl("");
     setCandidateUrls([]);
     setDrafts([]);
-    setQueueIndex(0);
+    setSavingIndex(0);
     setSavedCount(0);
+    setFailedCount(0);
     setProcessedCount(0);
     setFoundCount(0);
     setExtractNotice("");
     setError("");
-    setSaveError("");
   };
 
   return (
@@ -257,9 +261,9 @@ export default function BulkRecipeImport({ onBack, userProfile }: BulkRecipeImpo
                   <button
                     type="button"
                     className="save-recipe-button"
-                    onClick={() => setStep(drafts.length > 0 ? "queue" : "summary")}
+                    onClick={() => (drafts.length > 0 ? autoSaveAll(drafts) : setStep("summary"))}
                   >
-                    Review {drafts.length} recipe{drafts.length !== 1 ? "s" : ""}
+                    Save {drafts.length} recipe{drafts.length !== 1 ? "s" : ""}
                   </button>
                   <button type="button" className="cancel-edit-button" onClick={startOver}>
                     Start over
@@ -292,30 +296,27 @@ export default function BulkRecipeImport({ onBack, userProfile }: BulkRecipeImpo
           </div>
         )}
 
-        {step === "queue" && drafts.length > 0 && queueIndex < drafts.length && (
-          <>
-            <p className="bulk-import-progress">
-              Recipe {queueIndex + 1} of {drafts.length}
+        {step === "saving" && (
+          <div className="bulk-import-card">
+            <p className="bulk-import-count">
+              Saving {savingIndex} of {drafts.length} recipe{drafts.length !== 1 ? "s" : ""}…
             </p>
-            <RecipeEditForm
-              key={queueIndex}
-              initialValues={{ ...formValuesFromDraft(drafts[queueIndex]), isShared: true }}
-              userProfile={userProfile}
-              onSave={handleSaveCurrent}
-              submitLabel="Save & Next"
-              savingLabel="Saving…"
-              saving={saving}
-              submitError={saveError}
-              banner={
-                <div className="recipe-edit-banner">
-                  <span>Imported from {drafts[queueIndex].source_url}</span>
-                  <button type="button" className="cancel-edit-button" onClick={handleSkipCurrent}>
-                    Skip & Next
-                  </button>
-                </div>
-              }
-            />
-          </>
+            <div
+              className="bulk-import-progress-bar"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={savingPct}
+            >
+              <div
+                className="bulk-import-progress-fill"
+                style={{ width: `${savingPct}%` }}
+              />
+            </div>
+            <p className="bulk-import-subtle">
+              {savedCount} saved{failedCount > 0 ? `, ${failedCount} failed` : ""} so far
+            </p>
+          </div>
         )}
 
         {step === "summary" && (
@@ -323,7 +324,11 @@ export default function BulkRecipeImport({ onBack, userProfile }: BulkRecipeImpo
             <p className="bulk-import-count">
               {drafts.length === 0
                 ? "Found 0 recipes in that batch."
-                : `Saved ${savedCount} of ${drafts.length}.`}
+                : `Saved ${savedCount} of ${drafts.length}${failedCount > 0 ? ` (${failedCount} failed)` : ""}.`}
+            </p>
+            <p className="bulk-import-subtle">
+              Review the saved recipes from the recipe library to fix any ingredient
+              matches that need adjusting.
             </p>
             <button type="button" className="save-recipe-button" onClick={startOver}>
               Import another blog

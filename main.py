@@ -6,7 +6,7 @@ PakuPaku FastAPI application.
 Route groups:
   /auth       — register, login
   /users      — profile, onboarding, preferences
-  /foods      — USDA search and detail (via usda.py)
+  /foods      — offline generic-food index (food_index.py)
   /logs       — food log CRUD + daily summary
   /recipes    — custom recipe CRUD
 """
@@ -25,7 +25,7 @@ from sqlalchemy.future import select
 from sqlalchemy import func, cast, Date
 from sqlalchemy.orm import selectinload
 
-from database import get_db
+from database import get_db, AsyncSessionLocal
 from models import User, FoodLog, Recipe, RecipeIngredient, BodyMeasurement
 from schemas import (
     RegisterRequest, LoginRequest, TokenResponse,
@@ -43,7 +43,7 @@ from email_utils import send_verification_email, send_password_reset_email
 from config import CORS_ALLOWED_ORIGINS, FRONTEND_URL, SECRET_KEY
 
 logger = logging.getLogger(__name__)
-from usda import search_foods, get_food, get_foods_bulk, extract_nutrients
+import food_index
 from recipe_import import build_import_draft
 from recipe_bulk_import import discover_recipe_links, bulk_extract_drafts
 from nutrition_calculator import (
@@ -77,6 +77,22 @@ app.add_middleware(
 
 if SECRET_KEY == "changeme":
     logger.warning("SECRET_KEY is using the default insecure value. Set SECRET_KEY in your environment.")
+
+
+@app.on_event("startup")
+async def _load_food_index() -> None:
+    """Load the already-seeded runtime ``foods`` table into the in-memory
+    search index. Seeding the table from ``data/foods.sqlite`` is a
+    deploy-time step (``seed_foods.py`` in the Render build command / the
+    desktop bundle), not something this hook does — re-seeding on every
+    cold start would be a redundant full table rewrite and would race
+    across uvicorn workers. A cold DB or empty table must not crash
+    boot — on any failure we log and serve an empty index."""
+    try:
+        async with AsyncSessionLocal() as s:
+            await food_index.load(s)
+    except Exception:
+        logger.exception("food index startup load failed — serving an empty index")
 
 
 def _normalize_email(email: str) -> str:
@@ -500,45 +516,32 @@ async def onboarding_custom(
 
 
 # ─────────────────────────────────────────────
-#  FOOD (USDA) ROUTES
+#  FOOD ROUTES
 # ─────────────────────────────────────────────
 
 @app.get("/foods/search")
 async def food_search(
-    query:       str,
-    page_size:   int           = Query(10,  ge=1, le=200),
-    page_number: int           = Query(1,   ge=1),
-    data_types:  Optional[str] = Query(None, description="Comma-separated data types"),
-    brand_owner: Optional[str] = Query(None, description="Filter branded foods by brand owner name"),
+    query:     str,
+    page_size: int = Query(25, ge=1, le=200),
     _: User = Depends(get_current_user),   # require auth
 ):
-    """
-    Search the USDA FoodData Central database.
-    Returns raw USDA results — nutrients are per 100g.
-    """
-    dt_list = [d.strip() for d in data_types.split(",")] if data_types else None
-    return await search_foods(query, page_size, page_number, dt_list, brand_owner)
+    """Search the offline generic-food index. Nutrients are per 100 g."""
+    return {"foods": [f.as_search_result() for f in food_index.search(query, page_size)]}
 
 
-@app.get("/foods/{fdc_id}")
-async def food_detail(
-    fdc_id:   int,
-    format:   str = Query("full", description="abridged or full"),
-    _: User = Depends(get_current_user),
-):
-    """Get full details for a single food item by FDC ID."""
-    food = await get_food(fdc_id, format=format)
-    return extract_nutrients(food)
+@app.get("/foods/{food_id}")
+async def food_detail(food_id: str, _: User = Depends(get_current_user)):
+    """Get full details for a single generic food from the offline index."""
+    f = food_index.get(food_id)
+    if f is None:
+        raise HTTPException(status_code=404, detail="Food not found.")
+    return f.as_detail()
 
 
 @app.post("/foods/bulk")
-async def food_bulk(
-    fdc_ids: List[int],
-    _: User = Depends(get_current_user),
-):
-    """Fetch up to 20 foods at once by FDC ID list."""
-    foods = await get_foods_bulk(fdc_ids)
-    return [extract_nutrients(f) for f in foods]
+async def food_bulk(food_ids: List[str], _: User = Depends(get_current_user)):
+    """Fetch a batch of foods from the offline index by ID list."""
+    return [f.as_detail() for f in (food_index.get(i) for i in food_ids) if f is not None]
 
 
 # ─────────────────────────────────────────────
@@ -564,7 +567,7 @@ async def create_log(
 
     log = FoodLog(
         user_id    = current_user.id,
-        fdc_id     = payload.fdc_id,
+        food_id    = payload.food_id,
         recipe_id  = payload.recipe_id,
         food_name  = payload.food_name,
         brand_name = payload.brand_name,
@@ -727,7 +730,7 @@ async def create_recipe(
     for ing in payload.ingredients:
         obj = RecipeIngredient(
             recipe_id  = recipe.id,
-            fdc_id     = ing.fdc_id,
+            food_id    = ing.food_id,
             food_name  = ing.food_name,
             brand_name = ing.brand_name,
             amount_g   = ing.amount_g,
@@ -767,7 +770,7 @@ async def import_recipe(
 ):
     """
     Fetch a blog URL and return a draft recipe with ingredients matched
-    to USDA foods. Nothing is saved — the frontend opens this in the
+    to foods from the offline food index. Nothing is saved — the frontend opens this in the
     recipe builder for review before the user calls POST /recipes.
     """
     return await build_import_draft(payload.url)
@@ -877,7 +880,7 @@ async def copy_recipe(
     for ing in source.ingredients:
         obj = RecipeIngredient(
             recipe_id  = copy.id,
-            fdc_id     = ing.fdc_id,
+            food_id    = ing.food_id,
             food_name  = ing.food_name,
             brand_name = ing.brand_name,
             amount_g   = ing.amount_g,
@@ -976,7 +979,7 @@ async def update_recipe(
         for ing in payload.ingredients:
             obj = RecipeIngredient(
                 recipe_id  = recipe.id,
-                fdc_id     = ing.fdc_id,
+                food_id    = ing.food_id,
                 food_name  = ing.food_name,
                 brand_name = ing.brand_name,
                 amount_g   = ing.amount_g,

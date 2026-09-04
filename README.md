@@ -2,7 +2,7 @@
 
 PakuPaku is an inclusive nutrition-tracking app with two main parts:
 
-- A FastAPI backend for auth, user profiles, recipes, logs, measurements, and USDA food lookups.
+- A FastAPI backend for auth, user profiles, recipes, logs, measurements, and an offline multi-country food database.
 - A React/Capacitor frontend in `pakupaku-frontend/` for iOS and Android.
 
 For a deeper walkthrough, see [docs/architecture.md](docs/architecture.md).
@@ -15,7 +15,7 @@ For a deeper walkthrough, see [docs/architecture.md](docs/architecture.md).
 - `models.py`: SQLAlchemy ORM models.
 - `schemas.py`: Pydantic request/response schemas.
 - `nutrition_calculator.py`: calorie, body-fat, and macro calculations used by onboarding.
-- `usda.py`: USDA FoodData Central client and nutrient extraction helpers.
+- `food_index.py`: in-memory search/match over the offline `foods` table (built by `scripts/build_food_db/`).
 - `email_utils.py`: verification email sending.
 - `pakupaku-frontend/`: mobile/web frontend.
 
@@ -25,7 +25,7 @@ The API is defined in `main.py` and organized by route groups:
 
 - `/auth`: registration, login, email verification, resend verification.
 - `/users`: current profile, preferences, onboarding calculations, custom goals.
-- `/foods`: USDA search, detail, and bulk lookup.
+- `/foods`: search, detail, and bulk lookup over the offline food index.
 - `/logs`: food log creation, listing, deletion, and daily summary.
 - `/recipes`: custom recipe CRUD.
 - `/measurements`: body measurement tracking.
@@ -42,7 +42,7 @@ Most routes follow the same pattern:
 The frontend currently contains two data access styles:
 
 - Backend-backed React app code that calls the FastAPI API with `fetch()`.
-- Local/mobile-oriented service modules under `pakupaku-frontend/src/services/` that use SQLite and direct USDA requests.
+- Local/mobile-oriented service modules under `pakupaku-frontend/src/services/` that use SQLite.
 
 The entry point is `pakupaku-frontend/src/App.tsx`, which decides whether the user sees:
 
@@ -63,7 +63,6 @@ Important backend environment variables:
 - `FRONTEND_URL`: URL used for email verification redirects.
 - `BACKEND_PUBLIC_URL`: public backend base URL used in verification links.
 - `CORS_ALLOWED_ORIGINS`: comma-separated list of allowed browser origins.
-- `USDA_API_KEY`: USDA FoodData Central API key.
 - `RESEND_API_KEY`, `RESEND_FROM_EMAIL`: email settings — sent via Resend's HTTPS API rather than SMTP, since several common hosts block outbound SMTP.
 - `LLM_API_KEY`: API key for the LLM used as a fallback when a recipe blog has no schema.org/JSON-LD markup (recipe import feature). Optional — import returns a 503 for that fallback path when unset.
 - `LLM_BASE_URL`: Base URL for the LLM's OpenAI-compatible chat-completions endpoint. Defaults to Groq.
@@ -93,7 +92,7 @@ npm start
 - Change persistence shape: `models.py`
 - Change auth behavior: `auth.py`
 - Change nutrition logic: `nutrition_calculator.py`
-- Change USDA parsing or API behavior: `usda.py`
+- Change food search/matching: `food_index.py` (runtime) or `scripts/build_food_db/` (the offline DB build).
 - Change frontend screens: `pakupaku-frontend/src/components/`
 
 ## Current Caveats

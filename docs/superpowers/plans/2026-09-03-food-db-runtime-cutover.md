@@ -12,6 +12,18 @@
 
 **Predecessor:** `docs/superpowers/plans/2026-09-03-food-db-build-pipeline.md` — must be merged, and its Task 9 (real `data/foods.sqlite` committed) ideally done. This plan works against a tiny fixture `foods.sqlite` until then; the seed step no-ops gracefully when the artifact is absent.
 
+## Status
+
+Tasks 1–12 implemented, reviewed, and fixed at `e3e1f48` on branch `food-db-runtime-cutover` (based on `food-db-spec` @ `d209f7b`), then merged to `food-db-spec` via PR #25. Plan 1's Task 9 (the real `data/foods.sqlite` artifact) is now also done: all six datasets acquired for real (see `docs/food-data-sources.md` for the actual editions used — several differ from the plan's original guesses, e.g. CIQUAL 2025 via its Recherche Data Gouv mirror since `ciqual.anses.fr` blocks this network, AFCD Release 3 not 2, CNF 2026 not 2015, Frida/FCDB 6.1 not 5.3), the build pipeline's extractors rewritten against each source's *actual* file/column layout (all were wrong in some way — wrong sheet names, wrong header row, wrong column names, or a completely different schema in Frida's case), and `data/foods.sqlite` built end-to-end: 2,481 generic foods, zero branded data, each with ≥2 independent national sources agreeing on at least one nutrient. Building it surfaced and fixed a real regression of the "wrong food" bug class this project exists to prevent — see Known limitations below for what's fixed and what's deliberately deferred. `pytest` 139 passing, `tsc --noEmit` clean, frontend suite green (bar the pre-existing `App.test.tsx` CRA-boilerplate failure).
+
+## Known limitations
+
+- ~~`food_index` full-coverage fuzzy ties fall to alphabetical row order~~ — **fixed 2026-09-04**, against the real artifact built for Task 9 (see Status below). `_ranked` now: (a) retrieves a wide candidate pool (`max(limit*3, 200)`, not `limit*3`) before re-ranking, since a real multi-thousand-food index routinely has dozens of candidates tied at the ceiling `token_set_ratio` score for a short query and the old narrow pool silently dropped the right one for `best_match` (`limit=1`); (b) within "covers every query token" candidates, ranks by fewest extra tokens first (an `EXTRA_TOKEN_CAP = 2` also demotes a candidate to the general pool when it drags in too many extra tokens — e.g. a long product name that merely *mentions* the query word once); (c) the general/partial pool is ranked by `token_sort_ratio` alone (dropped `token_set_ratio` as the tie-break there — it was the actual source of the "butter beans" → "Butter" bug, since a short candidate's tokens being a full subset of the query scores it 100 regardless of relevance). Verified against the real 2,481-food artifact: `water` → "Water, tap" (was "Nuts, coconut milk, canned..." with the old narrow retrieval), `butter beans` → "Bean, butter, fresh, boiled, drained" (was "Butter, salted"). Regression tests added in `tests/test_food_index.py` (`test_water_does_not_match_an_unrelated_long_product_name`) using a real mis-scoring alias found in the artifact, not a hypothetical.
+
+- **Build-time fuzzy merge grouping can still fold genuinely different foods together (parked, not fixed here).** `match.py`'s `group_foods` (`TOKEN_SET_THRESHOLD = 92`) merges two source rows whenever their `canonical_key`s are close enough — but `canonical_key` doesn't strip enough *structural/packaging* vocabulary ("canned", "heavy syrup pack", "solids and liquids", "plant-based beverage", "shelf-stable", "unsweetened", ...), so two genuinely different foods that share a lot of that packaging language can out-score two rows that are actually the same food but phrased differently. Confirmed on the real artifact: `"Apricots, canned, heavy syrup pack, with skin, solids and liquids"` absorbed an alias `"Pear, canned halves, heavy syrup pack, solids and liquid"` (apricot and pear averaged into one entry); `"Almond milk, unsweetened, plain, shelf stable"` absorbed hemp- and rice-beverage aliases. `aggregate.py`'s `sanity_ok` (kcal ≤ 900/100g, macro sum ≤ 105 g/100g) and the ≥2-distinct-source rule keep the resulting numbers *plausible*, so this is not the catastrophic branded-data class the project targeted — but it's a real precision loss for whichever specific food a user actually meant. Real fix needs stricter grouping (raise the token-set threshold, strip more packaging/qualifier words from `canonical_key`, or require the head noun to match exactly) followed by a full rebuild and a fresh `review/conflicts.csv` pass — that's Plan-1-methodology work, out of scope here.
+
+- **`canonical_key`'s head-noun detection only looks at the text before the first comma (parked, not fixed here).** For a name like `"Beverages, Coconut water, ready-to-drink, unsweetened"`, the pre-comma segment is just `"Beverages"`, so the real head noun (`"water"`, in the *second* segment) isn't recognised and gets dropped as a generic stopword — the dedicated coconut-water entry becomes unreachable by a `"coconut water"` search. Combined with the grouping issue above (a *different*, mis-grouped `"coconut water (liquid from coconut)"` alias lives under an unrelated `"Nuts, coconut cream, canned, sweetened"` entry), `best_match("coconut water")` currently returns a plausible-but-wrong 323 kcal/100g value instead of the ~19 kcal/100g the dedicated entry would give. Real fix: scan every comma segment for a trailing noun that isn't a category word, or maintain a small category-word list (`"beverages"`, `"soup"`, `"sauce"`, ...) to skip when picking the head segment. Build-pipeline work, needs a full rebuild to take effect.
+
 ## Global Constraints
 
 - **Python 3.8 syntax only** — `typing.Optional[X]` / `typing.List[X]` / `typing.Dict`, never `X | None` / `list[X]`.
@@ -24,6 +36,21 @@
 - New Python deps pinned in `requirements.txt` with a one-line comment. `rapidfuzz==3.9.7` is already there (build pipeline).
 - Backend tests under `tests/`, run `python -m pytest -q` (125 passing at plan start). Frontend tests `CI=true npm test -- --watchAll=false` from `pakupaku-frontend/`.
 - **Task order keeps `main` working:** each endpoint's server change and its frontend callers land in the same task. Do not merge a task that leaves the app half-cut-over.
+
+## Preflight corrections (apply to EVERY task — the code sketches below predate this)
+
+The plan's test sketches were written before checking `tests/conftest.py`. Reality:
+
+- **Session factory is `database.AsyncSessionLocal`** (an `async_sessionmaker`), NOT `async_session`. There is no `async_session` export.
+- **`database.engine` points at an unreachable dummy Postgres URL in tests** and is never connected. Tests must NEVER call `create_all` / seed / load against `database.engine` or `database.AsyncSessionLocal`.
+- **The test harness** (`tests/conftest.py`) gives you: a `db_session` fixture — a live `AsyncSession` on a fresh temp-file SQLite DB with **every table already created** via `Base.metadata.create_all` (so once `models.Food` exists, the `foods` table exists in every `db_session`); and a `client` fixture — a `TestClient(app)` (no `with`, so **FastAPI startup events do NOT fire in tests**) whose `get_db` yields that same `db_session`.
+- Therefore the seed/index functions take a **live `AsyncSession`**, not a factory or engine:
+  - `async def seed_foods(session: AsyncSession, artifact_path: str = ARTIFACT_PATH) -> int` — `delete(Food)` + `insert(Food)` on `session`, caller commits. Missing artifact → log + return 0.
+  - `async def load(session: AsyncSession) -> None` in `food_index` — `select(Food)` on `session`.
+  - Tests: `await seed_foods(db_session, str(art)); await db_session.commit(); await food_index.load(db_session)`.
+  - Startup hook (`main.py`): `async with AsyncSessionLocal() as s: await seed_foods(s); await s.commit(); await food_index.load(s)` — wrapped in `try/except` so a missing artifact or a cold DB never crashes boot; log and continue with an empty index.
+- **`backend_entry.py`** already imports `from database import Base, engine` and runs its own `engine.begin()` block — the desktop path (Task 9) uses `engine` directly there, which is correct because desktop's `DATABASE_URL` is a real local SQLite file. Only *pytest* must avoid `database.engine`.
+- Task 1: confirm `models.py`'s `from sqlalchemy import ...` line has `Float` / `String` / `Text`; add whichever is missing.
 
 ---
 
@@ -889,17 +916,16 @@ git commit -m "feat: fdc_id -> food_id migration (Neon SQL + desktop SQLite path
 
 ---
 
-## Task 11: device-local path — `services/api.ts` + `services/db.ts`
+## Task 11: remove the dead USDA code in `services/api.ts`
 
-**Files:** Modify `pakupaku-frontend/src/services/api.ts`, `pakupaku-frontend/src/services/db.ts`; Test the service-layer tests if any.
+**RESCOPED (controller ruling PR10):** `pakupaku-frontend/src/services/api.ts` is **not imported anywhere** in `src/`, and `apiFoodSearch` / `apiFoodDetail` have **zero callers**. The app is entirely backend-`fetch()`-driven (via `apiBase.ts` → `/foods/*`). The "device-local Capacitor food lookup" the spec anticipated does not exist as a live path. So this task just deletes the orphaned USDA block — it does **not** build a Capacitor `foods` table or bundle `data/foods.sqlite` (nothing would consume them). A genuine offline-mobile food search is a fresh feature with its own design, out of scope here. `services/db.ts` already got `food_id TEXT` in Task 8.
 
-**Interfaces:** the Capacitor/SQLite service layer stops calling `api.nal.usda.gov` and reads the bundled `foods` table; its `fdc_id` column becomes `food_id TEXT`.
+**Files:** Modify `pakupaku-frontend/src/services/api.ts`.
 
-- [ ] **Step 1** — `services/db.ts`: the local SQLite schema — `food_logs` / `recipe_ingredients` `fdc_id` column → `food_id TEXT`. Add a `foods` table matching the Global-Constraints DDL. Add a one-time import step that copies `data/foods.sqlite` rows into it (bundle the artifact under `public/` and `fetch()` it as an ArrayBuffer on first launch, or ship it as a Capacitor asset — pick whichever this repo's `@capacitor-community/sqlite` setup supports; document the choice inline).
-- [ ] **Step 2** — `services/api.ts`: delete `USDA_BASE` / `USDA_KEY` and the `searchFoods` / `getFood` functions that hit USDA. Replace with local queries over the `foods` table (same normalised-token + `LIKE` / in-JS fuzzy approach as `food_index`, or a thin JS port). Every insert/select that named `fdc_id` → `food_id`.
-- [ ] **Step 3** — `grep -rn "usda\|fdcId\|fdc_id\|nal.usda.gov" pakupaku-frontend/src` → only comments / historical migration strings remain.
-- [ ] **Step 4** — `CI=true npm test -- --watchAll=false` green; `npx tsc --noEmit` clean; `CI=true npm run build` clean.
-- [ ] **Step 5: Commit** `feat: device-local food lookup uses the bundled foods table, not the USDA API`.
+- [ ] **Step 1** — In `services/api.ts`, delete the entire `// ── USDA ──` block: `USDA_BASE`, `USDA_KEY` (the only reader of `process.env.REACT_APP_USDA_API_KEY`), `apiFoodSearch`, `apiFoodDetail`, and the portion-parsing helpers they use. Nothing else in the file references them.
+- [ ] **Step 2** — `grep -rn "USDA\|nal.usda.gov\|apiFoodSearch\|apiFoodDetail\|REACT_APP_USDA" pakupaku-frontend/src` → nothing (comments/docs excluded).
+- [ ] **Step 3** — `cd pakupaku-frontend && npx tsc --noEmit` clean; `CI=true npm test -- --watchAll=false` green (bar the pre-existing `App.test.tsx`); `CI=true npm run build` clean.
+- [ ] **Step 4: Commit** `chore: drop the unused device-local USDA client from services/api.ts`.
 
 ---
 

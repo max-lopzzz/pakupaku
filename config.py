@@ -26,9 +26,6 @@ CORS_ALLOWED_ORIGINS = _split_csv_env(
     f"{FRONTEND_URL},http://localhost:3000,http://127.0.0.1:3000",
 )
 
-# ── USDA ──────────────────────────────────────
-USDA_API_KEY = os.getenv("USDA_API_KEY")
-
 # ── LLM (recipe import fallback) ──────────────
 # Used only when a blog page has no schema.org/JSON-LD Recipe markup.
 # Any OpenAI-compatible chat-completions endpoint works — Groq is the
