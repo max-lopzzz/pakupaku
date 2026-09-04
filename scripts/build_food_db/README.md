@@ -38,24 +38,27 @@ extractor is written for them; do not add `raw/` folders for them.
    release, e.g. December 2025 — ~458 MB zipped, ~3 GB unzipped).
 3. Unzip into `scripts/build_food_db/raw/usda/`. Keep only these files (delete
    the rest to save space):
-   - `food.csv`
-   - `food_nutrient.csv`
-   - `nutrient.csv`
-   - `food_portion.csv`
-4. Under **"FNDDS (Food and Nutrient Database for Dietary Studies)"** download the
-   **FNDDS 2021-2023** CSV release and unzip into
-   `scripts/build_food_db/raw/usda/fndds/`. The portion/measure and food tables
-   from this release are used for household-measure portions; name the exact
-   files in code once downloaded (`portions.py` reads them).
+   - `food.csv` — read by `sources/usda.py` (generic-food rows) **and**
+     `portions.py` (household-measure names, restricted to
+     `foundation_food` / `sr_legacy_food` / `survey_fndds_food`).
+   - `food_nutrient.csv` — read by `sources/usda.py`.
+   - `food_portion.csv` — read by `portions.py`. The build divides
+     `gram_weight` by `amount` (`amount=3, modifier="oz"` → grams per oz),
+     falling back to the raw `gram_weight` when `amount` is blank / 0 / 1.
+   - `nutrient.csv` — **not currently read by any extractor**; keep it only as
+     a reference for the `sources/usda.py` nutrient-id map.
+
+No separate FNDDS release is needed: the household portions come from
+`food_portion.csv` in this Full Download, not from the standalone
+FNDDS 2021-2023 CSV release.
 
 Final layout:
 
 ```
 raw/usda/food.csv
 raw/usda/food_nutrient.csv
-raw/usda/nutrient.csv
 raw/usda/food_portion.csv
-raw/usda/fndds/...            (FNDDS 2021-2023 CSV release, portion + food tables)
+raw/usda/nutrient.csv         (reference only — no extractor reads it)
 ```
 
 ---

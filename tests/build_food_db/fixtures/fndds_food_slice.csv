@@ -1,0 +1,11 @@
+fdc_id,data_type,description
+1001,foundation_food,"Broccoli, raw"
+1002,sr_legacy_food,"Milk, whole, 3.25% milkfat"
+1003,sr_legacy_food,"Apple, raw, with skin"
+1004,foundation_food,"Carrots, raw"
+1005,survey_fndds_food,"Rice, white, cooked"
+1006,sr_legacy_food,"Banana, raw"
+1007,foundation_food,"Chicken, broilers or fryers, breast, meat only, roasted"
+1008,foundation_food,"Cheese, cheddar"
+1009,branded_food,"SUPER CRUNCH BRANDED CEREAL"
+1010,branded_food,"MEGA LOAF BRANDED BREAD"
