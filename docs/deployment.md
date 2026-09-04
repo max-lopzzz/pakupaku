@@ -72,7 +72,6 @@ Do these in order — each later step needs a value from the one before it.
      isn't blocked. `RESEND_FROM_EMAIL` can stay at its default
      (`PakuPaku <onboarding@resend.dev>`, Resend's shared sender —
      works immediately, no domain verification needed).
-   - `USDA_API_KEY` — your existing key.
    - `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` — optional. Only needed
      for the recipe-import LLM fallback path (used when a blog page
      lacks schema.org/JSON-LD Recipe markup); that path returns a 503
@@ -102,7 +101,7 @@ Do these in order — each later step needs a value from the one before it.
    including `DATABASE_URL`, to the build step just like it does at
    runtime):
    ```
-   pip install -r requirements.txt && python3 create_tables.py
+   pip install -r requirements.txt && python3 create_tables.py && python3 seed_foods.py
    ```
    `create_tables.py` (in this repo) mirrors the same `create_all()`
    pattern `backend_entry.py` already uses for the desktop build. An
@@ -116,6 +115,9 @@ Do these in order — each later step needs a value from the one before it.
    a no-op on every build after the first — the tradeoff versus a true
    Pre-Deploy Command is that this now reruns on every deploy rather than
    once, which costs a fraction of a second and nothing else.
+
+   `seed_foods.py` is a no-op until `data/foods.sqlite` is committed; once
+   present, it replaces the `foods` table contents on every deploy.
 6. Deploy. The build step above installs `requirements.txt` and creates
    the schema in one command, then Render starts uvicorn per the Start
    Command. The build step exiting successfully is what confirms the
