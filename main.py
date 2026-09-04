@@ -25,7 +25,7 @@ from sqlalchemy.future import select
 from sqlalchemy import func, cast, Date
 from sqlalchemy.orm import selectinload
 
-from database import get_db
+from database import get_db, AsyncSessionLocal
 from models import User, FoodLog, Recipe, RecipeIngredient, BodyMeasurement
 from schemas import (
     RegisterRequest, LoginRequest, TokenResponse,
@@ -43,7 +43,9 @@ from email_utils import send_verification_email, send_password_reset_email
 from config import CORS_ALLOWED_ORIGINS, FRONTEND_URL, SECRET_KEY
 
 logger = logging.getLogger(__name__)
-from usda import search_foods, get_food, get_foods_bulk, extract_nutrients
+import food_index
+from seed_foods import seed_foods
+from usda import get_food, get_foods_bulk, extract_nutrients
 from recipe_import import build_import_draft
 from recipe_bulk_import import discover_recipe_links, bulk_extract_drafts
 from nutrition_calculator import (
@@ -77,6 +79,20 @@ app.add_middleware(
 
 if SECRET_KEY == "changeme":
     logger.warning("SECRET_KEY is using the default insecure value. Set SECRET_KEY in your environment.")
+
+
+@app.on_event("startup")
+async def _load_food_index() -> None:
+    """Seed the runtime ``foods`` table from the offline artifact and load
+    the in-memory search index. A missing ``data/foods.sqlite`` or a cold
+    DB must not crash boot — on any failure we log and serve an empty index."""
+    try:
+        async with AsyncSessionLocal() as s:
+            await seed_foods(s)
+            await s.commit()
+            await food_index.load(s)
+    except Exception:
+        logger.exception("food index startup load failed — serving an empty index")
 
 
 def _normalize_email(email: str) -> str:
@@ -505,19 +521,12 @@ async def onboarding_custom(
 
 @app.get("/foods/search")
 async def food_search(
-    query:       str,
-    page_size:   int           = Query(10,  ge=1, le=200),
-    page_number: int           = Query(1,   ge=1),
-    data_types:  Optional[str] = Query(None, description="Comma-separated data types"),
-    brand_owner: Optional[str] = Query(None, description="Filter branded foods by brand owner name"),
+    query:     str,
+    page_size: int = Query(25, ge=1, le=200),
     _: User = Depends(get_current_user),   # require auth
 ):
-    """
-    Search the USDA FoodData Central database.
-    Returns raw USDA results — nutrients are per 100g.
-    """
-    dt_list = [d.strip() for d in data_types.split(",")] if data_types else None
-    return await search_foods(query, page_size, page_number, dt_list, brand_owner)
+    """Search the offline generic-food index. Nutrients are per 100 g."""
+    return {"foods": [f.as_search_result() for f in food_index.search(query, page_size)]}
 
 
 @app.get("/foods/{fdc_id}")
