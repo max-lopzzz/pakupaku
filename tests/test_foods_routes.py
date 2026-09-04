@@ -66,3 +66,26 @@ def test_foods_search_empty_when_index_not_loaded(client, db_session):
         assert r.json() == {"foods": []}
     finally:
         app.dependency_overrides.pop(get_current_user, None)
+
+
+async def test_food_detail_returns_index_row(client, db_session, tmp_path):
+    await _prime_index(db_session, tmp_path)
+    app.dependency_overrides[get_current_user] = lambda: _make_user()
+    try:
+        r = client.get("/foods/gen:00001")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["food_id"] == "gen:00001"
+        assert body["portions"] == [{"unit": "cup chopped", "grams": 91.0}]
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+async def test_food_detail_404_for_unknown_id(client, db_session, tmp_path):
+    await _prime_index(db_session, tmp_path)
+    app.dependency_overrides[get_current_user] = lambda: _make_user()
+    try:
+        r = client.get("/foods/gen:99999")
+        assert r.status_code == 404
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)

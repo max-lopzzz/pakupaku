@@ -45,7 +45,7 @@ from config import CORS_ALLOWED_ORIGINS, FRONTEND_URL, SECRET_KEY
 logger = logging.getLogger(__name__)
 import food_index
 from seed_foods import seed_foods
-from usda import get_food, get_foods_bulk, extract_nutrients
+from usda import get_foods_bulk, extract_nutrients
 from recipe_import import build_import_draft
 from recipe_bulk_import import discover_recipe_links, bulk_extract_drafts
 from nutrition_calculator import (
@@ -529,15 +529,13 @@ async def food_search(
     return {"foods": [f.as_search_result() for f in food_index.search(query, page_size)]}
 
 
-@app.get("/foods/{fdc_id}")
-async def food_detail(
-    fdc_id:   int,
-    format:   str = Query("full", description="abridged or full"),
-    _: User = Depends(get_current_user),
-):
-    """Get full details for a single food item by FDC ID."""
-    food = await get_food(fdc_id, format=format)
-    return extract_nutrients(food)
+@app.get("/foods/{food_id}")
+async def food_detail(food_id: str, _: User = Depends(get_current_user)):
+    """Get full details for a single generic food from the offline index."""
+    f = food_index.get(food_id)
+    if f is None:
+        raise HTTPException(status_code=404, detail="Food not found.")
+    return f.as_detail()
 
 
 @app.post("/foods/bulk")
