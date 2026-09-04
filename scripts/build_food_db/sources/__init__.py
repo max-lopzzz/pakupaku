@@ -13,10 +13,12 @@ from scripts.build_food_db.sources.usda import SOURCE as USDA
 from scripts.build_food_db.sources.cofid import SOURCE as COFID
 from scripts.build_food_db.sources.cnf import SOURCE as CNF
 from scripts.build_food_db.sources.ciqual import SOURCE as CIQUAL
+from scripts.build_food_db.sources.afcd import SOURCE as AFCD
 
 ALL_SOURCES: List[Source] = [
     USDA,
     COFID,
     CNF,
     CIQUAL,
+    AFCD,
 ]
