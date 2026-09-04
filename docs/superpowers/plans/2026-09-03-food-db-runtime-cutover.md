@@ -25,6 +25,21 @@
 - Backend tests under `tests/`, run `python -m pytest -q` (125 passing at plan start). Frontend tests `CI=true npm test -- --watchAll=false` from `pakupaku-frontend/`.
 - **Task order keeps `main` working:** each endpoint's server change and its frontend callers land in the same task. Do not merge a task that leaves the app half-cut-over.
 
+## Preflight corrections (apply to EVERY task — the code sketches below predate this)
+
+The plan's test sketches were written before checking `tests/conftest.py`. Reality:
+
+- **Session factory is `database.AsyncSessionLocal`** (an `async_sessionmaker`), NOT `async_session`. There is no `async_session` export.
+- **`database.engine` points at an unreachable dummy Postgres URL in tests** and is never connected. Tests must NEVER call `create_all` / seed / load against `database.engine` or `database.AsyncSessionLocal`.
+- **The test harness** (`tests/conftest.py`) gives you: a `db_session` fixture — a live `AsyncSession` on a fresh temp-file SQLite DB with **every table already created** via `Base.metadata.create_all` (so once `models.Food` exists, the `foods` table exists in every `db_session`); and a `client` fixture — a `TestClient(app)` (no `with`, so **FastAPI startup events do NOT fire in tests**) whose `get_db` yields that same `db_session`.
+- Therefore the seed/index functions take a **live `AsyncSession`**, not a factory or engine:
+  - `async def seed_foods(session: AsyncSession, artifact_path: str = ARTIFACT_PATH) -> int` — `delete(Food)` + `insert(Food)` on `session`, caller commits. Missing artifact → log + return 0.
+  - `async def load(session: AsyncSession) -> None` in `food_index` — `select(Food)` on `session`.
+  - Tests: `await seed_foods(db_session, str(art)); await db_session.commit(); await food_index.load(db_session)`.
+  - Startup hook (`main.py`): `async with AsyncSessionLocal() as s: await seed_foods(s); await s.commit(); await food_index.load(s)` — wrapped in `try/except` so a missing artifact or a cold DB never crashes boot; log and continue with an empty index.
+- **`backend_entry.py`** already imports `from database import Base, engine` and runs its own `engine.begin()` block — the desktop path (Task 9) uses `engine` directly there, which is correct because desktop's `DATABASE_URL` is a real local SQLite file. Only *pytest* must avoid `database.engine`.
+- Task 1: confirm `models.py`'s `from sqlalchemy import ...` line has `Float` / `String` / `Text`; add whichever is missing.
+
 ---
 
 ## File Structure
