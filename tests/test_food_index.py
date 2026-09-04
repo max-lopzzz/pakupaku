@@ -44,7 +44,18 @@ async def test_water_resolves_to_the_generic_zero_kcal_entry(db_session, tmp_pat
 
 async def test_water_prefers_plain_tap_water_over_coconut_water(db_session, tmp_path):
     # "coconut water" is a token-superset of the query, so token_set_ratio
-    # ties it at 100 with "drinking tap water"; the re-rank must not let it win.
+    # ties it at 100 with "tap water"; the re-rank must not let it win —
+    # "tap water" has fewer extra tokens beyond the query ("tap" vs "coconut"
+    # are both single extra tokens, so it comes down to token_sort_ratio).
+    await _load(db_session, tmp_path)
+    assert food_index.best_match("water").id == "gen:00002"
+
+
+async def test_water_does_not_match_an_unrelated_long_product_name(db_session, tmp_path):
+    # "Coconut milk (liquid from grated meat and water), canned" head-nouns
+    # to "water" and is a token-superset of the query, so token_set_ratio
+    # ties it at 100 too — but it drags in 8 extra tokens, so the
+    # extra-token cap must demote it out of contention entirely.
     await _load(db_session, tmp_path)
     assert food_index.best_match("water").id == "gen:00002"
 

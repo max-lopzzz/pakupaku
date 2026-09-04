@@ -13,10 +13,11 @@ async def test_seed_replaces_foods_table_from_artifact(db_session, tmp_path):
     names = (await db_session.execute(
         select(models.Food.canonical_name).order_by(models.Food.id)
     )).scalars().all()
-    assert n == 5
+    assert n == 6
     assert names == [
-        "Broccoli, raw", "Water, tap, drinking", "Coconut water",
+        "Broccoli, raw", "Water, tap", "Coconut water",
         "Butter", "Butter beans, canned",
+        "Coconut milk (liquid from grated meat and water), canned",
     ]
 
 

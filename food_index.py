@@ -115,27 +115,46 @@ def _ranked(query: str, limit: int) -> List[Food]:
         _add(_by_key[key])
 
     # 2. Fuzzy candidates. ``token_set_ratio`` scores 100 for *any* candidate
-    #    whose tokens are a subset of the query's, so "butter" ties
-    #    "butter beans, canned" for query "butter beans" and the raw order
-    #    would return plain butter. Re-rank: candidates that cover every query
-    #    token keep their (score-descending, load-order-stable) order; the
-    #    rest are demoted and ordered by a secondary ``token_sort_ratio``.
-    covers_all: List[str] = []
-    partial: List = []  # (cand_key, set_score, sort_score)
+    #    whose tokens are a subset of the query's (or vice versa), so
+    #    "butter" ties "butter beans, canned" for query "butter beans", and a
+    #    long unrelated name that merely *mentions* the query word (e.g.
+    #    "canned coconut ... and water" for query "water") also ties at 100.
+    #    Re-rank: a candidate only counts as "covers_all" when it covers
+    #    every query token *and* doesn't drag in more than a couple of extra
+    #    ones (real qualifiers like "tap"/"bottled" are fine; a whole other
+    #    dish's worth of extra tokens is not) — within that group, fewer
+    #    extra tokens wins, tied by ``token_sort_ratio``. Everything else
+    #    (including covers_all candidates that failed the extra-token cap)
+    #    is ranked purely by ``token_sort_ratio``, which penalises length
+    #    mismatches in both directions instead of token_set_ratio's blind
+    #    spot for short-candidate / long-candidate inflation.
+    EXTRA_TOKEN_CAP = 2
+    covers_all: List = []  # (cand_key, extra_count, sort_score)
+    partial: List = []     # (cand_key, sort_score)
+    # A real multi-thousand-food index routinely has dozens of candidates
+    # tied at the ceiling set_score for a short query ("water", "milk", ...)
+    # — retrieve a wide-enough pool that the re-rank below actually sees all
+    # of them, not just whichever few process.extract's internal tie order
+    # happened to keep when the caller only wants the single best match.
+    retrieve_n = max(limit * 3, 200)
     for cand, set_score, _ in process.extract(
-        key, _keys, scorer=fuzz.token_set_ratio, limit=limit * 3
+        key, _keys, scorer=fuzz.token_set_ratio, limit=retrieve_n
     ):
         if set_score < MATCH_CONFIDENCE_FLOOR:
             break  # process.extract yields descending set_score
-        if query_tokens <= set(cand.split()):
-            covers_all.append(cand)
+        cand_tokens = set(cand.split())
+        sort_score = fuzz.token_sort_ratio(key, cand)
+        extra = len(cand_tokens - query_tokens)
+        if query_tokens <= cand_tokens and extra <= EXTRA_TOKEN_CAP:
+            covers_all.append((cand, extra, sort_score))
         else:
-            partial.append((cand, set_score, fuzz.token_sort_ratio(key, cand)))
-    partial.sort(key=lambda t: (-t[1], -t[2]))
+            partial.append((cand, sort_score))
+    covers_all.sort(key=lambda t: (t[1], -t[2]))
+    partial.sort(key=lambda t: -t[1])
 
-    for cand in covers_all:
+    for cand, _, _ in covers_all:
         _add(_by_key.get(cand, []))
-    for cand, _, _ in partial:
+    for cand, _ in partial:
         _add(_by_key.get(cand, []))
     return out[:limit]
 
