@@ -65,6 +65,7 @@ from main import app  # noqa: E402  (must come after the env vars above)
 import asyncio  # noqa: E402
 from database import Base, engine  # noqa: E402
 from sqlalchemy import text  # noqa: E402
+from migrations import _migrate_fdc_to_food_id  # noqa: E402
 
 
 async def _add_missing_columns(conn):
@@ -107,6 +108,7 @@ async def _add_missing_columns(conn):
 async def _create_tables():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await _migrate_fdc_to_food_id(conn)      # NEW — must precede _add_missing_columns
         await _add_missing_columns(conn)
 
 
