@@ -934,10 +934,17 @@ async def update_recipe(
     current_user: User           = Depends(get_current_user),
     db:           AsyncSession   = Depends(get_db),
 ):
-    """Update a recipe's name, description, servings, or ingredients."""
+    """Update a recipe's name, description, servings, or ingredients.
+
+    You can edit a recipe you own; admins can also edit any shared recipe.
+    """
+    ownership = Recipe.user_id == current_user.id
+    if current_user.is_admin:
+        ownership = ownership | (Recipe.is_shared == True)  # noqa: E712
+
     result = await db.execute(
         select(Recipe)
-        .where(Recipe.id == recipe_id, Recipe.user_id == current_user.id)
+        .where(Recipe.id == recipe_id, ownership)
         .options(selectinload(Recipe.ingredients))
     )
     recipe = result.scalar_one_or_none()
@@ -1008,12 +1015,16 @@ async def delete_recipe(
     current_user: User         = Depends(get_current_user),
     db:           AsyncSession = Depends(get_db),
 ):
-    """Delete a recipe and all its ingredients."""
+    """Delete a recipe and all its ingredients.
+
+    You can delete a recipe you own; admins can also delete any shared recipe.
+    """
+    ownership = Recipe.user_id == current_user.id
+    if current_user.is_admin:
+        ownership = ownership | (Recipe.is_shared == True)  # noqa: E712
+
     result = await db.execute(
-        select(Recipe).where(
-            Recipe.id      == recipe_id,
-            Recipe.user_id == current_user.id,
-        )
+        select(Recipe).where(Recipe.id == recipe_id, ownership)
     )
     recipe = result.scalar_one_or_none()
     if not recipe:

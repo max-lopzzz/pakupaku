@@ -64,6 +64,75 @@ test("save a copy calls the copy endpoint", async () => {
   });
 });
 
+const adminProfile = { is_admin: true };
+
+test("non-admins see no edit or delete controls", async () => {
+  render(<SharedRecipes onBack={() => {}} userProfile={{ is_admin: false }} />);
+  await waitFor(() => screen.getByText("Shared Soup"));
+
+  expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+});
+
+test("admin can delete a shared recipe", async () => {
+  (global.fetch as jest.Mock).mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+    const u = String(url);
+    if (u === "/recipes/shared") {
+      return Promise.resolve({ ok: true, json: async () => [sharedRecipe] } as Response);
+    }
+    if (u === `/recipes/${sharedRecipe.id}` && init?.method === "DELETE") {
+      return Promise.resolve({ ok: true, status: 204, json: async () => ({}) } as Response);
+    }
+    return Promise.reject(new Error(`Unexpected fetch: ${u}`));
+  });
+
+  render(<SharedRecipes onBack={() => {}} userProfile={adminProfile} />);
+  await waitFor(() => screen.getByText("Shared Soup"));
+
+  fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm delete" }));
+
+  await waitFor(() => {
+    expect(global.fetch).toHaveBeenCalledWith(
+      `/recipes/${sharedRecipe.id}`,
+      expect.objectContaining({ method: "DELETE" }),
+    );
+  });
+  await waitFor(() => {
+    expect(screen.queryByText("Shared Soup")).not.toBeInTheDocument();
+  });
+});
+
+test("admin can rename a shared recipe", async () => {
+  (global.fetch as jest.Mock).mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+    const u = String(url);
+    if (u === "/recipes/shared") {
+      return Promise.resolve({ ok: true, json: async () => [sharedRecipe] } as Response);
+    }
+    if (u === `/recipes/${sharedRecipe.id}` && init?.method === "PATCH") {
+      const body = JSON.parse(String(init!.body));
+      return Promise.resolve({ ok: true, json: async () => ({ ...sharedRecipe, ...body }) } as Response);
+    }
+    return Promise.reject(new Error(`Unexpected fetch: ${u}`));
+  });
+
+  render(<SharedRecipes onBack={() => {}} userProfile={adminProfile} />);
+  await waitFor(() => screen.getByText("Shared Soup"));
+
+  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Better Soup" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+  await waitFor(() => {
+    const call = (global.fetch as jest.Mock).mock.calls.find(
+      ([u, i]: [string, RequestInit]) =>
+        u === `/recipes/${sharedRecipe.id}` && i?.method === "PATCH",
+    );
+    expect(JSON.parse(call[1].body).name).toBe("Better Soup");
+  });
+  await waitFor(() => screen.getByText("Better Soup"));
+});
+
 test("log now posts to /logs with the recipe id and scaled nutrients", async () => {
   render(<SharedRecipes onBack={() => {}} />);
   await waitFor(() => screen.getByText("Shared Soup"));

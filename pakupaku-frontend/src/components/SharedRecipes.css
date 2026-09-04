@@ -165,6 +165,59 @@
   opacity: 0.95;
 }
 
+.shared-recipe-admin-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border-top: 1px solid #eaf5f3;
+  padding-top: 0.5rem;
+}
+
+.shared-recipe-admin-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: #8a6060;
+}
+
+.shared-recipe-admin-form input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 2px solid #badfdb;
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem;
+  font-family: "MorningBreeze";
+  color: #3a2a2a;
+  background: transparent;
+}
+
+.shared-recipe-admin-form p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #8a6060;
+}
+
+.shared-recipe-admin-form-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.shared-recipe-admin-form button {
+  border: none;
+  background: #badfdb;
+  color: #3a2a2a;
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem;
+  cursor: pointer;
+  font-family: "MorningBreeze";
+  font-weight: 700;
+}
+
+.shared-recipe-admin-form button:hover {
+  opacity: 0.95;
+}
+
 @media (max-width: 640px) {
   .shared-recipes-root {
     padding: 1rem 0.75rem;

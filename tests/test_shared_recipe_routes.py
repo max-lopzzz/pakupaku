@@ -228,6 +228,106 @@ def test_can_log_a_shared_recipe_you_dont_own(client, db_session):
         app.dependency_overrides.pop(get_current_user, None)
 
 
+def _make_recipe(client, owner, *, name="A recipe", is_shared=False):
+    payload = {
+        "name": name,
+        "servings": 1,
+        "ingredients": [{"food_name": "rice", "amount_g": 100}],
+    }
+    if is_shared:
+        payload["is_shared"] = True
+    return _as(client, owner).post("/recipes", json=payload).json()
+
+
+def test_admin_can_edit_shared_recipe_they_dont_own(client, db_session):
+    import asyncio
+
+    async def _setup():
+        return (
+            await _make_user(db_session, is_admin=True),
+            await _make_user(db_session, is_admin=True),
+        )
+
+    author, other_admin = asyncio.get_event_loop().run_until_complete(_setup())
+    try:
+        shared = _make_recipe(client, author, name="Community stew", is_shared=True)
+
+        res = _as(client, other_admin).patch(
+            f"/recipes/{shared['id']}", json={"name": "Community stew (fixed)"}
+        )
+        assert res.status_code == 200
+        assert res.json()["name"] == "Community stew (fixed)"
+
+        # persisted, and still owned by the original author
+        after = _as(client, author).get(f"/recipes/{shared['id']}").json()
+        assert after["name"] == "Community stew (fixed)"
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+def test_admin_can_delete_shared_recipe_they_dont_own(client, db_session):
+    import asyncio
+
+    async def _setup():
+        return (
+            await _make_user(db_session, is_admin=True),
+            await _make_user(db_session, is_admin=True),
+        )
+
+    author, other_admin = asyncio.get_event_loop().run_until_complete(_setup())
+    try:
+        shared = _make_recipe(client, author, name="Doomed", is_shared=True)
+
+        res = _as(client, other_admin).delete(f"/recipes/{shared['id']}")
+        assert res.status_code == 204
+
+        assert _as(client, author).get(f"/recipes/{shared['id']}").status_code == 404
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+def test_non_admin_cannot_edit_or_delete_shared_recipe_they_dont_own(client, db_session):
+    import asyncio
+
+    async def _setup():
+        return (
+            await _make_user(db_session, is_admin=True),
+            await _make_user(db_session),
+        )
+
+    admin, viewer = asyncio.get_event_loop().run_until_complete(_setup())
+    try:
+        shared = _make_recipe(client, admin, name="Hands off", is_shared=True)
+
+        assert _as(client, viewer).patch(
+            f"/recipes/{shared['id']}", json={"name": "hijacked"}
+        ).status_code == 404
+        assert _as(client, viewer).delete(f"/recipes/{shared['id']}").status_code == 404
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+def test_admin_cannot_edit_or_delete_private_recipe_they_dont_own(client, db_session):
+    import asyncio
+
+    async def _setup():
+        return (
+            await _make_user(db_session),
+            await _make_user(db_session, is_admin=True),
+        )
+
+    owner, admin = asyncio.get_event_loop().run_until_complete(_setup())
+    try:
+        private = _make_recipe(client, owner, name="Private", is_shared=False)
+
+        assert _as(client, admin).patch(
+            f"/recipes/{private['id']}", json={"name": "nope"}
+        ).status_code == 404
+        assert _as(client, admin).delete(f"/recipes/{private['id']}").status_code == 404
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
 def test_cannot_log_a_private_recipe_you_dont_own(client, db_session):
     import asyncio
 
