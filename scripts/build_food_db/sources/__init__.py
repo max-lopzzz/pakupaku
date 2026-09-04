@@ -14,6 +14,7 @@ from scripts.build_food_db.sources.cofid import SOURCE as COFID
 from scripts.build_food_db.sources.cnf import SOURCE as CNF
 from scripts.build_food_db.sources.ciqual import SOURCE as CIQUAL
 from scripts.build_food_db.sources.afcd import SOURCE as AFCD
+from scripts.build_food_db.sources.frida import SOURCE as FRIDA
 
 ALL_SOURCES: List[Source] = [
     USDA,
@@ -21,4 +22,5 @@ ALL_SOURCES: List[Source] = [
     CNF,
     CIQUAL,
     AFCD,
+    FRIDA,
 ]
