@@ -11,6 +11,7 @@ from scripts.build_food_db import build as build_mod
 from scripts.build_food_db.build import build, main
 from scripts.build_food_db.portions import load_fndds_portions
 from scripts.build_food_db.sources.cofid import SOURCE as COFID
+from scripts.build_food_db.sources.usda import SOURCE as USDA
 
 _MINI = os.path.join(os.path.dirname(__file__), "fixtures", "mini")
 
@@ -31,9 +32,8 @@ def _mini_raw_dir(tmp_path, extra_cofid_rows=()):
     raw = tmp_path / "raw"
     (raw / "usda").mkdir(parents=True)
     cofid_raw_dir(raw, os.path.join(_MINI, "cofid_2021.csv"), extra_cofid_rows)
-    shutil.copy(os.path.join(_MINI, "usda", "food.csv"), raw / "usda" / "food.csv")
-    shutil.copy(os.path.join(_MINI, "usda", "food_portion.csv"),
-                raw / "usda" / "food_portion.csv")
+    for name in ("food.csv", "food_nutrient.csv", "food_portion.csv"):
+        shutil.copy(os.path.join(_MINI, "usda", name), raw / "usda" / name)
     return raw
 
 
@@ -94,7 +94,7 @@ def test_build_mini_end_to_end(tmp_path):
     and assert the artifact is byte-identical when rebuilt."""
     raw = _mini_raw_dir(tmp_path)
 
-    rows = COFID.extract(str(raw / "cofid"))
+    rows = COFID.extract(str(raw / "cofid")) + USDA.extract(str(raw / "usda"))
     portions = load_fndds_portions(str(raw))
 
     out = tmp_path / "foods.sqlite"
@@ -108,16 +108,21 @@ def test_build_mini_end_to_end(tmp_path):
 
     con = sqlite3.connect(str(out))
     got = con.execute(
-        "SELECT id, canonical_name, prep_state, calories_per_100g, source_count, "
-        "aliases, portions FROM foods ORDER BY id"
+        "SELECT id, canonical_name, prep_state, calories_per_100g, protein_per_100g, "
+        "fat_per_100g, source_ids, source_count, aliases, portions "
+        "FROM foods ORDER BY id"
     ).fetchall()
     con.close()
 
+    # calories: mean(cofid mean(33,35)=34, usda 34); the cofid-only nutrients
+    # (fat, ...) never reach two distinct sources, so they stay NULL.
     assert got == [
-        ("gen:00001", "raw broccoli", "raw", 34.0, 1,
+        ("gen:00001", "Broccoli, raw", "raw", 34.0, 4.5, None,
+         '["cofid", "usda"]', 2,
          '["Broccoli, raw", "raw broccoli"]',
          '[{"unit": "cup chopped", "grams": 91.0}]'),
-        ("gen:00002", "raw carrots", "raw", 36.0, 1,
+        ("gen:00002", "Carrots, raw", "raw", 36.0, 0.65, None,
+         '["cofid", "usda"]', 2,
          '["Carrots, raw", "raw carrots"]',
          '[{"unit": "cup chopped", "grams": 122.0}]'),
     ]
@@ -126,7 +131,7 @@ def test_build_mini_end_to_end(tmp_path):
 def test_main_gives_each_extractor_its_own_raw_source_dir(tmp_path, monkeypatch):
     """main() must hand every source ``raw/<source_id>/``, not the raw root —
     extractors join their own filename onto the dir they are given."""
-    monkeypatch.setattr(build_mod, "ALL_SOURCES", [COFID])
+    monkeypatch.setattr(build_mod, "ALL_SOURCES", [COFID, USDA])
     root = _mini_root(tmp_path)
     out = tmp_path / "foods.sqlite"
 
@@ -135,14 +140,16 @@ def test_main_gives_each_extractor_its_own_raw_source_dir(tmp_path, monkeypatch)
     assert out.exists()
     con = sqlite3.connect(str(out))
     try:
-        con.execute("SELECT id, canonical_name FROM foods").fetchall()
+        got = con.execute(
+            "SELECT canonical_name, source_count FROM foods ORDER BY id").fetchall()
     finally:
         con.close()
+    assert got == [("Broccoli, raw", 2), ("Carrots, raw", 2)]
     assert (root / "review" / "conflicts.csv").exists()
 
 
 def test_main_exits_with_the_unresolved_conflict_count(tmp_path, monkeypatch):
-    monkeypatch.setattr(build_mod, "ALL_SOURCES", [COFID])
+    monkeypatch.setattr(build_mod, "ALL_SOURCES", [COFID, USDA])
     root = _mini_root(tmp_path, extra_cofid_rows=[_CONFLICTING_COFID_ROW])
     out = tmp_path / "foods.sqlite"
 

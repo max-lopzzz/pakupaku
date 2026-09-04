@@ -1,3 +1,3 @@
-fdc_id,description
-1001,"Broccoli, raw"
-1002,"Carrots, raw"
+fdc_id,data_type,description,food_category_id
+1001,foundation_food,"Broccoli, raw",11
+1002,sr_legacy_food,"Carrots, raw",11

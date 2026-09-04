@@ -43,26 +43,42 @@ def sanity_ok(field: str, value: float, row_nutrients: Dict[str, Optional[float]
     return True
 
 
+MIN_SOURCES_PER_NUTRIENT = 2
+
+
 def aggregate_group(group: MergeGroup) -> Optional[AggregatedFood]:
-    source_ids = sorted({r.source_id for r in group.rows})
+    """Aggregate one merge group into a single food, or ``None``.
+
+    A nutrient is emitted only when at least ``MIN_SOURCES_PER_NUTRIENT``
+    *distinct sources* still have a sane value for it — two rows that a fuzzy
+    merge pulled in from the same national table are one source, not two, and
+    would otherwise let a single table set ``source_count == 1`` in breach of
+    the spec. Within a source the surviving values are averaged first, so each
+    source contributes exactly one value; across sources it is the median from
+    three sources up, the mean at exactly two.
+    """
     out = AggregatedFood(
         canonical_name=group.canonical_name,
         prep_state=group.rows[0].prep_state,
         category=next((r.category for r in group.rows if r.category), None),
-        source_ids=source_ids,
-        source_count=len(source_ids),
+        source_ids=[],
+        source_count=0,
     )
-    any_nutrient = False
+    contributing = set()
     for f in NUTRIENT_FIELDS:
-        vals = []
+        by_source: Dict[str, List[float]] = {}
         for r in group.rows:
             v = getattr(r, f)
             if v is not None and sanity_ok(f, v, r.nutrients()):
-                vals.append(v)
-        if len(vals) >= 3:
-            setattr(out, f, round(median(vals), 4))
-            any_nutrient = True
-        elif len(vals) == 2:
-            setattr(out, f, round(mean(vals), 4))
-            any_nutrient = True
-    return out if any_nutrient else None
+                by_source.setdefault(r.source_id, []).append(v)
+        if len(by_source) < MIN_SOURCES_PER_NUTRIENT:
+            continue
+        # one value per source, in a deterministic order
+        vals = [mean(by_source[sid]) for sid in sorted(by_source)]
+        setattr(out, f, round(median(vals) if len(vals) >= 3 else mean(vals), 4))
+        contributing.update(by_source)
+    if not contributing:
+        return None
+    out.source_ids = sorted(contributing)
+    out.source_count = len(out.source_ids)
+    return out
