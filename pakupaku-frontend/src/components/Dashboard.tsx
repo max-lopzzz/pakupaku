@@ -170,37 +170,20 @@ function FoodLogInput({ category, logDate, onLogged }: FoodLogInputProps) {
     const token   = localStorage.getItem("token");
     const headers = { Authorization: `Bearer ${token ?? ""}` };
 
-    const fetchPortions = async (food_id: string): Promise<Record<string, number> | null> => {
+    const fetchPortions = async (foodId: string): Promise<Record<string, number> | null> => {
       try {
-        const res = await apiFetch(`/foods/${food_id}`, { headers });
+        const res = await apiFetch(`/foods/${encodeURIComponent(foodId)}`, { headers });
         if (!res.ok) return null;
         const detail = await res.json();
         const map: Record<string, number> = {};
         for (const p of detail.portions ?? []) {
-          if (p.unit && p.grams_per_unit) map[p.unit] = p.grams_per_unit;
+          if (p.unit && p.grams) map[p.unit] = p.grams;
         }
         return Object.keys(map).length > 0 ? map : null;
       } catch { return null; }
     };
 
-    let portions = await fetchPortions(food.food_id);
-    if (!portions) {
-      try {
-        const res = await apiFetch(
-          `/foods/search?query=${encodeURIComponent(food.description)}&page_size=20`,
-          { headers }
-        );
-        if (res.ok) {
-          const data = await res.json();
-          const RELIABLE = new Set(["Survey (FNDDS)", "SR Legacy"]);
-          for (const f of data.foods ?? []) {
-            if (!RELIABLE.has(f.dataType)) continue;
-            portions = await fetchPortions(String(f.fdcId));
-            if (portions) break;
-          }
-        }
-      } catch { /* non-fatal */ }
-    }
+    const portions = await fetchPortions(food.food_id);
 
     const pm = portions ?? {};
     setPortionsMap(pm);

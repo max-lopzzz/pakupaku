@@ -571,24 +571,18 @@ function IngredientInput({ row, onUpdate, onRemove }: IngredientInputProps) {
       showDropdown:      false,
     });
 
-    // Fetch food-specific portion gram weights.
-    //
-    // Some USDA Foundation food records appear in search results but return
-    // 404 from the detail endpoint (a known USDA data inconsistency).
-    // When that happens we fall back to a targeted re-search filtered to
-    // Survey (FNDDS) and SR Legacy, which reliably have portion data.
-
+    // Fetch food-specific portion gram weights from the offline index.
     const token = localStorage.getItem("token");
     const headers = { Authorization: token ? `Bearer ${token}` : "" };
 
-    const fetchPortions = async (food_id: string): Promise<Record<string, number> | null> => {
+    const fetchPortions = async (foodId: string): Promise<Record<string, number> | null> => {
       try {
-        const res = await apiFetch(`/foods/${food_id}`, { headers });
+        const res = await apiFetch(`/foods/${encodeURIComponent(foodId)}`, { headers });
         if (!res.ok) return null;
         const detail = await res.json();
         const map: Record<string, number> = {};
         for (const p of detail.portions ?? []) {
-          if (p.unit && p.grams_per_unit) map[p.unit] = p.grams_per_unit;
+          if (p.unit && p.grams) map[p.unit] = p.grams;
         }
         return Object.keys(map).length > 0 ? map : null;
       } catch {
@@ -596,33 +590,7 @@ function IngredientInput({ row, onUpdate, onRemove }: IngredientInputProps) {
       }
     };
 
-    // Tier 1: try the selected food directly
-    let portionsMap = await fetchPortions(food.food_id);
-
-    // Tier 2: if that failed (e.g. Foundation 404), re-search the same
-    // description and pick the first Survey/SR Legacy result, which reliably
-    // have food portions. We avoid passing data_types= because parentheses
-    // in "Survey (FNDDS)" cause a 400 from the USDA API.
-    if (!portionsMap) {
-      try {
-        const q   = encodeURIComponent(food.description);
-        const res = await apiFetch(
-          `/foods/search?query=${q}&page_size=20`,
-          { headers },
-        );
-        if (res.ok) {
-          const data = await res.json();
-          const RELIABLE = new Set(["Survey (FNDDS)", "SR Legacy"]);
-          for (const f of (data.foods ?? [])) {
-            if (!RELIABLE.has(f.dataType)) continue;
-            portionsMap = await fetchPortions(String(f.fdcId));
-            if (portionsMap) break;
-          }
-        }
-      } catch {
-        // Non-fatal — fall through to generic conversions
-      }
-    }
+    const portionsMap = await fetchPortions(food.food_id);
 
     if (portionsMap) {
       const natural = Object.keys(portionsMap).filter(u => !STANDARD_UNIT_SET.has(u));
