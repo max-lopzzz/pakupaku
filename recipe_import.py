@@ -4,7 +4,7 @@ recipe_import.py
 Turns a recipe blog URL into a draft Recipe: fetches the page, extracts
 ingredients (from schema.org/JSON-LD markup, falling back to an LLM),
 parses each ingredient line into quantity/unit/food name, and matches
-each one against USDA FoodData Central. Returns a RecipeImportDraft —
+each one against the in-memory food_index. Returns a RecipeImportDraft —
 nothing is saved to the database here.
 """
 
@@ -16,16 +16,16 @@ import logging
 import re
 import socket
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import List, Optional
 from urllib.parse import urljoin, urlparse
 
 import httpx
 from bs4 import BeautifulSoup
 from fastapi import HTTPException
 
+import food_index
 from config import LLM_API_KEY, LLM_BASE_URL, LLM_MODEL
 from schemas import ImportedIngredient, ImportedIngredientCandidate, RecipeImportDraft
-from usda import extract_nutrients, get_food, search_foods
 
 logger = logging.getLogger(__name__)
 
@@ -393,115 +393,44 @@ async def parse_ingredient_line_via_llm(line: str) -> ParsedIngredient:
 
 
 # ─────────────────────────────────────────────
-#  USDA MATCHING
+#  INGREDIENT MATCHING (food_index)
 # ─────────────────────────────────────────────
 
-_PREFERRED_DATA_TYPES = {"Foundation", "SR Legacy"}
-_RELIABLE_PORTION_DATA_TYPES = {"Survey (FNDDS)", "SR Legacy"}
-
-
-def rank_candidates(foods: List[dict]) -> List[dict]:
-    """Stable-sort USDA search results so Foundation/SR Legacy data (the
-    most nutrient-complete) come first, preserving USDA's own relevance
-    ordering within each group."""
-    return sorted(
-        foods, key=lambda f: 0 if f.get("dataType") in _PREFERRED_DATA_TYPES else 1
-    )
-
-
-async def _fetch_portions_map(fdc_id: int, description: str) -> Dict[str, float]:
-    """Mirrors RecipeBuilder.tsx's tiered portion lookup: try the matched
-    food's own detail first, then fall back to a Survey (FNDDS)/SR Legacy
-    result for the same description (some Foundation foods 404 on the
-    detail endpoint, a known USDA data inconsistency)."""
-    try:
-        detail = await get_food(fdc_id, format="full")
-        portions = extract_nutrients(detail).get("portions", [])
-        if portions:
-            return {p["unit"]: p["grams_per_unit"] for p in portions}
-    except HTTPException:
-        pass
-
-    try:
-        research = await search_foods(description, page_size=20)
-    except HTTPException:
-        return {}
-
-    checked = 0
-    for food in research.get("foods", []):
-        if food.get("dataType") not in _RELIABLE_PORTION_DATA_TYPES:
-            continue
-        if checked >= 3:
-            break
-        checked += 1
-        try:
-            detail = await get_food(food["fdcId"], format="full")
-        except HTTPException:
-            continue
-        portions = extract_nutrients(detail).get("portions", [])
-        if portions:
-            return {p["unit"]: p["grams_per_unit"] for p in portions}
-
-    return {}
-
-
-def _to_candidate(food: dict, portions_map: Dict[str, float]) -> ImportedIngredientCandidate:
-    nutrients = extract_nutrients(food)
+def _to_candidate(food: food_index.Food) -> ImportedIngredientCandidate:
     return ImportedIngredientCandidate(
-        fdc_id=food["fdcId"],
-        description=food.get("description", ""),
-        brand=food.get("brandOwner") or food.get("brandName"),
-        calories_per_100g=nutrients.get("calories"),
-        protein_per_100g=nutrients.get("protein_g"),
-        fat_per_100g=nutrients.get("fat_g"),
-        carbs_per_100g=nutrients.get("carbs_g"),
-        fiber_per_100g=nutrients.get("fiber_g"),
-        portions_map=portions_map,
+        food_id=food.id,
+        description=food.description,
+        brand=None,
+        calories_per_100g=food.calories_per_100g,
+        protein_per_100g=food.protein_per_100g,
+        fat_per_100g=food.fat_per_100g,
+        carbs_per_100g=food.carbs_per_100g,
+        fiber_per_100g=food.fiber_per_100g,
+        portions_map={p["unit"]: p["grams"] for p in food.portions},
     )
 
 
 async def match_ingredient(parsed: ParsedIngredient) -> ImportedIngredient:
-    """Search USDA for the parsed ingredient's food name and return the
-    best match (with food-specific portion gram-weights) plus a few
-    alternates. best_match is None if USDA has nothing plausible — the
-    frontend shows that row unmatched for the user to fix manually."""
-    try:
-        search_result = await search_foods(parsed.food_name, page_size=5)
-    except HTTPException:
-        search_result = {"foods": []}
-
-    candidates = rank_candidates(search_result.get("foods", []))
-    if not candidates:
-        return ImportedIngredient(
-            raw_line=parsed.raw_line,
-            quantity=parsed.quantity,
-            unit=parsed.unit,
-            food_name=parsed.food_name,
-            best_match=None,
-            alternates=[],
-        )
-
-    best_food, alt_foods = candidates[0], candidates[1:5]
-    portions_map = await _fetch_portions_map(
-        best_food["fdcId"], best_food.get("description") or parsed.food_name
-    )
-
+    """Look the parsed ingredient's food name up in the in-memory
+    ``food_index`` and return the best match plus a few alternates.
+    best_match is None if the index has nothing plausible — the frontend
+    shows that row unmatched for the user to fix manually."""
+    hits = food_index.search(parsed.food_name, 5)
     return ImportedIngredient(
         raw_line=parsed.raw_line,
         quantity=parsed.quantity,
         unit=parsed.unit,
         food_name=parsed.food_name,
-        best_match=_to_candidate(best_food, portions_map),
-        alternates=[_to_candidate(f, {}) for f in alt_foods],
+        best_match=_to_candidate(hits[0]) if hits else None,
+        alternates=[_to_candidate(f) for f in hits[1:5]],
     )
 
 
 async def _safe_match_ingredient(parsed: ParsedIngredient) -> ImportedIngredient:
-    """Wraps match_ingredient so a USDA network failure for one ingredient
-    (e.g. a dropped connection that isn't a timeout or HTTP error status,
-    which usda.py's error handling doesn't cover) can't sink the whole
-    asyncio.gather() and fail the entire import. Mirrors match_ingredient's
-    own no-match return shape so the caller can't tell the difference."""
+    """Wraps match_ingredient so a malformed index row for one ingredient
+    can't sink the whole asyncio.gather() and fail the entire import.
+    Mirrors match_ingredient's own no-match return shape so the caller
+    can't tell the difference."""
     try:
         return await match_ingredient(parsed)
     except Exception:

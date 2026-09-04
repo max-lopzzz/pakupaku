@@ -463,7 +463,7 @@ class ImportRecipeRequest(BaseModel):
 
 
 class ImportedIngredientCandidate(BaseModel):
-    fdc_id:      int
+    food_id:     str
     description: str
     brand:       Optional[str] = None
     calories_per_100g: Optional[float] = None
