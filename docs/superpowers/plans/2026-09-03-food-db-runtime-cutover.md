@@ -904,17 +904,16 @@ git commit -m "feat: fdc_id -> food_id migration (Neon SQL + desktop SQLite path
 
 ---
 
-## Task 11: device-local path — `services/api.ts` + `services/db.ts`
+## Task 11: remove the dead USDA code in `services/api.ts`
 
-**Files:** Modify `pakupaku-frontend/src/services/api.ts`, `pakupaku-frontend/src/services/db.ts`; Test the service-layer tests if any.
+**RESCOPED (controller ruling PR10):** `pakupaku-frontend/src/services/api.ts` is **not imported anywhere** in `src/`, and `apiFoodSearch` / `apiFoodDetail` have **zero callers**. The app is entirely backend-`fetch()`-driven (via `apiBase.ts` → `/foods/*`). The "device-local Capacitor food lookup" the spec anticipated does not exist as a live path. So this task just deletes the orphaned USDA block — it does **not** build a Capacitor `foods` table or bundle `data/foods.sqlite` (nothing would consume them). A genuine offline-mobile food search is a fresh feature with its own design, out of scope here. `services/db.ts` already got `food_id TEXT` in Task 8.
 
-**Interfaces:** the Capacitor/SQLite service layer stops calling `api.nal.usda.gov` and reads the bundled `foods` table; its `fdc_id` column becomes `food_id TEXT`.
+**Files:** Modify `pakupaku-frontend/src/services/api.ts`.
 
-- [ ] **Step 1** — `services/db.ts`: the local SQLite schema — `food_logs` / `recipe_ingredients` `fdc_id` column → `food_id TEXT`. Add a `foods` table matching the Global-Constraints DDL. Add a one-time import step that copies `data/foods.sqlite` rows into it (bundle the artifact under `public/` and `fetch()` it as an ArrayBuffer on first launch, or ship it as a Capacitor asset — pick whichever this repo's `@capacitor-community/sqlite` setup supports; document the choice inline).
-- [ ] **Step 2** — `services/api.ts`: delete `USDA_BASE` / `USDA_KEY` and the `searchFoods` / `getFood` functions that hit USDA. Replace with local queries over the `foods` table (same normalised-token + `LIKE` / in-JS fuzzy approach as `food_index`, or a thin JS port). Every insert/select that named `fdc_id` → `food_id`.
-- [ ] **Step 3** — `grep -rn "usda\|fdcId\|fdc_id\|nal.usda.gov" pakupaku-frontend/src` → only comments / historical migration strings remain.
-- [ ] **Step 4** — `CI=true npm test -- --watchAll=false` green; `npx tsc --noEmit` clean; `CI=true npm run build` clean.
-- [ ] **Step 5: Commit** `feat: device-local food lookup uses the bundled foods table, not the USDA API`.
+- [ ] **Step 1** — In `services/api.ts`, delete the entire `// ── USDA ──` block: `USDA_BASE`, `USDA_KEY` (the only reader of `process.env.REACT_APP_USDA_API_KEY`), `apiFoodSearch`, `apiFoodDetail`, and the portion-parsing helpers they use. Nothing else in the file references them.
+- [ ] **Step 2** — `grep -rn "USDA\|nal.usda.gov\|apiFoodSearch\|apiFoodDetail\|REACT_APP_USDA" pakupaku-frontend/src` → nothing (comments/docs excluded).
+- [ ] **Step 3** — `cd pakupaku-frontend && npx tsc --noEmit` clean; `CI=true npm test -- --watchAll=false` green (bar the pre-existing `App.test.tsx`); `CI=true npm run build` clean.
+- [ ] **Step 4: Commit** `chore: drop the unused device-local USDA client from services/api.ts`.
 
 ---
 
