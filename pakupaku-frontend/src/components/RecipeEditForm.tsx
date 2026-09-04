@@ -18,12 +18,12 @@ const UNIT_TO_G: Record<string, number> = {
 const STANDARD_UNITS = ["g", "ml", "oz", "cup", "tbsp", "tsp", "lb", "kg", "l"];
 const STANDARD_UNIT_SET = new Set(STANDARD_UNITS);
 
-/** Natural units are food-specific USDA portions that aren't in our standard list. */
+/** Natural units are food-specific portions from the food database that aren't in our standard list. */
 function naturalUnits(portionsMap: Record<string, number>): string[] {
   return Object.keys(portionsMap).filter(u => !STANDARD_UNIT_SET.has(u));
 }
 
-// portionsMap overrides the generic table with food-specific gram weights from USDA
+// portionsMap overrides the generic table with food-specific gram weights from the food database
 function toGrams(amount: string, unit: string, portionsMap: Record<string, number> = {}): number {
   const conv = { ...UNIT_TO_G, ...portionsMap };
   return (parseFloat(amount) || 0) * (conv[unit] ?? 1);
@@ -46,7 +46,7 @@ function unitLabel(unit: string, portionsMap: Record<string, number>): string {
   return g ? `${unit} (${Math.round(g)}g)` : unit;
 }
 
-// ─── USDA nutrient extraction ─────────────────────────────
+// ─── Nutrient shape ───────────────────────────────────────
 
 interface NutrientData {
   calories_per_100g: number | null;
@@ -56,50 +56,10 @@ interface NutrientData {
   fiber_per_100g:    number | null;
 }
 
-const NUTRIENT_ID_MAP: Record<number, keyof NutrientData> = {
-  1008: "calories_per_100g",
-  1003: "protein_per_100g",
-  1004: "fat_per_100g",
-  1005: "carbs_per_100g",
-  1079: "fiber_per_100g",
-};
-
-// When no generic (Foundation/SR Legacy/Survey) result exists for a query,
-// runSearch() falls back to branded results — which for a common ingredient
-// like "gochujang" can mean five near-identical branded products cluttering
-// the dropdown. Collapse them to one entry per unique description, keeping
-// the first (USDA's own relevance-ranked order) match for each.
-function dedupeByDescription(foods: any[]): any[] {
-  const seen = new Set<string>();
-  const out: any[] = [];
-  for (const f of foods) {
-    const key = String(f.description ?? "").trim().toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(f);
-  }
-  return out;
-}
-
-function extractNutrients(foodNutrients: any[]): NutrientData {
-  const result: NutrientData = {
-    calories_per_100g: null,
-    protein_per_100g:  null,
-    fat_per_100g:      null,
-    carbs_per_100g:    null,
-    fiber_per_100g:    null,
-  };
-  for (const n of foodNutrients) {
-    const key = NUTRIENT_ID_MAP[n.nutrientId as number];
-    if (key && n.value != null) result[key] = n.value;
-  }
-  return result;
-}
-
 // ─── Types ────────────────────────────────────────────────
 
 interface FoodSuggestion extends NutrientData {
-  fdc_id:      number;
+  food_id:     string;
   description: string;
   brand:       string | null;
 }
@@ -113,16 +73,12 @@ export interface IngredientRow extends NutrientData {
   suggestions:      FoodSuggestion[];
   showDropdown:     boolean;
 
-  // brand UI state
-  brandSuggestions: string[];
-  showBrandDropdown: boolean;
-
   // resolved food
-  fdc_id:    number | null;
+  food_id:   string | null;
   food_name: string;
   brand_name: string;
 
-  // food-specific unit → grams from USDA (overrides generic UNIT_TO_G)
+  // food-specific unit → grams from the food database (overrides generic UNIT_TO_G)
   portionsMap: Record<string, number>;
 
   // amount
@@ -134,8 +90,7 @@ function blankRow(): IngredientRow {
   return {
     mode: "search",
     query: "", suggestions: [], showDropdown: false,
-    brandSuggestions: [], showBrandDropdown: false,
-    fdc_id: null, food_name: "", brand_name: "",
+    food_id: null, food_name: "", brand_name: "",
     calories_per_100g: null, protein_per_100g: null,
     fat_per_100g: null, carbs_per_100g: null, fiber_per_100g: null,
     portionsMap: {},
@@ -145,7 +100,7 @@ function blankRow(): IngredientRow {
 
 interface SavedIngredient {
   id:          string;
-  fdc_id?:     number;
+  food_id?:    string;
   food_name:   string;
   brand_name?: string;
   amount_g:    number;
@@ -175,7 +130,7 @@ export interface RecipeResponse {
 }
 
 export interface ImportedIngredientCandidate extends NutrientData {
-  fdc_id:      number;
+  food_id:     string;
   description: string;
   brand:       string | null;
   portions_map: Record<string, number>;
@@ -205,8 +160,7 @@ function rowFromImportedIngredient(ing: ImportedIngredient): IngredientRow {
     mode: match ? "search" : "custom",
     query: match ? match.description : ing.food_name,
     suggestions: [], showDropdown: false,
-    brandSuggestions: [], showBrandDropdown: false,
-    fdc_id: match ? match.fdc_id : null,
+    food_id: match ? match.food_id : null,
     food_name: match ? match.description : ing.food_name,
     brand_name: match?.brand ?? "",
     calories_per_100g: match?.calories_per_100g ?? null,
@@ -260,7 +214,7 @@ export function formValuesFromRecipe(recipe: RecipeResponse): RecipeFormValues {
   // Nutrients are already per-amount_g in the DB, so we store them back
   // as per-100g by reversing.
   const rows: IngredientRow[] = recipe.ingredients.map(ing => {
-    const isCustom = ing.fdc_id == null;
+    const isCustom = ing.food_id == null;
     const per100 = (v?: number) =>
       v != null && ing.amount_g > 0 ? (v / ing.amount_g) * 100 : null;
     return {
@@ -268,9 +222,7 @@ export function formValuesFromRecipe(recipe: RecipeResponse): RecipeFormValues {
       query:             ing.food_name,
       suggestions:       [],
       showDropdown:      false,
-      brandSuggestions:  [],
-      showBrandDropdown: false,
-      fdc_id:            ing.fdc_id ?? null,
+      food_id:           ing.food_id ?? null,
       food_name:         ing.food_name,
       brand_name:        ing.brand_name ?? "",
       calories_per_100g: per100(ing.calories),
@@ -323,7 +275,7 @@ export interface RecipeSavePayload {
   diet_tags: string[];
   is_shared: boolean;
   ingredients: Array<{
-    fdc_id?: number;
+    food_id?: string;
     food_name: string;
     brand_name?: string;
     amount_g: number;
@@ -401,7 +353,7 @@ export default function RecipeEditForm({
       ingredients: valid.map(r => {
         const amount_g = toGrams(r.amount, r.unit, r.portionsMap);
         return {
-          fdc_id:     r.fdc_id ?? undefined,
+          food_id:    r.food_id ?? undefined,
           food_name:  r.food_name.trim(),
           brand_name: r.brand_name.trim() || undefined,
           amount_g,
@@ -553,20 +505,19 @@ interface IngredientInputProps {
 function IngredientInput({ row, onUpdate, onRemove }: IngredientInputProps) {
   const wrapRef       = useRef<HTMLDivElement>(null);
   const debounceRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const brandDebRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Close both dropdowns on outside click
+  // Close the dropdown on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        onUpdate({ showDropdown: false, showBrandDropdown: false });
+        onUpdate({ showDropdown: false });
       }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [onUpdate]);
 
-  const runSearch = (query: string, brand: string) => {
+  const runSearch = (query: string) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (query.trim().length < 2) {
       onUpdate({ suggestions: [], showDropdown: false });
@@ -575,82 +526,33 @@ function IngredientInput({ row, onUpdate, onRemove }: IngredientInputProps) {
     debounceRef.current = setTimeout(async () => {
       try {
         const token = localStorage.getItem("token");
-        const hasBrand = brand.trim().length > 0;
-        let url = `/foods/search?query=${encodeURIComponent(query.trim())}&page_size=50`;
-        if (hasBrand) url += `&brand_owner=${encodeURIComponent(brand.trim())}`;
+        const url = `/foods/search?query=${encodeURIComponent(query.trim())}&page_size=50`;
         const res = await apiFetch(url, { headers: { Authorization: token ? `Bearer ${token}` : "" } });
         if (!res.ok) return;
         const data = await res.json();
 
-        // Prefer generic foods; fall back to branded if no generic results exist.
-        // The branded fallback is deduped by description — with no brand filter
-        // active, the user is picking "an ingredient", not "a specific product",
-        // so five branded listings that all just say "Gochujang" collapse to one.
-        // An explicit brand filter (hasBrand) is a deliberate narrowing to that
-        // brand's own catalog, so its results are left exactly as returned.
-        const all     = data.foods ?? [];
-        const generic = all.filter((f: any) => f.dataType !== "Branded");
-        const branded = all.filter((f: any) => f.dataType === "Branded");
-        const pool    = hasBrand ? branded : (generic.length > 0 ? generic : dedupeByDescription(branded));
-
-        const suggestions: FoodSuggestion[] = pool.map((f: any) => ({
-          fdc_id:      f.fdcId,
+        const suggestions: FoodSuggestion[] = (data.foods ?? []).map((f: any) => ({
+          food_id:     f.food_id,
           description: f.description,
-          brand:       f.brandOwner || f.brandName || null,
-          ...extractNutrients(f.foodNutrients ?? []),
+          brand:       null,
+          calories_per_100g: f.calories_per_100g ?? null,
+          protein_per_100g:  f.protein_per_100g  ?? null,
+          fat_per_100g:      f.fat_per_100g      ?? null,
+          carbs_per_100g:    f.carbs_per_100g    ?? null,
+          fiber_per_100g:    f.fiber_per_100g    ?? null,
         }));
         onUpdate({ suggestions, showDropdown: suggestions.length > 0 });
       } catch { /* silently ignore */ }
     }, 350);
   };
 
-  const runBrandSearch = (brandText: string, foodQuery: string) => {
-    if (brandDebRef.current) clearTimeout(brandDebRef.current);
-    if (brandText.trim().length < 2) {
-      onUpdate({ brandSuggestions: [], showBrandDropdown: false });
-      return;
-    }
-    brandDebRef.current = setTimeout(async () => {
-      try {
-        const token = localStorage.getItem("token");
-        // Use the food query if we have one, otherwise use the brand text as the query
-        const q = foodQuery.trim().length >= 2 ? foodQuery.trim() : brandText.trim();
-        const res = await apiFetch(
-          `/foods/search?query=${encodeURIComponent(q)}&page_size=100`,
-          { headers: { Authorization: token ? `Bearer ${token}` : "" } }
-        );
-        if (!res.ok) return;
-        const data = await res.json();
-        const lower = brandText.toLowerCase();
-        const seen = new Set<string>();
-        const brands: string[] = [];
-        for (const f of data.foods ?? []) {
-          if (f.dataType !== "Branded") continue;
-          const b: string = f.brandOwner || f.brandName || "";
-          if (!b || !b.toLowerCase().includes(lower) || seen.has(b)) continue;
-          seen.add(b);
-          brands.push(b);
-          if (brands.length >= 8) break;
-        }
-        onUpdate({ brandSuggestions: brands, showBrandDropdown: brands.length > 0 });
-      } catch { /* ignore */ }
-    }, 350);
-  };
-
   const handleQueryChange = (value: string) => {
-    onUpdate({ query: value, food_name: value, fdc_id: null });
-    runSearch(value, row.brand_name);
+    onUpdate({ query: value, food_name: value, food_id: null });
+    runSearch(value);
   };
 
   const handleBrandChange = (value: string) => {
-    onUpdate({ brand_name: value, showBrandDropdown: false });
-    runBrandSearch(value, row.query);
-    if (row.query.trim().length >= 2) runSearch(row.query, value);
-  };
-
-  const selectBrand = (brand: string) => {
-    onUpdate({ brand_name: brand, brandSuggestions: [], showBrandDropdown: false });
-    if (row.query.trim().length >= 2) runSearch(row.query, brand);
+    onUpdate({ brand_name: value });
   };
 
   const selectFood = async (food: FoodSuggestion) => {
@@ -659,7 +561,7 @@ function IngredientInput({ row, onUpdate, onRemove }: IngredientInputProps) {
       query:             food.description,
       food_name:         food.description,
       brand_name:        food.brand ?? "",
-      fdc_id:            food.fdc_id,
+      food_id:           food.food_id,
       calories_per_100g: food.calories_per_100g,
       protein_per_100g:  food.protein_per_100g,
       fat_per_100g:      food.fat_per_100g,
@@ -669,24 +571,18 @@ function IngredientInput({ row, onUpdate, onRemove }: IngredientInputProps) {
       showDropdown:      false,
     });
 
-    // Fetch food-specific portion gram weights.
-    //
-    // Some USDA Foundation food records appear in search results but return
-    // 404 from the detail endpoint (a known USDA data inconsistency).
-    // When that happens we fall back to a targeted re-search filtered to
-    // Survey (FNDDS) and SR Legacy, which reliably have portion data.
-
+    // Fetch food-specific portion gram weights from the offline index.
     const token = localStorage.getItem("token");
     const headers = { Authorization: token ? `Bearer ${token}` : "" };
 
-    const fetchPortions = async (fdc_id: number): Promise<Record<string, number> | null> => {
+    const fetchPortions = async (foodId: string): Promise<Record<string, number> | null> => {
       try {
-        const res = await apiFetch(`/foods/${fdc_id}`, { headers });
+        const res = await apiFetch(`/foods/${encodeURIComponent(foodId)}`, { headers });
         if (!res.ok) return null;
         const detail = await res.json();
         const map: Record<string, number> = {};
         for (const p of detail.portions ?? []) {
-          if (p.unit && p.grams_per_unit) map[p.unit] = p.grams_per_unit;
+          if (p.unit && p.grams) map[p.unit] = p.grams;
         }
         return Object.keys(map).length > 0 ? map : null;
       } catch {
@@ -694,33 +590,7 @@ function IngredientInput({ row, onUpdate, onRemove }: IngredientInputProps) {
       }
     };
 
-    // Tier 1: try the selected food directly
-    let portionsMap = await fetchPortions(food.fdc_id);
-
-    // Tier 2: if that failed (e.g. Foundation 404), re-search the same
-    // description and pick the first Survey/SR Legacy result, which reliably
-    // have food portions. We avoid passing data_types= because parentheses
-    // in "Survey (FNDDS)" cause a 400 from the USDA API.
-    if (!portionsMap) {
-      try {
-        const q   = encodeURIComponent(food.description);
-        const res = await apiFetch(
-          `/foods/search?query=${q}&page_size=20`,
-          { headers },
-        );
-        if (res.ok) {
-          const data = await res.json();
-          const RELIABLE = new Set(["Survey (FNDDS)", "SR Legacy"]);
-          for (const f of (data.foods ?? [])) {
-            if (!RELIABLE.has(f.dataType)) continue;
-            portionsMap = await fetchPortions(f.fdcId);
-            if (portionsMap) break;
-          }
-        }
-      } catch {
-        // Non-fatal — fall through to generic conversions
-      }
-    }
+    const portionsMap = await fetchPortions(food.food_id);
 
     if (portionsMap) {
       const natural = Object.keys(portionsMap).filter(u => !STANDARD_UNIT_SET.has(u));
@@ -764,7 +634,7 @@ function IngredientInput({ row, onUpdate, onRemove }: IngredientInputProps) {
               <ul className="autocomplete-dropdown">
                 {row.suggestions.map(food => (
                   <li
-                    key={food.fdc_id}
+                    key={food.food_id}
                     className="autocomplete-item"
                     onMouseDown={e => { e.preventDefault(); selectFood(food); }}
                   >
@@ -785,44 +655,27 @@ function IngredientInput({ row, onUpdate, onRemove }: IngredientInputProps) {
           type="button"
           className="ingredient-mode-toggle"
           onClick={() => onUpdate(isCustom
-            ? { mode: "search", food_name: "", query: "", fdc_id: null,
+            ? { mode: "search", food_name: "", query: "", food_id: null,
                 calories_per_100g: null, protein_per_100g: null,
                 fat_per_100g: null, carbs_per_100g: null, fiber_per_100g: null }
-            : { mode: "custom", suggestions: [], showDropdown: false, fdc_id: null,
+            : { mode: "custom", suggestions: [], showDropdown: false, food_id: null,
                 portionsMap: {} }
           )}
         >
-          {isCustom ? "↩ search USDA" : "enter manually"}
+          {isCustom ? "↩ search foods" : "enter manually"}
         </button>
       </div>
 
-      {/* Brand — autocomplete in search mode, plain text in custom mode */}
+      {/* Brand — plain text; a user can still type a brand for a custom food */}
       <div className="ingredient-brand-wrap">
         <input
           type="text"
           className="ingredient-input"
-          placeholder={isCustom ? "Brand (optional)" : "Brand (optional)"}
+          placeholder="Brand (optional)"
           value={row.brand_name}
-          onChange={e => isCustom
-            ? onUpdate({ brand_name: e.target.value })
-            : handleBrandChange(e.target.value)
-          }
-          onFocus={() => !isCustom && row.brandSuggestions.length > 0 && onUpdate({ showBrandDropdown: true })}
+          onChange={e => handleBrandChange(e.target.value)}
           autoComplete="off"
         />
-        {!isCustom && row.showBrandDropdown && row.brandSuggestions.length > 0 && (
-          <ul className="brand-autocomplete-dropdown">
-            {row.brandSuggestions.map(brand => (
-              <li
-                key={brand}
-                className="brand-autocomplete-item"
-                onMouseDown={e => { e.preventDefault(); selectBrand(brand); }}
-              >
-                {brand}
-              </li>
-            ))}
-          </ul>
-        )}
       </div>
 
       {/* Amount */}

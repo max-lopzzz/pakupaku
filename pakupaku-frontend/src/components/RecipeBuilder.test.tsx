@@ -14,7 +14,7 @@ const draft = {
       unit: "cup",
       food_name: "flour",
       best_match: {
-        fdc_id: 123456,
+        food_id: "gen:00123",
         description: "Flour, wheat, all-purpose",
         brand: null,
         calories_per_100g: 364,
@@ -29,13 +29,10 @@ const draft = {
   ],
 };
 
-const brandedGochujangSearch = {
+const gochujangSearch = {
   foods: [
-    { fdcId: 1, description: "Gochujang", dataType: "Branded", brandOwner: "CJ", foodNutrients: [] },
-    { fdcId: 2, description: "Gochujang", dataType: "Branded", brandOwner: "Sempio", foodNutrients: [] },
-    { fdcId: 3, description: "Gochujang", dataType: "Branded", brandOwner: "Annie Chun's", foodNutrients: [] },
-    { fdcId: 4, description: "Gochujang", dataType: "Branded", brandOwner: "Trader Joe's", foodNutrients: [] },
-    { fdcId: 5, description: "Gochujang Hot Pepper Paste", dataType: "Branded", brandOwner: "Chung Jung One", foodNutrients: [] },
+    { food_id: "gen:00201", description: "Gochujang", portions: [], calories_per_100g: 165, protein_per_100g: 4, fat_per_100g: 3, carbs_per_100g: 31, fiber_per_100g: 2 },
+    { food_id: "gen:00202", description: "Gochujang Hot Pepper Paste", portions: [], calories_per_100g: 170, protein_per_100g: 4, fat_per_100g: 3, carbs_per_100g: 32, fiber_per_100g: 2 },
   ],
 };
 
@@ -50,7 +47,7 @@ beforeEach(() => {
       return Promise.resolve({ ok: true, json: async () => draft } as Response);
     }
     if (u.startsWith("/foods/search?query=gochujang")) {
-      return Promise.resolve({ ok: true, json: async () => brandedGochujangSearch } as Response);
+      return Promise.resolve({ ok: true, json: async () => gochujangSearch } as Response);
     }
     return Promise.reject(new Error(`Unexpected fetch: ${u}`));
   }) as jest.Mock;
@@ -77,7 +74,7 @@ test("importing a URL pre-fills the recipe form", async () => {
   expect(screen.getByDisplayValue("2")).toBeInTheDocument();
 });
 
-test("branded-only search results with the same description collapse to one suggestion", async () => {
+test("index search results render straight through to the suggestion dropdown", async () => {
   render(<RecipeBuilder onBack={() => {}} userProfile={{ is_admin: false }} />);
 
   const searchInput = screen.getByPlaceholderText("Search food…");
@@ -85,15 +82,13 @@ test("branded-only search results with the same description collapse to one sugg
 
   await waitFor(
     () => {
-      expect(screen.getAllByText("Gochujang").length).toBeGreaterThan(0);
+      expect(screen.getByText("Gochujang")).toBeInTheDocument();
     },
     { timeout: 2000 }
   );
 
-  // 5 branded results came back, 4 sharing the exact description "Gochujang"
-  // (from CJ/Sempio/Annie Chun's/Trader Joe's) and 1 with a distinct
-  // description ("Gochujang Hot Pepper Paste") — expect the 4 duplicates
-  // collapsed to 1, so 2 suggestion rows total, not 5.
+  // The offline index already returns one entry per generic food, so the
+  // dropdown just renders what came back — no client-side dedupe.
   const items = document.querySelectorAll(".autocomplete-item");
   expect(items.length).toBe(2);
   expect(screen.getByText("Gochujang")).toBeInTheDocument();

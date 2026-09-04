@@ -72,7 +72,6 @@ Do these in order — each later step needs a value from the one before it.
      isn't blocked. `RESEND_FROM_EMAIL` can stay at its default
      (`PakuPaku <onboarding@resend.dev>`, Resend's shared sender —
      works immediately, no domain verification needed).
-   - `USDA_API_KEY` — your existing key.
    - `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` — optional. Only needed
      for the recipe-import LLM fallback path (used when a blog page
      lacks schema.org/JSON-LD Recipe markup); that path returns a 503
@@ -102,7 +101,7 @@ Do these in order — each later step needs a value from the one before it.
    including `DATABASE_URL`, to the build step just like it does at
    runtime):
    ```
-   pip install -r requirements.txt && python3 create_tables.py
+   pip install -r requirements.txt && python3 create_tables.py && python3 seed_foods.py
    ```
    `create_tables.py` (in this repo) mirrors the same `create_all()`
    pattern `backend_entry.py` already uses for the desktop build. An
@@ -116,6 +115,9 @@ Do these in order — each later step needs a value from the one before it.
    a no-op on every build after the first — the tradeoff versus a true
    Pre-Deploy Command is that this now reruns on every deploy rather than
    once, which costs a fraction of a second and nothing else.
+
+   `seed_foods.py` is a no-op until `data/foods.sqlite` is committed; once
+   present, it replaces the `foods` table contents on every deploy.
 6. Deploy. The build step above installs `requirements.txt` and creates
    the schema in one command, then Render starts uvicorn per the Start
    Command. The build step exiting successfully is what confirms the
@@ -165,7 +167,28 @@ Now that both URLs exist:
 2. Render redeploys automatically when env vars change. Wait for that
    redeploy to finish before testing.
 
-## 5. Verify
+## 5. Applying schema changes to an existing database
+
+`create_tables.py` / `create_all()` only ever *creates* missing tables —
+it cannot rename or retype a column on a table that already exists. Any
+change that isn't a brand-new table needs a one-off SQL script run
+against Neon, before (or together with) the deploy that ships the code
+depending on it.
+
+1. **The `fdc_id` → `food_id` rename.** The deploy that ships `food_id`
+   (this branch) requires `migrate_fdc_to_food_id.sql` to have been run
+   once against Neon first — otherwise every `POST /logs`, `POST
+   /recipes`, and recipe read 500s with `column food_logs.food_id does
+   not exist`. Run it from a machine with `psql` and the Neon
+   `DATABASE_URL` (the raw `postgresql://…` string, not the
+   `+asyncpg` rewrite):
+   ```
+   psql "$DATABASE_URL" -f migrate_fdc_to_food_id.sql
+   ```
+   The script is idempotent — safe to re-run, and a no-op on a database
+   that never had `fdc_id`.
+
+## 6. Verify
 
 - [ ] Open the Cloudflare Pages URL, register a real account
 - [ ] Confirm the verification email arrives (from the same Gmail
@@ -189,8 +212,9 @@ Now that both URLs exist:
 tables that already exist. The first deploy is fine — Neon starts
 empty. Every schema change *after* that will need a manual `ALTER
 TABLE` against Neon (the same way this session hand-patched the desktop
-SQLite database), until a real migration tool is added. Out of scope
-for this deployment; tracked as follow-up work.
+SQLite database) — see section 5 for the process and the `fdc_id` →
+`food_id` rename as a worked example — until a real migration tool is
+added. Out of scope for this deployment; tracked as follow-up work.
 
 ## Note: `REACT_APP_API_URL` needs one small frontend change
 

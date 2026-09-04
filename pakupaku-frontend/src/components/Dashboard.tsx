@@ -11,32 +11,13 @@ const MOOD_IMAGES: Record<"hungry" | "full" | "happy", string> = {
   happy:  puppyHappy,
 };
 
-// ─── USDA nutrient extraction (mirrors RecipeBuilder) ─────
-
-const NUTRIENT_ID_MAP: Record<number, string> = {
-  1008: "calories",
-  1003: "protein_g",
-  1004: "fat_g",
-  1005: "carbs_g",
-  1079: "fiber_g",
-};
-
-function extractNutrientsFromSearch(foodNutrients: any[]): Record<string, number> {
-  const out: Record<string, number> = {};
-  for (const n of foodNutrients) {
-    const key = NUTRIENT_ID_MAP[n.nutrientId as number];
-    if (key && n.value != null) out[key] = n.value;
-  }
-  return out; // per 100g
-}
-
 const UNIT_TO_G: Record<string, number> = { g: 1, ml: 1, oz: 28.3495, cup: 240, tbsp: 15, tsp: 5 };
 const STANDARD_UNITS = ["g", "ml", "oz", "cup", "tbsp", "tsp"];
 
 // ─── Food suggestion type (mirrors RecipeBuilder) ─────────
 
 interface FoodSuggestion {
-  fdc_id:            number;
+  food_id:           string;
   description:       string;
   calories_per_100g: number | null;
   protein_per_100g:  number | null;
@@ -166,19 +147,14 @@ function FoodLogInput({ category, logDate, onLogged }: FoodLogInputProps) {
         );
         if (!res.ok) return;
         const data = await res.json();
-        const results: FoodSuggestion[] = (data.foods ?? [])
-          .filter((f: any) => f.dataType !== "Branded")
-          .map((f: any) => {
-            const n = extractNutrientsFromSearch(f.foodNutrients ?? []);
-            return {
-              fdc_id:            f.fdcId,
-              description:       f.description,
-              calories_per_100g: n.calories   ?? null,
-              protein_per_100g:  n.protein_g  ?? null,
-              fat_per_100g:      n.fat_g      ?? null,
-              carbs_per_100g:    n.carbs_g    ?? null,
-            };
-          });
+        const results: FoodSuggestion[] = (data.foods ?? []).map((f: any) => ({
+          food_id:           f.food_id,
+          description:        f.description,
+          calories_per_100g: f.calories_per_100g ?? null,
+          protein_per_100g:  f.protein_per_100g  ?? null,
+          fat_per_100g:      f.fat_per_100g      ?? null,
+          carbs_per_100g:    f.carbs_per_100g    ?? null,
+        }));
         setSuggestions(results);
         setShowDropdown(results.length > 0);
       } catch { /* ignore */ }
@@ -194,37 +170,20 @@ function FoodLogInput({ category, logDate, onLogged }: FoodLogInputProps) {
     const token   = localStorage.getItem("token");
     const headers = { Authorization: `Bearer ${token ?? ""}` };
 
-    const fetchPortions = async (fdc_id: number): Promise<Record<string, number> | null> => {
+    const fetchPortions = async (foodId: string): Promise<Record<string, number> | null> => {
       try {
-        const res = await apiFetch(`/foods/${fdc_id}`, { headers });
+        const res = await apiFetch(`/foods/${encodeURIComponent(foodId)}`, { headers });
         if (!res.ok) return null;
         const detail = await res.json();
         const map: Record<string, number> = {};
         for (const p of detail.portions ?? []) {
-          if (p.unit && p.grams_per_unit) map[p.unit] = p.grams_per_unit;
+          if (p.unit && p.grams) map[p.unit] = p.grams;
         }
         return Object.keys(map).length > 0 ? map : null;
       } catch { return null; }
     };
 
-    let portions = await fetchPortions(food.fdc_id);
-    if (!portions) {
-      try {
-        const res = await apiFetch(
-          `/foods/search?query=${encodeURIComponent(food.description)}&page_size=20`,
-          { headers }
-        );
-        if (res.ok) {
-          const data = await res.json();
-          const RELIABLE = new Set(["Survey (FNDDS)", "SR Legacy"]);
-          for (const f of data.foods ?? []) {
-            if (!RELIABLE.has(f.dataType)) continue;
-            portions = await fetchPortions(f.fdcId);
-            if (portions) break;
-          }
-        }
-      } catch { /* non-fatal */ }
-    }
+    const portions = await fetchPortions(food.food_id);
 
     const pm = portions ?? {};
     setPortionsMap(pm);
@@ -246,7 +205,7 @@ function FoodLogInput({ category, logDate, onLogged }: FoodLogInputProps) {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token ?? ""}` },
         body: JSON.stringify({
-          fdc_id:    selected.fdc_id,
+          food_id:   selected.food_id,
           food_name: selected.description,
           amount_g,
           calories:  sc(selected.calories_per_100g),
@@ -288,7 +247,7 @@ function FoodLogInput({ category, logDate, onLogged }: FoodLogInputProps) {
           <ul className="food-autocomplete-dropdown">
             {suggestions.map(f => (
               <li
-                key={f.fdc_id}
+                key={f.food_id}
                 onMouseDown={e => { e.preventDefault(); selectFood(f); }}
                 className="food-autocomplete-item"
               >

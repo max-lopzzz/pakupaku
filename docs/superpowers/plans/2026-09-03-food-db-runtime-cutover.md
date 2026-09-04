@@ -12,6 +12,16 @@
 
 **Predecessor:** `docs/superpowers/plans/2026-09-03-food-db-build-pipeline.md` — must be merged, and its Task 9 (real `data/foods.sqlite` committed) ideally done. This plan works against a tiny fixture `foods.sqlite` until then; the seed step no-ops gracefully when the artifact is absent.
 
+## Status
+
+Tasks 1–12 implemented, reviewed, and fixed at `e3e1f48` on branch `food-db-runtime-cutover` (based on `food-db-spec` @ `d209f7b`). 24 commits. `pytest` 138 passing, `tsc --noEmit` clean, frontend suite green (bar the pre-existing `App.test.tsx` CRA-boilerplate failure). Not yet merged — depends on Plan 1's PR #24 landing first.
+
+## Known limitations (parked, not fixed here)
+
+- **`food_index` full-coverage fuzzy ties fall to alphabetical row order.** When two foods' token sets *both* fully contain the query's tokens (e.g. query `"water"` against both `"Water, tap, drinking"` and `"Coconut water"`), `_ranked`'s partial-coverage re-rank (added in the final-review fix wave) doesn't apply — both candidates are "full coverage" — so the tie falls to `_keys` insertion order, which follows `canonical_name.lower()` sort from the build pipeline. On the real artifact this can return `"Coconut water"` for a bare `"water"` query instead of plain tap water. This is a real, traced residual (confirmed by two independent reviews), **not** a hypothetical: it survives because the two-tier partial/full-coverage split introduced for the "butter beans → butter" class of bug (fixed) doesn't distinguish among ties *within* the full-coverage tier.
+  - **Not the catastrophic failure class this project targeted** — no branded data exists in the offline DB at all, so the original bug (water → a branded product at ~10,000 kcal/100g) cannot recur. This residual's error magnitude is small (0 kcal vs ~19 kcal for water/coconut water, and similarly small deltas for analogous cases), and `best_match` is always shown to the user for confirmation before a recipe or log is saved.
+  - **Real fix, deliberately deferred:** either (a) a curated alias/synonym layer in the build pipeline so common bare words map directly to their plainest canonical entry (data-curation work, Plan 1 territory), or (b) a ranking heuristic that prefers a candidate whose `description` starts with/equals the raw query among full-coverage ties. Both are scoped follow-up work, not bug fixes to this plan.
+
 ## Global Constraints
 
 - **Python 3.8 syntax only** — `typing.Optional[X]` / `typing.List[X]` / `typing.Dict`, never `X | None` / `list[X]`.
@@ -24,6 +34,21 @@
 - New Python deps pinned in `requirements.txt` with a one-line comment. `rapidfuzz==3.9.7` is already there (build pipeline).
 - Backend tests under `tests/`, run `python -m pytest -q` (125 passing at plan start). Frontend tests `CI=true npm test -- --watchAll=false` from `pakupaku-frontend/`.
 - **Task order keeps `main` working:** each endpoint's server change and its frontend callers land in the same task. Do not merge a task that leaves the app half-cut-over.
+
+## Preflight corrections (apply to EVERY task — the code sketches below predate this)
+
+The plan's test sketches were written before checking `tests/conftest.py`. Reality:
+
+- **Session factory is `database.AsyncSessionLocal`** (an `async_sessionmaker`), NOT `async_session`. There is no `async_session` export.
+- **`database.engine` points at an unreachable dummy Postgres URL in tests** and is never connected. Tests must NEVER call `create_all` / seed / load against `database.engine` or `database.AsyncSessionLocal`.
+- **The test harness** (`tests/conftest.py`) gives you: a `db_session` fixture — a live `AsyncSession` on a fresh temp-file SQLite DB with **every table already created** via `Base.metadata.create_all` (so once `models.Food` exists, the `foods` table exists in every `db_session`); and a `client` fixture — a `TestClient(app)` (no `with`, so **FastAPI startup events do NOT fire in tests**) whose `get_db` yields that same `db_session`.
+- Therefore the seed/index functions take a **live `AsyncSession`**, not a factory or engine:
+  - `async def seed_foods(session: AsyncSession, artifact_path: str = ARTIFACT_PATH) -> int` — `delete(Food)` + `insert(Food)` on `session`, caller commits. Missing artifact → log + return 0.
+  - `async def load(session: AsyncSession) -> None` in `food_index` — `select(Food)` on `session`.
+  - Tests: `await seed_foods(db_session, str(art)); await db_session.commit(); await food_index.load(db_session)`.
+  - Startup hook (`main.py`): `async with AsyncSessionLocal() as s: await seed_foods(s); await s.commit(); await food_index.load(s)` — wrapped in `try/except` so a missing artifact or a cold DB never crashes boot; log and continue with an empty index.
+- **`backend_entry.py`** already imports `from database import Base, engine` and runs its own `engine.begin()` block — the desktop path (Task 9) uses `engine` directly there, which is correct because desktop's `DATABASE_URL` is a real local SQLite file. Only *pytest* must avoid `database.engine`.
+- Task 1: confirm `models.py`'s `from sqlalchemy import ...` line has `Float` / `String` / `Text`; add whichever is missing.
 
 ---
 
@@ -889,17 +914,16 @@ git commit -m "feat: fdc_id -> food_id migration (Neon SQL + desktop SQLite path
 
 ---
 
-## Task 11: device-local path — `services/api.ts` + `services/db.ts`
+## Task 11: remove the dead USDA code in `services/api.ts`
 
-**Files:** Modify `pakupaku-frontend/src/services/api.ts`, `pakupaku-frontend/src/services/db.ts`; Test the service-layer tests if any.
+**RESCOPED (controller ruling PR10):** `pakupaku-frontend/src/services/api.ts` is **not imported anywhere** in `src/`, and `apiFoodSearch` / `apiFoodDetail` have **zero callers**. The app is entirely backend-`fetch()`-driven (via `apiBase.ts` → `/foods/*`). The "device-local Capacitor food lookup" the spec anticipated does not exist as a live path. So this task just deletes the orphaned USDA block — it does **not** build a Capacitor `foods` table or bundle `data/foods.sqlite` (nothing would consume them). A genuine offline-mobile food search is a fresh feature with its own design, out of scope here. `services/db.ts` already got `food_id TEXT` in Task 8.
 
-**Interfaces:** the Capacitor/SQLite service layer stops calling `api.nal.usda.gov` and reads the bundled `foods` table; its `fdc_id` column becomes `food_id TEXT`.
+**Files:** Modify `pakupaku-frontend/src/services/api.ts`.
 
-- [ ] **Step 1** — `services/db.ts`: the local SQLite schema — `food_logs` / `recipe_ingredients` `fdc_id` column → `food_id TEXT`. Add a `foods` table matching the Global-Constraints DDL. Add a one-time import step that copies `data/foods.sqlite` rows into it (bundle the artifact under `public/` and `fetch()` it as an ArrayBuffer on first launch, or ship it as a Capacitor asset — pick whichever this repo's `@capacitor-community/sqlite` setup supports; document the choice inline).
-- [ ] **Step 2** — `services/api.ts`: delete `USDA_BASE` / `USDA_KEY` and the `searchFoods` / `getFood` functions that hit USDA. Replace with local queries over the `foods` table (same normalised-token + `LIKE` / in-JS fuzzy approach as `food_index`, or a thin JS port). Every insert/select that named `fdc_id` → `food_id`.
-- [ ] **Step 3** — `grep -rn "usda\|fdcId\|fdc_id\|nal.usda.gov" pakupaku-frontend/src` → only comments / historical migration strings remain.
-- [ ] **Step 4** — `CI=true npm test -- --watchAll=false` green; `npx tsc --noEmit` clean; `CI=true npm run build` clean.
-- [ ] **Step 5: Commit** `feat: device-local food lookup uses the bundled foods table, not the USDA API`.
+- [ ] **Step 1** — In `services/api.ts`, delete the entire `// ── USDA ──` block: `USDA_BASE`, `USDA_KEY` (the only reader of `process.env.REACT_APP_USDA_API_KEY`), `apiFoodSearch`, `apiFoodDetail`, and the portion-parsing helpers they use. Nothing else in the file references them.
+- [ ] **Step 2** — `grep -rn "USDA\|nal.usda.gov\|apiFoodSearch\|apiFoodDetail\|REACT_APP_USDA" pakupaku-frontend/src` → nothing (comments/docs excluded).
+- [ ] **Step 3** — `cd pakupaku-frontend && npx tsc --noEmit` clean; `CI=true npm test -- --watchAll=false` green (bar the pre-existing `App.test.tsx`); `CI=true npm run build` clean.
+- [ ] **Step 4: Commit** `chore: drop the unused device-local USDA client from services/api.ts`.
 
 ---
 

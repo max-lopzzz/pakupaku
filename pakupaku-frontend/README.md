@@ -64,7 +64,6 @@ npm run build:android
 - Change onboarding logic or payloads: `src/components/Onboarding.tsx`
 - Change local SQLite schema: `src/services/db.ts`
 - Change local auth/session behavior: `src/services/auth.ts`
-- Change USDA lookup behavior used by service-layer flows: `src/services/api.ts`
 
 ## Frontend Caveats
 
