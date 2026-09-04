@@ -4,15 +4,21 @@ from typing import List
 from scripts.build_food_db.model import NormalisedRow
 from scripts.build_food_db.normalise import normalise_row
 from scripts.build_food_db.sources.base import (
-    Source, read_csv_rows, parse_float, kj_to_kcal,
+    Source, read_xlsx_rows, parse_float, kj_to_kcal,
 )
 
 # UK CoFID (McCance & Widdowson's Composition of Foods Integrated Dataset
-# 2021). Published as a single .xlsx workbook; the build reads the main
-# per-100g data sheet exported to CSV as raw/cofid/cofid_2021.csv.
-# CoFID already reports minerals in mg and vitamins in ug, so only energy
-# needs converting (kJ -> kcal) and only when the kcal column is blank.
-FILE = "cofid_2021.csv"
+# 2021). Published as a single .xlsx workbook, read directly like the other
+# xlsx sources (ciqual / afcd / frida). CoFID already reports minerals in mg
+# and vitamins in ug, so only energy needs converting (kJ -> kcal) and only
+# when the kcal column is blank.
+FILE = "McCance_Widdowsons_Composition_of_Foods_Integrated_Dataset_2021.xlsx"
+# TODO(task 9): pin sheet + column names against the real McCance & Widdowson
+# workbook — the published edition spreads nutrients over several sheets
+# ("1.3 Proximates", "1.4 Inorganics", "1.5 Vitamins", ...). Open the
+# workbook, find the sheet carrying the per-100g columns below, and re-pin
+# both SHEET and COLS. Until then this is a best-guess sheet name.
+SHEET = "1.3 Proximates"
 COLS = {
     "id": "Food Code",
     "name": "Food Name",
@@ -39,7 +45,7 @@ class _Cofid(Source):
     def extract(self, raw_dir: str) -> List[NormalisedRow]:
         c = COLS
         rows: List[NormalisedRow] = []
-        for r in read_csv_rows(os.path.join(raw_dir, FILE)):
+        for r in read_xlsx_rows(os.path.join(raw_dir, FILE), SHEET):
             name = (r.get(c["name"]) or "").strip()
             if not name:
                 continue

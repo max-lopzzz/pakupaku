@@ -64,11 +64,16 @@ raw/usda/fndds/...            (FNDDS 2021-2023 CSV release, portion + food table
 
 1. Go to https://www.gov.uk/government/publications/composition-of-foods-integrated-dataset-cofid
 2. Download **"McCance and Widdowson's The Composition of Foods Integrated
-   Dataset 2021"** (Excel, ~4.4 MB) and the **"...composition of foods: old
-   foods"** Excel.
-3. Put both in `scripts/build_food_db/raw/cofid/`:
+   Dataset 2021"** (Excel, ~4.4 MB). The **"...composition of foods: old
+   foods"** workbook on the same page is *not* read by any extractor — skip it.
+3. Put the workbook in `scripts/build_food_db/raw/cofid/` under exactly the
+   name `sources/cofid.py` opens (`FILE`):
    - `raw/cofid/McCance_Widdowsons_Composition_of_Foods_Integrated_Dataset_2021.xlsx`
-   - `raw/cofid/McCance_Widdowsons_Composition_of_Foods_old_foods.xlsx`
+4. Open the workbook, note the sheet carrying the per-100 g columns, and pin it
+   as `SHEET` in `sources/cofid.py` (currently the best-guess
+   `"1.3 Proximates"`). Pin the header spellings into that module's `COLS`
+   map at the same time — the published edition spreads proximates,
+   inorganics and vitamins over separate sheets.
 
 ---
 

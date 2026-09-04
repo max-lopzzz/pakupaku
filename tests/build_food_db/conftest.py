@@ -1,7 +1,43 @@
+import csv
 import os
 import shutil
 
 FIX = os.path.join(os.path.dirname(__file__), "fixtures")
+
+
+def csv_to_xlsx(csv_path, xlsx_path, sheet=None, extra_rows=()):
+    """Write a committed CSV fixture out as a one-sheet .xlsx workbook.
+
+    The xlsx sources are fed real workbooks, but a CSV fixture stays readable
+    and diffable in git — so the workbook is built at test setup time rather
+    than committing a binary blob. ``extra_rows`` are appended after the CSV.
+    """
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    if sheet is not None:
+        ws.title = sheet
+    with open(csv_path, newline="", encoding="utf-8") as fh:
+        for row in csv.reader(fh):
+            ws.append(row)
+    for row in extra_rows:
+        ws.append(list(row))
+    wb.save(str(xlsx_path))
+    return str(xlsx_path)
+
+
+def cofid_raw_dir(tmp_path, csv_path=None, extra_rows=()):
+    """Build the CoFID workbook the extractor expects (name + sheet taken
+    from ``sources/cofid.py``) inside tmp_path/cofid/, and return that dir."""
+    from scripts.build_food_db.sources import cofid
+
+    d = tmp_path / "cofid"
+    if not d.exists():
+        d.mkdir(parents=True)
+    csv_to_xlsx(csv_path or os.path.join(FIX, "cofid_slice.csv"),
+                d / cofid.FILE, cofid.SHEET, extra_rows)
+    return str(d)
 
 
 def usda_raw_dir(tmp_path):

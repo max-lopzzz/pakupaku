@@ -47,9 +47,8 @@ def test_usda_extractor_reads_generic_rows_only(tmp_path):
 
 
 def test_cofid_extractor_reads_broccoli(tmp_path):
-    from tests.build_food_db.conftest import single_file_raw_dir
-    raw = single_file_raw_dir(tmp_path, "cofid", "cofid_slice.csv",
-                              "cofid_2021.csv")
+    from tests.build_food_db.conftest import cofid_raw_dir
+    raw = cofid_raw_dir(tmp_path)
 
     rows = COFID.extract(raw)
 

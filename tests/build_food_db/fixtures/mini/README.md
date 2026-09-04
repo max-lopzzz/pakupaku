@@ -10,7 +10,7 @@ Used by `tests/build_food_db/test_build_golden.py::test_build_mini_end_to_end`.
 
 | file | role | notes |
 |------|------|-------|
-| `cofid_2021.csv` | UK CoFID per-100g slice (`cofid` extractor input) | 4 rows: two near-duplicate broccoli rows and two near-duplicate carrot rows, so cross-row **matching + aggregation** actually merge and emit foods. |
+| `cofid_2021.csv` | UK CoFID per-100g slice (`cofid` extractor input) | 4 rows: two near-duplicate broccoli rows and two near-duplicate carrot rows, so cross-row **matching + aggregation** actually merge and emit foods. Kept as CSV for readable diffs — the tests convert it to the `.xlsx` workbook the extractor actually opens (`conftest.csv_to_xlsx` / `cofid_raw_dir`). |
 | `usda/food.csv` | FNDDS food-name slice (`load_fndds_portions` input) | maps `fdc_id -> description`. |
 | `usda/food_portion.csv` | FNDDS household-portion slice | `cup chopped` gram weights for broccoli and carrots. |
 

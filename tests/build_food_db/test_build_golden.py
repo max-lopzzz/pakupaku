@@ -16,31 +16,33 @@ _MINI = os.path.join(os.path.dirname(__file__), "fixtures", "mini")
 
 # same 17 columns as fixtures/mini/cofid_2021.csv; 400 kcal disagrees with the
 # 33/35 kcal broccoli rows, so the broccoli group stops auto-accepting.
-_CONFLICTING_COFID_ROW = (
-    '13-003,"broccoli, raw","Conflicting duplicate row",AR,'
-    "400,1674,4.5,0.9,1.9,2.7,1.5,8,57,1.7,88,0,0\n"
-)
+_CONFLICTING_COFID_ROW = [
+    "13-003", "broccoli, raw", "Conflicting duplicate row", "AR",
+    "400", "1674", "4.5", "0.9", "1.9", "2.7", "1.5", "8", "57", "1.7",
+    "88", "0", "0",
+]
 
 
-def _mini_root(tmp_path, extra_cofid_rows=""):
-    """Lay out a build root (``raw/<source_id>/`` + ``review/``) from the
-    committed mini fixture and return it as a str."""
-    root = tmp_path / "pkg"
-    (root / "raw" / "cofid").mkdir(parents=True)
-    (root / "raw" / "usda").mkdir(parents=True)
-    (root / "review").mkdir()
+def _mini_raw_dir(tmp_path, extra_cofid_rows=()):
+    """Lay out ``raw/<source_id>/`` from the committed mini fixture (CoFID as
+    the .xlsx workbook the extractor reads) and return the raw dir."""
+    from tests.build_food_db.conftest import cofid_raw_dir
 
-    with open(os.path.join(_MINI, "cofid_2021.csv"), encoding="utf-8") as fh:
-        cofid_csv = fh.read()
-    if not cofid_csv.endswith("\n"):
-        cofid_csv += "\n"
-    (root / "raw" / "cofid" / "cofid_2021.csv").write_text(
-        cofid_csv + extra_cofid_rows, encoding="utf-8")
-
-    shutil.copy(os.path.join(_MINI, "usda", "food.csv"),
-                root / "raw" / "usda" / "food.csv")
+    raw = tmp_path / "raw"
+    (raw / "usda").mkdir(parents=True)
+    cofid_raw_dir(raw, os.path.join(_MINI, "cofid_2021.csv"), extra_cofid_rows)
+    shutil.copy(os.path.join(_MINI, "usda", "food.csv"), raw / "usda" / "food.csv")
     shutil.copy(os.path.join(_MINI, "usda", "food_portion.csv"),
-                root / "raw" / "usda" / "food_portion.csv")
+                raw / "usda" / "food_portion.csv")
+    return raw
+
+
+def _mini_root(tmp_path, extra_cofid_rows=()):
+    """Lay out a whole build root (``raw/`` + ``review/``) for ``main()``."""
+    root = tmp_path / "pkg"
+    root.mkdir()
+    _mini_raw_dir(root, extra_cofid_rows)
+    (root / "review").mkdir()
     (root / "review" / "decisions.csv").write_text(
         "group_id,decision,canonical_name,note\n", encoding="utf-8")
     return root
@@ -90,13 +92,7 @@ def test_build_mini_end_to_end(tmp_path):
     """Drive the whole pipeline from real extractor input (fixtures/mini/)
     through matching, aggregation, portion attach and the SQLite write,
     and assert the artifact is byte-identical when rebuilt."""
-    raw = tmp_path / "raw"
-    (raw / "cofid").mkdir(parents=True)
-    (raw / "usda").mkdir(parents=True)
-    shutil.copy(os.path.join(_MINI, "cofid_2021.csv"), raw / "cofid" / "cofid_2021.csv")
-    shutil.copy(os.path.join(_MINI, "usda", "food.csv"), raw / "usda" / "food.csv")
-    shutil.copy(os.path.join(_MINI, "usda", "food_portion.csv"),
-                raw / "usda" / "food_portion.csv")
+    raw = _mini_raw_dir(tmp_path)
 
     rows = COFID.extract(str(raw / "cofid"))
     portions = load_fndds_portions(str(raw))
@@ -147,7 +143,7 @@ def test_main_gives_each_extractor_its_own_raw_source_dir(tmp_path, monkeypatch)
 
 def test_main_exits_with_the_unresolved_conflict_count(tmp_path, monkeypatch):
     monkeypatch.setattr(build_mod, "ALL_SOURCES", [COFID])
-    root = _mini_root(tmp_path, extra_cofid_rows=_CONFLICTING_COFID_ROW)
+    root = _mini_root(tmp_path, extra_cofid_rows=[_CONFLICTING_COFID_ROW])
     out = tmp_path / "foods.sqlite"
 
     with pytest.raises(SystemExit) as excinfo:
