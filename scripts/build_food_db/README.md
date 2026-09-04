@@ -86,7 +86,13 @@ raw/usda/nutrient.csv         (reference only — no extractor reads it)
    https://www.data.gouv.fr/datasets/table-de-composition-nutritionnelle-des-aliments-ciqual-2020
 2. Download the **Ciqual 2025** table as **Excel** (`.xls` / `.xlsx`).
 3. Put it in `scripts/build_food_db/raw/ciqual/`:
-   - `raw/ciqual/Table_Ciqual_2025.xlsx`
+   - `raw/ciqual/Table_Ciqual_2025.xlsx` — the only file `sources/ciqual.py`
+     opens.
+4. Open the workbook, note the data-sheet name, and pin it as `SHEET` in
+   `sources/ciqual.py` (currently `None` = active sheet, which is correct only
+   if the workbook is single-sheet). Pin the exact column-header spellings into
+   that module's `COLS` map at the same time — the real headers carry the unit
+   inline (`"Energie, Règlement UE N° 1169/2011 (kcal/100 g)"`).
 
 Note: CIQUAL ships as `xls` — `openpyxl` may need the file re-saved as `xlsx`, or
 read the XML export instead.
@@ -97,12 +103,18 @@ read the XML export instead.
 
 1. Go to https://www.foodstandards.gov.au/science-data/food-nutrient-databases/afcd/data-files
 2. Download the **Release 2** downloadable Excel files (food details, per-100 g
-   nutrients, measures). (Pin Release 2 for a deterministic build; Release 3.0 is
+   nutrients). (Pin Release 2 for a deterministic build; Release 3.0 is
    also acceptable if the extractor is updated to match.)
 3. Put them in `scripts/build_food_db/raw/afcd/`:
-   - `raw/afcd/Release2_Food_Details.xlsx`
-   - `raw/afcd/Release2_Food_Nutrients_per_100g.xlsx`
-   - `raw/afcd/Release2_Food_Measures.xlsx`
+   - `raw/afcd/Release2_Food_Details.xlsx` — read by `sources/afcd.py`
+   - `raw/afcd/Release2_Food_Nutrients_per_100g.xlsx` — read by `sources/afcd.py`
+   - `Release2_Food_Measures.xlsx` is **not read** (household measures come from
+     USDA FNDDS) — don't bother downloading it.
+4. Open both workbooks, note their data-sheet names, and pin them as
+   `SHEET_DETAILS` / `SHEET_NUTRIENTS` in `sources/afcd.py` (currently `None` =
+   active sheet). Pin the exact column-header spellings into `COLS` at the same
+   time — the real nutrient headers carry an embedded newline before the unit,
+   e.g. `"Protein \n(g)"`.
 
 Carry the FSANZ **Limitation of Data Statement** and the CC BY-SA 3.0 AU notice
 with the build output (already in `docs/food-data-sources.md`).
@@ -113,13 +125,14 @@ with the build output (already in `docs/food-data-sources.md`).
 
 1. Go to https://open.canada.ca/data/en/dataset/089885f9-ed53-44e6-854a-14d21a1ec2e0
 2. Download the **CNF 2015** release in **CSV** (multi-file relational ZIP).
-3. Unzip into `scripts/build_food_db/raw/cnf/`. Files used (confirm exact names
-   on download — the 2015 release uses spaces in filenames):
-   - `FOOD NAME.csv`
-   - `NUTRIENT AMOUNT.csv`
-   - `NUTRIENT NAME.csv`
-   - `CONVERSION FACTOR.csv`
-   - `MEASURE NAME.csv`
+3. Unzip into `scripts/build_food_db/raw/cnf/`. `sources/cnf.py` opens **only**
+   these two (confirm exact names on download — the 2015 release uses spaces in
+   filenames):
+   - `FOOD NAME.csv` — food id, description, group id
+   - `NUTRIENT AMOUNT.csv` — per-100 g values, joined on `NutrientID`
+   The rest of the release is **not read** and need not be kept:
+   `NUTRIENT NAME.csv` (the nutrient-id map is hard-coded in `sources/cnf.py`),
+   `CONVERSION FACTOR.csv`, `MEASURE NAME.csv` (portions come from USDA FNDDS).
 
 ---
 
@@ -131,11 +144,23 @@ with the build output (already in `docs/food-data-sources.md`).
    spreadsheet arrives by email. (Version 5.5 (2025) is acceptable if the
    extractor matches.)
 3. Put it in `scripts/build_food_db/raw/frida/`:
-   - `raw/frida/Frida_5.3.xlsx`
+   - `raw/frida/Frida_5.3.xlsx` — the only file `sources/frida.py` opens.
+4. Open the workbook, note the per-100 g data-sheet name, and pin it as `SHEET`
+   in `sources/frida.py` (currently `None` = active sheet). Pin the exact
+   column-header spellings into that module's `COLS` map at the same time.
 
 ---
 
 ## Run the build
+
+### Before the first run: pin every xlsx source's sheet + columns
+
+The `SHEET` / `COLS` constants at the top of each `sources/<id>.py` are
+best-guesses derived from the fixture slices. For every xlsx source (`cofid`,
+`ciqual`, `afcd`, `frida`): open the downloaded workbook, note the sheet that
+carries the per-100 g columns, set it as `SHEET` (or `SHEET_DETAILS` /
+`SHEET_NUTRIENTS` for `afcd`), and copy the exact column-header strings into
+`COLS`. CSV sources (`usda`, `cnf`) only need the `COLS` header names checked.
 
 From the repo root, with the virtualenv active and all `raw/<source_id>/` folders
 populated:

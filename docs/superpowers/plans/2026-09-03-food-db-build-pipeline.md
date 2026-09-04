@@ -10,6 +10,61 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-03-multi-country-food-database-design.md`
 
+## Status
+
+Tasks 1–8 are **implemented and reviewed** on branch `food-db-spec` (at the
+final fix-wave commit). Task 9 (acquire the real datasets, resolve conflicts,
+commit `data/foods.sqlite`) is **not started** — it needs the user to download
+the six source datasets first.
+
+## Corrections applied during implementation
+
+Where this plan and the code as built disagree, the code is authoritative:
+
+- `to_mcg(0.001)` is `1000.0`, not `1.0` — Task 4 Step 2's sample assertion
+  used mg, but `to_mcg` returns micrograms.
+- `canonical_key("Water, tap, drinking")` is **not** `"water"` (Task 4 Step 7's
+  sample assertion); after F12 it normalises to `"drinking tap water"`.
+- `rapidfuzz==3.9.7`, not `3.10.1` — rapidfuzz 3.10.x requires Python 3.9 and
+  the repo floor is 3.8.
+- Task 8's INSERT placeholder count is `8 + len(NUTRIENT_FIELDS)`, not
+  `7 + …` — there are 8 non-nutrient columns (id, canonical_name, aliases,
+  category, prep_state, portions, source_ids, source_count).
+- `main()` gained `os.makedirs` for the `review/` and output directories, plus
+  `root` / `out_path` parameters so a test can drive the pipeline end-to-end.
+
+Final-review fix wave (F1–F13):
+
+- **F1** — `main()` hands each extractor `raw/<source_id>/`, not the `raw/`
+  root; two `main()` tests added.
+- **F2** — the CoFID extractor reads its `.xlsx` workbook via `read_xlsx_rows`
+  + a pinned `SHEET`, like the other xlsx sources.
+- **F3** — `scripts/build_food_db/review/conflicts.csv` is git-ignored.
+- **F4** — `load_fndds_portions` divides `gram_weight` by `amount`, and
+  restricts portion-name rows to `foundation_food` / `sr_legacy_food` /
+  `survey_fndds_food`; no separate FNDDS release is read (portions come from
+  `raw/usda/food_portion.csv` in the Full Download).
+- **F5** — a nutrient is emitted only with **≥ 2 distinct sources**
+  (per-source mean taken first); the mini fixture gained a real second source.
+- **F6** — nutrient-agreement tolerance split into `MACRO_TOLERANCE` (0.25) /
+  `MICRO_TOLERANCE` (0.60); spread is compared to the median.
+- **F7** — `group_foods` runs once: `build()` takes an optional `groups=` and
+  `main()` passes the groups it already built.
+- **F8** — every extractor passes `category=None` (raw source category columns
+  are an incoherent mix; a shared vocabulary is Plan-2 work).
+- **F9** — `parse_float` treats a comma as a decimal separator only when there
+  is exactly one with ≤ 2 trailing digits, else strips it as a thousands
+  separator (`"1,200"` → `1200.0`).
+- **F10** — the artifact is written to `<out>.tmp` then `os.replace`d into
+  place, so a mid-build crash never destroys a committed artifact.
+- **F11** — `PRAGMA page_size = 4096` before `CREATE TABLE`, for
+  cross-machine determinism.
+- **F12** — `canonical_key` keeps a stopword in head-noun position
+  (`"coconut water"` stays `"coconut water"`) and falls back to the full
+  sorted token list when every token is a stopword.
+- **F13** — dropped unused `dataclasses.field` / `fields` imports from
+  `model.py`; annotated `read_xlsx_rows(path: str, sheet: Optional[str] = None)`.
+
 ## Global Constraints
 
 - Python 3.8 syntax only — `typing.Optional[X]` / `typing.List[X]`, never `X | None` or `list[X]` in annotations.
@@ -72,7 +127,7 @@
 
 This task is research + documentation. No code, no tests. Its deliverable is a filled-in `docs/food-data-sources.md` that every later task treats as the source of truth for which extractors to write.
 
-- [ ] **Step 1: Create the git-ignore entry**
+- [x] **Step 1: Create the git-ignore entry**
 
 Append to `.gitignore`:
 
@@ -81,19 +136,19 @@ Append to `.gitignore`:
 scripts/build_food_db/raw/
 ```
 
-- [ ] **Step 2: Confirm the six known-open sources**
+- [x] **Step 2: Confirm the six known-open sources**
 
 For each of USDA FDC, CoFID (UK), CIQUAL (France), AFCD (Australia/FSANZ), CNF (Canada), Frida (Denmark): record in `docs/food-data-sources.md` a row with — source id (`usda`, `cofid`, `ciqual`, `afcd`, `cnf`, `frida`), dataset name + edition/year, download URL, licence name + URL, the verbatim attribution string the licence requires, and the file format (CSV / xlsx / multi-file release).
 
-- [ ] **Step 3: Resolve the four pending licences**
+- [x] **Step 3: Resolve the four pending licences**
 
 For each of FAO West Africa, FAO Central/East Africa, FAO ASEAN, and Korea (RDA / data.go.kr): find the dataset's licence page. If it permits redistribution **and** commercial use (reject CC BY-NC, CC BY-NC-SA, "research only", "no redistribution"), add it as a confirmed row exactly like Step 2 and note `included: yes`. Otherwise add the row with `included: no — <reason>` and do not write an extractor for it later. Record the decision date.
 
-- [ ] **Step 4: Write `scripts/build_food_db/README.md`**
+- [x] **Step 4: Write `scripts/build_food_db/README.md`**
 
 Contents: the list of confirmed sources; for each, the exact download steps and where the file(s) go under `scripts/build_food_db/raw/<source_id>/`; which sub-files are needed from multi-file releases (USDA FDC: `food.csv`, `food_nutrient.csv`, `nutrient.csv`, plus FNDDS `fndds_ingredient_nutrient_value` / portion files — name them precisely once the release is downloaded); and the run command `python -m scripts.build_food_db.build`.
 
-- [ ] **Step 5: Create the committed stubs**
+- [x] **Step 5: Create the committed stubs**
 
 `scripts/build_food_db/review/decisions.csv` with header:
 
@@ -107,7 +162,7 @@ group_id,decision,canonical_name,note
 korean_name,english_name
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add .gitignore docs/food-data-sources.md scripts/build_food_db/README.md scripts/build_food_db/review/decisions.csv scripts/build_food_db/translations/korea_en.csv
@@ -130,7 +185,7 @@ git commit -m "docs: food-DB build pipeline source register and licence decision
   - `NormalisedRow` dataclass: `source_id: str`, `source_food_id: str`, `name: str`, `canonical_key: str` (filled by Task 3, `""` until then), `prep_state: str` (same), `category: Optional[str]`, plus one `Optional[float]` field per name in `NUTRIENT_FIELDS`.
   - `NormalisedRow.nutrients() -> Dict[str, Optional[float]]` — the 12 nutrient fields as a dict.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/build_food_db/test_model.py
@@ -158,12 +213,12 @@ def test_normalised_row_nutrients_returns_all_twelve_keys():
     assert n["fiber_per_100g"] is None
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/build_food_db/test_model.py -v`
 Expected: FAIL — `ModuleNotFoundError: scripts.build_food_db.model`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # scripts/build_food_db/model.py
@@ -203,12 +258,12 @@ class NormalisedRow:
         return {name: getattr(self, name) for name in NUTRIENT_FIELDS}
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `python -m pytest tests/build_food_db/test_model.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/build_food_db/__init__.py scripts/build_food_db/model.py tests/build_food_db/__init__.py tests/build_food_db/test_model.py
@@ -231,7 +286,7 @@ git commit -m "feat: NormalisedRow model for food-DB build pipeline"
   - `canonical_key(name: str) -> str` — lowercased, punctuation stripped, tokens sorted, prep-state words removed, whitespace-collapsed.
   - `normalise_row(row: NormalisedRow) -> NormalisedRow` — returns the same row with `canonical_key` and `prep_state` set.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/build_food_db/test_normalise.py
@@ -268,12 +323,12 @@ def test_normalise_row_populates_both_fields():
     assert out.canonical_key == canonical_key("carrots")
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/build_food_db/test_normalise.py -v`
 Expected: FAIL — `ModuleNotFoundError: scripts.build_food_db.normalise`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # scripts/build_food_db/normalise.py
@@ -323,12 +378,12 @@ def normalise_row(row: NormalisedRow) -> NormalisedRow:
     return row
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `python -m pytest tests/build_food_db/test_normalise.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/build_food_db/normalise.py tests/build_food_db/test_normalise.py
@@ -362,7 +417,7 @@ git commit -m "feat: canonical-key and prep-state normalisation for food-DB buil
 
 **Note for the implementer:** the exact column names for each non-USDA source are only knowable once the raw file is in `scripts/build_food_db/raw/<id>/`. Write each extractor against a committed ~10-row fixture slice that mirrors the real file's header; when the real download is present, adjust the column-name constants at the top of the module. USDA FDC's CSV schema (`food.csv`, `food_nutrient.csv`, `nutrient.csv`) is stable and documented — do it fully first as the reference.
 
-- [ ] **Step 1: Add `openpyxl` to requirements**
+- [x] **Step 1: Add `openpyxl` to requirements**
 
 Append to `requirements.txt`:
 
@@ -372,7 +427,7 @@ openpyxl==3.1.5  # read .xlsx national food-composition tables in the build pipe
 
 Run: `pip install -r requirements.txt`
 
-- [ ] **Step 2: Write the failing test for `base.py` helpers**
+- [x] **Step 2: Write the failing test for `base.py` helpers**
 
 ```python
 # tests/build_food_db/test_sources.py
@@ -386,12 +441,12 @@ def test_unit_helpers():
     assert to_mg(None) is None
 ```
 
-- [ ] **Step 3: Run test to verify it fails**
+- [x] **Step 3: Run test to verify it fails**
 
 Run: `python -m pytest tests/build_food_db/test_sources.py -v`
 Expected: FAIL — `ModuleNotFoundError: scripts.build_food_db.sources.base`
 
-- [ ] **Step 4: Implement `base.py`**
+- [x] **Step 4: Implement `base.py`**
 
 ```python
 # scripts/build_food_db/sources/base.py
@@ -438,16 +493,16 @@ def parse_float(raw: Optional[str]) -> Optional[float]:
         return None
 ```
 
-- [ ] **Step 5: Run helper test to verify it passes**
+- [x] **Step 5: Run helper test to verify it passes**
 
 Run: `python -m pytest tests/build_food_db/test_sources.py -v`
 Expected: PASS
 
-- [ ] **Step 6: Add the USDA fixture slice**
+- [x] **Step 6: Add the USDA fixture slice**
 
 Create `tests/build_food_db/fixtures/usda_food_slice.csv`, `usda_food_nutrient_slice.csv`, `usda_nutrient_slice.csv` — ~10 `food` rows (a mix of `data_type` = `foundation_food` / `sr_legacy_food`, **excluding** `branded_food` and `survey_fndds_food`), their matching `food_nutrient` rows for nutrient ids 1008/1003/1004/1005/1079/2000/1093/1087/1089/1162/1110/1178, and the `nutrient` lookup rows. Keep names recognisable: "Broccoli, raw", "Water, tap, drinking", "Potatoes, flesh and skin, raw".
 
-- [ ] **Step 7: Write the failing test for the USDA extractor**
+- [x] **Step 7: Write the failing test for the USDA extractor**
 
 ```python
 # add to tests/build_food_db/test_sources.py
@@ -475,12 +530,12 @@ def test_usda_extractor_reads_generic_rows_only(tmp_path):
     assert all("BRANDED" not in r.name.upper() for r in rows)
 ```
 
-- [ ] **Step 8: Run it to verify it fails**
+- [x] **Step 8: Run it to verify it fails**
 
 Run: `python -m pytest tests/build_food_db/test_sources.py::test_usda_extractor_reads_generic_rows_only -v`
 Expected: FAIL — `ModuleNotFoundError: scripts.build_food_db.sources.usda`
 
-- [ ] **Step 9: Write `conftest.py` + the USDA extractor**
+- [x] **Step 9: Write `conftest.py` + the USDA extractor**
 
 ```python
 # tests/build_food_db/conftest.py
@@ -562,25 +617,25 @@ class _Usda(Source):
 SOURCE = _Usda()
 ```
 
-- [ ] **Step 10: Run the USDA test to verify it passes**
+- [x] **Step 10: Run the USDA test to verify it passes**
 
 Run: `python -m pytest tests/build_food_db/test_sources.py -v`
 Expected: PASS
 
-- [ ] **Step 11: Commit the reference extractor**
+- [x] **Step 11: Commit the reference extractor**
 
 ```bash
 git add requirements.txt scripts/build_food_db/sources/ tests/build_food_db/conftest.py tests/build_food_db/fixtures/usda_*_slice.csv tests/build_food_db/test_sources.py
 git commit -m "feat: USDA reference extractor + source base helpers"
 ```
 
-- [ ] **Step 12: Repeat Steps 6–11 for each remaining confirmed source**
+- [x] **Step 12: Repeat Steps 6–11 for each remaining confirmed source**
 
 For each of `cofid`, `ciqual`, `afcd`, `cnf`, `frida` (and `fao_regional`, `korea` if Task 1 confirmed them): add a ~10-row fixture slice mirroring that file's real header; write a failing test asserting one recognisable row extracts with the right `calories_per_100g` and `canonical_key`; implement `sources/<id>.py` with a module-top `COLS = {...}` column-name map and unit conversions (`kj_to_kcal` for kJ energy columns; `to_mg`/`to_mcg` where the source reports a nutrient in g); end each with `normalise_row`; add its `SOURCE` to `ALL_SOURCES` in `sources/__init__.py`; run; commit as `feat: <id> food-composition extractor`.
 
 `ciqual` and `afcd` ship xlsx — add an `read_xlsx_rows(path, sheet)` helper to `base.py` (using `openpyxl`, `read_only=True`) the first time it's needed, with its own helper test.
 
-- [ ] **Step 13: Final commit for the sources package**
+- [x] **Step 13: Final commit for the sources package**
 
 ```bash
 git add scripts/build_food_db/sources/__init__.py
@@ -604,7 +659,7 @@ git commit -m "feat: register all confirmed food-composition sources"
   - `load_decisions(path) -> Dict[str, str]` — `group_id -> decision` (`merge` / `separate` / `rename:<name>`), skipping blank rows.
   - `apply_decisions(groups, decisions) -> List[MergeGroup]` — split `separate` groups into singletons, apply `rename`, keep `merge`; raise `ValueError` listing any `auto_accepted=False` group with no decision.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/build_food_db/test_match.py
@@ -664,12 +719,12 @@ def test_apply_decisions_requires_a_decision_for_every_conflict(tmp_path):
     assert len(resolved) == 2
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest tests/build_food_db/test_match.py -v`
 Expected: FAIL — `ModuleNotFoundError: scripts.build_food_db.match`
 
-- [ ] **Step 3: Implement `match.py`**
+- [x] **Step 3: Implement `match.py`**
 
 ```python
 # scripts/build_food_db/match.py
@@ -785,12 +840,12 @@ def apply_decisions(groups: List[MergeGroup], decisions: Dict[str, str]) -> List
     return sorted(out, key=lambda g: g.group_id)
 ```
 
-- [ ] **Step 4: Run it to verify it passes**
+- [x] **Step 4: Run it to verify it passes**
 
 Run: `python -m pytest tests/build_food_db/test_match.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add requirements.txt scripts/build_food_db/match.py tests/build_food_db/test_match.py
@@ -813,7 +868,7 @@ git commit -m "feat: cross-source food matching with committed conflict decision
   - `AggregatedFood` dataclass: `canonical_name: str`, `prep_state: str`, `category: Optional[str]`, `source_ids: List[str]`, `source_count: int`, one `Optional[float]` per `NUTRIENT_FIELDS`.
   - `aggregate_group(group: MergeGroup) -> Optional[AggregatedFood]` — returns `None` when no nutrient has ≥ 2 surviving values.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/build_food_db/test_aggregate.py
@@ -863,12 +918,12 @@ def test_sanity_rules():
                       "carbs_per_100g": 60.0, "fiber_per_100g": 0.0}) is False
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest tests/build_food_db/test_aggregate.py -v`
 Expected: FAIL — `ModuleNotFoundError: scripts.build_food_db.aggregate`
 
-- [ ] **Step 3: Implement `aggregate.py`**
+- [x] **Step 3: Implement `aggregate.py`**
 
 ```python
 # scripts/build_food_db/aggregate.py
@@ -942,12 +997,12 @@ def aggregate_group(group: MergeGroup) -> Optional[AggregatedFood]:
     return out if any_nutrient else None
 ```
 
-- [ ] **Step 4: Run it to verify it passes**
+- [x] **Step 4: Run it to verify it passes**
 
 Run: `python -m pytest tests/build_food_db/test_aggregate.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/build_food_db/aggregate.py tests/build_food_db/test_aggregate.py
@@ -970,7 +1025,7 @@ git commit -m "feat: sanity filter + median/mean aggregation for food-DB build"
   - `load_fndds_portions(raw_dir: str) -> Dict[str, List[Dict[str, float]]]` — maps a portion food's `canonical_key` to `[{"unit": str, "grams": float}, ...]`. Reads the FNDDS portion + food files from `raw_dir/usda/` (names per Task 1 README).
   - `attach_portions(foods: List[AggregatedFood], portions: Dict[...]) -> List[Tuple[AggregatedFood, List[Dict[str, float]]]]` — for each food, exact `canonical_key` hit else best fuzzy hit `>= PORTION_MATCH_THRESHOLD` else `[]`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/build_food_db/test_portions.py
@@ -995,12 +1050,12 @@ def test_no_match_yields_empty_portions():
     assert out[0][1] == []
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest tests/build_food_db/test_portions.py -v`
 Expected: FAIL — `ModuleNotFoundError: scripts.build_food_db.portions`
 
-- [ ] **Step 3: Implement `portions.py`**
+- [x] **Step 3: Implement `portions.py`**
 
 ```python
 # scripts/build_food_db/portions.py
@@ -1058,12 +1113,12 @@ def attach_portions(foods: List[AggregatedFood],
     return result
 ```
 
-- [ ] **Step 4: Run it to verify it passes**
+- [x] **Step 4: Run it to verify it passes**
 
 Run: `python -m pytest tests/build_food_db/test_portions.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/build_food_db/portions.py tests/build_food_db/fixtures/fndds_portions_slice.csv tests/build_food_db/test_portions.py
@@ -1086,7 +1141,7 @@ git commit -m "feat: attach USDA FNDDS household portions to aggregated foods"
   - `build(source_rows: List[NormalisedRow], fndds_portions: Dict, decisions: Dict[str,str], out_path: str) -> None` — the pure core: group → apply decisions → aggregate → attach portions → assign `id` (`gen:00001`… by sorted `canonical_name`+`prep_state`) → write SQLite. `aliases` = sorted distinct source names in the group as a JSON array.
   - `main() -> None` — reads real raw dir + `review/decisions.csv`, calls `build`, writes `data/foods.sqlite`; regenerates `review/conflicts.csv` and exits non-zero (printing the count) if any conflict is unresolved.
 
-- [ ] **Step 1: Write the failing golden test**
+- [x] **Step 1: Write the failing golden test**
 
 ```python
 # tests/build_food_db/test_build_golden.py
@@ -1137,12 +1192,12 @@ def test_build_raises_on_unresolved_conflict(tmp_path):
         build(rows, {}, {}, str(tmp_path / "x.sqlite"))
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest tests/build_food_db/test_build_golden.py -v`
 Expected: FAIL — `ModuleNotFoundError: scripts.build_food_db.build`
 
-- [ ] **Step 3: Implement `build.py`**
+- [x] **Step 3: Implement `build.py`**
 
 ```python
 # scripts/build_food_db/build.py
@@ -1238,17 +1293,17 @@ if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 4: Run it to verify it passes**
+- [x] **Step 4: Run it to verify it passes**
 
 Run: `python -m pytest tests/build_food_db/test_build_golden.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Run the whole build-pipeline suite**
+- [x] **Step 5: Run the whole build-pipeline suite**
 
 Run: `python -m pytest tests/build_food_db/ -v`
 Expected: PASS (all tasks)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/build_food_db/build.py tests/build_food_db/fixtures/mini/ tests/build_food_db/test_build_golden.py
@@ -1268,6 +1323,15 @@ git commit -m "feat: food-DB build orchestration and deterministic SQLite artifa
 - Consumes: `main()` from Task 8, the real downloads placed under `scripts/build_food_db/raw/` per the Task 1 README.
 
 This task has no unit test — its deliverable is the committed artifact plus a sanity script.
+
+**Expect on the first real run:** a large `review/conflicts.csv` (thousands of
+rows at ~15k merged foods) and a slow build (the full national tables are
+hundreds of thousands of rows; `rapidfuzz` clustering dominates). Plan to
+iterate: tune `MACRO_TOLERANCE` / `MICRO_TOLERANCE` in `match.py` down until the
+review list is a few hundred rows, and pin each xlsx source's real data-sheet
+name and column spellings into its `SHEET` / `COLS` map in `sources/<id>.py`
+against the actual downloaded files (the committed values are best-guesses from
+the fixture slices).
 
 - [ ] **Step 1: Download every confirmed source**
 

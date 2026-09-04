@@ -111,22 +111,32 @@ licence requires.
 | US | USDA FoodData Central — Foundation, SR Legacy, FNDDS | Public domain | **Included** |
 | UK | CoFID (McCance & Widdowson's *The Composition of Foods*) | Open Government Licence v3 | **Included** |
 | France | CIQUAL (ANSES) | Licence Ouverte / Etalab 2.0 | **Included** |
-| Australia | Australian Food Composition Database (FSANZ) | CC BY 3.0 AU | **Included** |
+| Australia | Australian Food Composition Database (FSANZ) | CC BY-SA 3.0 AU | **Included** — see ShareAlike note |
 | Canada | Canadian Nutrient File | Open Government Licence – Canada | **Included** |
 | Denmark | Frida (DTU National Food Institute) | Free reuse w/ citation | **Included** |
-| West Africa | FAO/INFOODS West African Food Composition Table | **Verify** — several FAO datasets are CC BY-NC | Pending licence check |
-| Central/East Africa | FAO/INFOODS FCT for Central & Eastern Africa | **Verify** | Pending licence check |
-| SE Asia | FAO/INFOODS ASEAN Food Composition Database | **Verify** | Pending licence check |
-| South Korea | Korea Food Composition Database (RDA / data.go.kr) | Likely KOGL Type 1 (commercial OK) | **Verify**, then include |
+| West Africa | FAO/INFOODS West African Food Composition Table | CC BY-NC-SA 3.0 IGO | **Excluded** — non-commercial |
+| Central/East Africa | FAO/INFOODS FCT for Central & Eastern Africa | CC BY-NC-SA 3.0 IGO / no redistribution grant | **Excluded** — non-commercial (no distinct open FAO table exists) |
+| SE Asia | FAO/INFOODS ASEAN Food Composition Database | CC BY-NC-SA 3.0 IGO | **Excluded** — non-commercial |
+| South Korea | Korea Food Composition Database (RDA / data.go.kr) | KOGL Type 2 (Attribution + No Commercial Use) | **Excluded** — non-commercial |
 
-**Excluded (cannot redistribute or NC-only):** Japan MEXT Standard
-Tables, China CDC food composition tables, South Africa SAFOODS/SAMRC,
+**Authoritative licence register: `docs/food-data-sources.md`** (verified
+2026-09-03). Where this table and the register disagree, the register wins.
+
+**AFCD ShareAlike:** the FSANZ Data User Licence Agreement is **CC BY-SA 3.0
+AU**, not CC BY 3.0 AU. This is compatible with commercial use, but the
+ShareAlike clause means `data/foods.sqlite` inherits a ShareAlike obligation for
+AFCD-derived values — carry the CC BY-SA 3.0 AU notice (and the FSANZ Limitation
+of Data Statement) on the artifact and in `docs/food-data-sources.md`.
+
+**Excluded (cannot redistribute or NC-only):** all four FAO/INFOODS regional
+tables and the Korea RDA table (all non-commercial — see above); Japan MEXT
+Standard Tables, China CDC food composition tables, South Africa SAFOODS/SAMRC,
 New Zealand FOODfiles.
 
-The pending rows are resolved during implementation: each is either
-promoted to **Included** with its attribution string recorded, or
-dropped. North America + Europe + Oceania coverage does not depend on
-any pending row.
+**Resulting coverage:** six Western sources only — USDA (US), CoFID (UK), CIQUAL
+(France), AFCD (Australia), CNF (Canada), Frida (Denmark), i.e. North America,
+Western Europe and Oceania. There is no Africa / Asia / South America coverage
+in this version; the user reviewed and accepted this scope.
 
 ### Attribution
 
@@ -172,7 +182,10 @@ Each source value is dropped, per nutrient, if:
 
 - `calories_per_100g` > 900 (pure fat is 884 kcal/100 g) or < 0
 - any macro < 0, or `protein + fat + carbs + fiber` > 105 g/100 g
-- `calories_per_100g` present but all macros zero/absent, or vice versa
+- ~~`calories_per_100g` present but all macros zero/absent, or vice versa~~
+  — **not implemented**: this rule would delete water (0 kcal, no macros) and
+  every partial-coverage row; the negative / >900 / macro-sum checks are
+  sufficient.
 
 A food with **≥ 2 surviving sources** for a given nutrient emits that
 nutrient; a food with < 2 surviving sources for *every* nutrient is not
