@@ -287,6 +287,47 @@ export interface RecipeSavePayload {
   }>;
 }
 
+/** Shared by the single-recipe form's submit and bulk-import's auto-save path. */
+export function payloadFromFormValues(
+  values: RecipeFormValues,
+): { payload: RecipeSavePayload } | { error: string } {
+  if (!values.name.trim()) {
+    return { error: "Recipe name is required." };
+  }
+
+  const valid = values.ingredients.filter(r => r.food_name.trim() && r.amount.trim());
+  if (valid.length === 0) {
+    return { error: "Add at least one ingredient with a name and amount." };
+  }
+
+  const payload: RecipeSavePayload = {
+    name:         values.name.trim(),
+    description:  values.description.trim() || undefined,
+    servings:     parseFloat(values.servings) || 1,
+    image_url:    values.imageUrl.trim(),
+    source_url:   values.sourceUrl.trim(),
+    instructions: values.instructions.trim(),
+    diet_tags:    values.dietTags,
+    is_shared:    values.isShared,
+    ingredients: valid.map(r => {
+      const amount_g = toGrams(r.amount, r.unit, r.portionsMap);
+      return {
+        food_id:    r.food_id ?? undefined,
+        food_name:  r.food_name.trim(),
+        brand_name: r.brand_name.trim() || undefined,
+        amount_g,
+        calories:   scale(r.calories_per_100g,  amount_g),
+        protein_g:  scale(r.protein_per_100g,   amount_g),
+        fat_g:      scale(r.fat_per_100g,        amount_g),
+        carbs_g:    scale(r.carbs_per_100g,      amount_g),
+        fiber_g:    scale(r.fiber_per_100g,      amount_g),
+      };
+    }),
+  };
+
+  return { payload };
+}
+
 // ─── Main component ───────────────────────────────────────
 
 interface RecipeEditFormProps {
@@ -330,43 +371,16 @@ export default function RecipeEditForm({
   const handleSubmit = () => {
     setValidationError("");
 
-    if (!name.trim()) {
-      setValidationError("Recipe name is required.");
+    const result = payloadFromFormValues({
+      name, description, servings, imageUrl, sourceUrl, instructions,
+      dietTags, isShared, ingredients,
+    });
+    if ("error" in result) {
+      setValidationError(result.error);
       return;
     }
 
-    const valid = ingredients.filter(r => r.food_name.trim() && r.amount.trim());
-    if (valid.length === 0) {
-      setValidationError("Add at least one ingredient with a name and amount.");
-      return;
-    }
-
-    const payload: RecipeSavePayload = {
-      name:         name.trim(),
-      description:  description.trim() || undefined,
-      servings:     parseFloat(servings) || 1,
-      image_url:    imageUrl.trim(),
-      source_url:   sourceUrl.trim(),
-      instructions: instructions.trim(),
-      diet_tags:    dietTags,
-      is_shared:    isShared,
-      ingredients: valid.map(r => {
-        const amount_g = toGrams(r.amount, r.unit, r.portionsMap);
-        return {
-          food_id:    r.food_id ?? undefined,
-          food_name:  r.food_name.trim(),
-          brand_name: r.brand_name.trim() || undefined,
-          amount_g,
-          calories:   scale(r.calories_per_100g,  amount_g),
-          protein_g:  scale(r.protein_per_100g,   amount_g),
-          fat_g:      scale(r.fat_per_100g,        amount_g),
-          carbs_g:    scale(r.carbs_per_100g,      amount_g),
-          fiber_g:    scale(r.fiber_per_100g,      amount_g),
-        };
-      }),
-    };
-
-    onSave(payload);
+    onSave(result.payload);
   };
 
   return (

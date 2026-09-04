@@ -47,6 +47,14 @@ const draftB = {
   ],
 };
 
+function recipePostResponse(opts?: RequestInit) {
+  const body = JSON.parse(String(opts!.body));
+  return Promise.resolve({
+    ok: true,
+    json: async () => ({ id: "new-id", ...body, ingredients: [] }),
+  } as Response);
+}
+
 beforeEach(() => {
   localStorage.setItem("token", "test-token");
   global.fetch = jest.fn((url: RequestInfo | URL, opts?: RequestInit) => {
@@ -69,11 +77,7 @@ beforeEach(() => {
       } as Response);
     }
     if (u === "/recipes" && opts?.method === "POST") {
-      const body = JSON.parse(String(opts.body));
-      return Promise.resolve({
-        ok: true,
-        json: async () => ({ id: "new-id", ...body, ingredients: [] }),
-      } as Response);
+      return recipePostResponse(opts);
     }
     return Promise.reject(new Error(`Unexpected fetch: ${u}`));
   }) as jest.Mock;
@@ -84,7 +88,7 @@ afterEach(() => {
   localStorage.clear();
 });
 
-test("discover shows candidate count, extract loads the review queue, save/skip advance and summarize", async () => {
+test("discover shows candidate count, extract auto-saves every draft, and summarizes", async () => {
   render(<BulkRecipeImport onBack={() => {}} userProfile={{ is_admin: true }} />);
 
   fireEvent.change(screen.getByPlaceholderText("https://example.com/recipes/"), {
@@ -99,22 +103,13 @@ test("discover shows candidate count, extract loads the review queue, save/skip 
   fireEvent.click(screen.getByText("Extract 2 Recipes"));
 
   await waitFor(() => {
-    expect(screen.getByText("Recipe 1 of 2")).toBeInTheDocument();
+    expect(screen.getByText("Saved 2 of 2.")).toBeInTheDocument();
   });
-  expect(screen.getByDisplayValue("Chocolate Cake")).toBeInTheDocument();
 
-  fireEvent.click(screen.getByText("Save & Next"));
-
-  await waitFor(() => {
-    expect(screen.getByText("Recipe 2 of 2")).toBeInTheDocument();
-  });
-  expect(screen.getByDisplayValue("Banana Bread")).toBeInTheDocument();
-
-  fireEvent.click(screen.getByText("Skip & Next"));
-
-  await waitFor(() => {
-    expect(screen.getByText("Saved 1 of 2.")).toBeInTheDocument();
-  });
+  const saveCalls = (global.fetch as jest.Mock).mock.calls.filter(
+    ([url]) => String(url) === "/recipes",
+  );
+  expect(saveCalls).toHaveLength(2);
 });
 
 test("zero extracted drafts shows a found-0 message instead of an empty saved-count summary", async () => {
@@ -151,7 +146,7 @@ test("zero extracted drafts shows a found-0 message instead of an empty saved-co
   expect(screen.queryByText("Saved 0 of 0.")).not.toBeInTheDocument();
 });
 
-test("queue step pre-checks is_shared even though extracted drafts default it to false", async () => {
+test("auto-save marks every imported recipe as shared even though drafts default is_shared to false", async () => {
   render(<BulkRecipeImport onBack={() => {}} userProfile={{ is_admin: true }} />);
 
   fireEvent.change(screen.getByPlaceholderText("https://example.com/recipes/"), {
@@ -166,13 +161,16 @@ test("queue step pre-checks is_shared even though extracted drafts default it to
   fireEvent.click(screen.getByText("Extract 2 Recipes"));
 
   await waitFor(() => {
-    expect(screen.getByText("Recipe 1 of 2")).toBeInTheDocument();
+    expect(screen.getByText("Saved 2 of 2.")).toBeInTheDocument();
   });
 
-  const shareLabel = screen.getByText("Share in the shared recipe library");
-  const toggle = shareLabel.closest(".recipe-shared-toggle") as HTMLElement;
-  const checkbox = toggle.querySelector('input[type="checkbox"]') as HTMLInputElement;
-  expect(checkbox.checked).toBe(true);
+  const saveCalls = (global.fetch as jest.Mock).mock.calls.filter(
+    ([url]) => String(url) === "/recipes",
+  );
+  for (const [, opts] of saveCalls) {
+    const body = JSON.parse(String((opts as RequestInit).body));
+    expect(body.is_shared).toBe(true);
+  }
 });
 
 function makeUrls(n: number): string[] {
@@ -187,7 +185,16 @@ function draftForUrl(url: string) {
     image_url: null,
     source_url: url,
     instructions: null,
-    ingredients: [],
+    ingredients: [
+      {
+        raw_line: "1 cup rice",
+        quantity: 1,
+        unit: "cup",
+        food_name: "rice",
+        best_match: null,
+        alternates: [],
+      },
+    ],
   };
 }
 
@@ -215,6 +222,9 @@ test("extraction runs in chunks and the progress bar advances as each chunk fini
         () => ({ ok: true, json: async () => ({ drafts }) } as Response),
       );
     }
+    if (u === "/recipes" && opts?.method === "POST") {
+      return recipePostResponse(opts);
+    }
     return Promise.reject(new Error(`Unexpected fetch: ${u}`));
   });
 
@@ -238,12 +248,12 @@ test("extraction runs in chunks and the progress bar advances as each chunk fini
   releaseSecondChunk();
 
   await waitFor(() => {
-    expect(screen.getByText("Recipe 1 of 30")).toBeInTheDocument();
+    expect(screen.getByText("Saved 30 of 30.")).toBeInTheDocument();
   });
   expect(extractCalls).toBe(2);
 });
 
-test("a failed chunk keeps the earlier chunk's drafts and offers them for review", async () => {
+test("a failed chunk keeps the earlier chunk's drafts and offers to save them", async () => {
   const urls = makeUrls(30);
   let extractCalls = 0;
 
@@ -266,6 +276,9 @@ test("a failed chunk keeps the earlier chunk's drafts and offers them for review
         json: async () => ({ detail: "extraction failed" }),
       } as Response);
     }
+    if (u === "/recipes" && opts?.method === "POST") {
+      return recipePostResponse(opts);
+    }
     return Promise.reject(new Error(`Unexpected fetch: ${u}`));
   });
 
@@ -284,10 +297,10 @@ test("a failed chunk keeps the earlier chunk's drafts and offers them for review
     expect(screen.getByText(/stopped early/i)).toBeInTheDocument();
   });
 
-  fireEvent.click(screen.getByText("Review 15 recipes"));
+  fireEvent.click(screen.getByText("Save 15 recipes"));
 
   await waitFor(() => {
-    expect(screen.getByText("Recipe 1 of 15")).toBeInTheDocument();
+    expect(screen.getByText("Saved 15 of 15.")).toBeInTheDocument();
   });
 });
 
