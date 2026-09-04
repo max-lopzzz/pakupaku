@@ -348,3 +348,45 @@ class BodyMeasurement(Base):
 
     def __repr__(self) -> str:
         return f"<BodyMeasurement {self.measured_at} {self.weight_kg}kg>"
+
+
+# ─────────────────────────────────────────────
+#  FOOD  (offline-built food database)
+# ─────────────────────────────────────────────
+
+class Food(Base):
+    """One canonical food, aggregated offline by ``scripts/build_food_db``.
+
+    Column order here MUST match ``build.py::FOODS_TABLE_DDL`` /
+    ``model.py::NUTRIENT_FIELDS`` exactly — SQLAlchemy emits columns in
+    declaration order, and a mismatch would break query-compatibility
+    with a database produced by the offline build.
+    """
+
+    __tablename__ = "foods"
+
+    id:             Mapped[str]           = mapped_column(String, primary_key=True)
+    canonical_name: Mapped[str]           = mapped_column(String, nullable=False)
+    aliases:        Mapped[str]           = mapped_column(Text, nullable=False, default="[]")
+    category:       Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    prep_state:     Mapped[str]           = mapped_column(String, nullable=False, default="unspecified")
+
+    calories_per_100g:        Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    protein_per_100g:         Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    fat_per_100g:             Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    carbs_per_100g:           Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    fiber_per_100g:           Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    sugar_per_100g:           Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    sodium_mg_per_100g:       Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    calcium_mg_per_100g:      Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    iron_mg_per_100g:         Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    vitamin_c_mg_per_100g:    Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    vitamin_d_mcg_per_100g:   Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    vitamin_b12_mcg_per_100g: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    portions:     Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    source_ids:   Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    source_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    def __repr__(self) -> str:
+        return f"<Food {self.canonical_name!r} ({self.prep_state})>"
