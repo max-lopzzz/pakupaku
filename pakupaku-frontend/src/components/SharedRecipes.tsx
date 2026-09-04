@@ -20,6 +20,7 @@ type MealCategory = "breakfast" | "lunch" | "dinner" | "snacks";
 
 interface SharedRecipesProps {
   onBack: () => void;
+  userProfile?: any;
 }
 
 function authHeaders(extra: Record<string, string> = {}) {
@@ -27,13 +28,20 @@ function authHeaders(extra: Record<string, string> = {}) {
   return { Authorization: token ? `Bearer ${token}` : "", ...extra };
 }
 
-export default function SharedRecipes({ onBack }: SharedRecipesProps) {
+export default function SharedRecipes({ onBack, userProfile }: SharedRecipesProps) {
+  const isAdmin = !!userProfile?.is_admin;
+
   const [recipes, setRecipes] = useState<SharedRecipe[]>([]);
   const [error, setError]     = useState("");
   const [loggingId, setLoggingId] = useState<string | null>(null);
   const [servings, setServings]   = useState("1");
   const [meal, setMeal]           = useState<MealCategory>("lunch");
   const [copyMessage, setCopyMessage] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [editingId, setEditingId]   = useState<string | null>(null);
+  const [editName, setEditName]     = useState("");
+  const [editServings, setEditServings] = useState("1");
+  const [savingEdit, setSavingEdit] = useState(false);
 
   useEffect(() => {
     const fetchShared = async () => {
@@ -76,6 +84,50 @@ export default function SharedRecipes({ onBack }: SharedRecipesProps) {
       setLoggingId(null);
     } catch {
       setError("Failed to log that recipe.");
+    }
+  };
+
+  const deleteRecipe = async (recipe: SharedRecipe) => {
+    setError("");
+    try {
+      const res = await apiFetch(`/recipes/${recipe.id}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+      if (!res.ok) throw new Error();
+      setRecipes(rs => rs.filter(r => r.id !== recipe.id));
+      setDeletingId(null);
+    } catch {
+      setError("Failed to delete that recipe.");
+    }
+  };
+
+  const startEdit = (recipe: SharedRecipe) => {
+    setEditingId(recipe.id);
+    setEditName(recipe.name);
+    setEditServings(String(recipe.servings));
+  };
+
+  const saveEdit = async (recipe: SharedRecipe) => {
+    setError("");
+    setSavingEdit(true);
+    try {
+      const res = await apiFetch(`/recipes/${recipe.id}`, {
+        method: "PATCH",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({
+          name: editName.trim(),
+          servings: parseFloat(editServings) || recipe.servings,
+        }),
+      });
+      if (!res.ok) throw new Error();
+      const updated = await res.json();
+      setRecipes(rs => rs.map(r => (r.id === recipe.id ? { ...r, ...updated } : r)));
+      setEditingId(null);
+    } catch {
+      setError("Failed to save changes.");
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -137,7 +189,52 @@ export default function SharedRecipes({ onBack }: SharedRecipesProps) {
                 <div className="shared-recipe-actions">
                   <button type="button" onClick={() => startLogging(recipe)}>Log now</button>
                   <button type="button" onClick={() => saveCopy(recipe)}>Save a copy</button>
+                  {isAdmin && (
+                    <>
+                      <button type="button" onClick={() => startEdit(recipe)}>Edit</button>
+                      <button type="button" onClick={() => setDeletingId(recipe.id)}>Delete</button>
+                    </>
+                  )}
                 </div>
+
+                {isAdmin && editingId === recipe.id && (
+                  <div className="shared-recipe-admin-form">
+                    <label>
+                      <span>Name</span>
+                      <input
+                        type="text"
+                        value={editName}
+                        onChange={e => setEditName(e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      <span>Servings</span>
+                      <input
+                        type="number"
+                        min="0.25"
+                        step="0.25"
+                        value={editServings}
+                        onChange={e => setEditServings(e.target.value)}
+                      />
+                    </label>
+                    <div className="shared-recipe-admin-form-actions">
+                      <button type="button" disabled={savingEdit} onClick={() => saveEdit(recipe)}>
+                        {savingEdit ? "Saving…" : "Save changes"}
+                      </button>
+                      <button type="button" onClick={() => setEditingId(null)}>Cancel</button>
+                    </div>
+                  </div>
+                )}
+
+                {isAdmin && deletingId === recipe.id && (
+                  <div className="shared-recipe-admin-form">
+                    <p>Delete "{recipe.name}" for everyone?</p>
+                    <div className="shared-recipe-admin-form-actions">
+                      <button type="button" onClick={() => deleteRecipe(recipe)}>Confirm delete</button>
+                      <button type="button" onClick={() => setDeletingId(null)}>Cancel</button>
+                    </div>
+                  </div>
+                )}
                 {loggingId === recipe.id && (
                   <div className="log-recipe-form">
                     <label>

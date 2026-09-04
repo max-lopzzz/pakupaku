@@ -201,7 +201,7 @@ function App() {
   }
 
   if (view === "sharedRecipes") {
-    return <SharedRecipes onBack={() => setView("dashboard")} />;
+    return <SharedRecipes onBack={() => setView("dashboard")} userProfile={userProfile} />;
   }
 
   if (view === "bulkImport") {
