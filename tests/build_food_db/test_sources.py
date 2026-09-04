@@ -1,7 +1,7 @@
 import os
 
 from scripts.build_food_db.sources.base import (
-    to_mg, to_mcg, kj_to_kcal, read_xlsx_rows,
+    to_mg, to_mcg, kj_to_kcal, read_xlsx_rows, parse_float,
 )
 from scripts.build_food_db.sources.usda import SOURCE as USDA
 from scripts.build_food_db.sources.cofid import SOURCE as COFID
@@ -22,6 +22,15 @@ def test_unit_helpers():
     assert kj_to_kcal(None) is None
 
 
+def test_parse_float_comma_is_decimal_only_for_short_fractions():
+    # thousands separators are stripped, not treated as a decimal point
+    assert parse_float("1,200") == 1200.0
+    assert parse_float("1,234,567") == 1234567.0
+    # a lone comma with <=2 trailing digits is a French/Danish decimal
+    assert parse_float("1,2") == 1.2
+    assert parse_float("12,34") == 12.34
+
+
 def test_usda_extractor_reads_generic_rows_only(tmp_path):
     from tests.build_food_db.conftest import usda_raw_dir
     raw = usda_raw_dir(tmp_path)
@@ -33,8 +42,10 @@ def test_usda_extractor_reads_generic_rows_only(tmp_path):
     water = by_name["Water, tap, drinking"]
     assert water.source_id == "usda"
     assert water.calories_per_100g == 0.0
-    # normalise_row already applied ("water" itself is a Task-3 key stopword)
-    assert water.canonical_key == "drinking tap"
+    # normalise_row already applied. "water" is a key stopword but it is the
+    # head noun of "Water, tap, drinking" (end of the pre-comma segment), so
+    # F12 keeps it; "tap" and "drinking" are ordinary tokens.
+    assert water.canonical_key == "drinking tap water"
     assert water.prep_state == "unspecified"
     # branded / FNDDS rows from the slice are excluded
     assert all("BRANDED" not in r.name.upper() for r in rows)
@@ -143,7 +154,8 @@ def test_afcd_extractor_joins_two_workbooks_and_converts_kj(tmp_path):
     assert broc.protein_per_100g == 4.4
     assert broc.sodium_mg_per_100g == 7.0
     assert broc.vitamin_c_mg_per_100g == 84.0
-    assert broc.category == "24101"
+    # F8: raw source category columns are no longer carried through
+    assert broc.category is None
     assert broc.prep_state == "raw"
 
 

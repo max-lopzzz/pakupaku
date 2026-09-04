@@ -23,6 +23,20 @@ def test_canonical_key_drops_prep_words():
     assert canonical_key("Potato") == "potato"
 
 
+def test_canonical_key_keeps_a_stopword_in_head_noun_position():
+    # a stopword that is the head noun (end of the pre-comma segment) stays
+    assert canonical_key("Water") == "water"
+    assert canonical_key("coconut water") == "coconut water"
+    # ...but the same stopword elsewhere in the name is still dropped
+    assert canonical_key("Rice, boiled in salted water") == "rice"
+
+
+def test_canonical_key_falls_back_when_every_token_is_a_stopword():
+    # "raw" is a prep word, so head_noun is None and the filter empties the
+    # list — fall back to the full token list instead of an empty key
+    assert canonical_key("raw") == "raw"
+
+
 def test_normalise_row_populates_both_fields():
     row = NormalisedRow(source_id="cofid", source_food_id="12-345",
                         name="Carrots, boiled in unsalted water")
