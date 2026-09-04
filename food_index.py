@@ -130,3 +130,11 @@ def best_match(name: str) -> Optional[Food]:
 
 def get(food_id: str) -> Optional[Food]:
     return _by_id.get(food_id)
+
+
+def reset() -> None:
+    """Drop all loaded state — for tests, and for a fresh re-load."""
+    global _keys
+    _by_id.clear()
+    _by_key.clear()
+    _keys.clear()

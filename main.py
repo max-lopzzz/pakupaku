@@ -45,7 +45,6 @@ from config import CORS_ALLOWED_ORIGINS, FRONTEND_URL, SECRET_KEY
 logger = logging.getLogger(__name__)
 import food_index
 from seed_foods import seed_foods
-from usda import get_foods_bulk, extract_nutrients
 from recipe_import import build_import_draft
 from recipe_bulk_import import discover_recipe_links, bulk_extract_drafts
 from nutrition_calculator import (
@@ -539,13 +538,9 @@ async def food_detail(food_id: str, _: User = Depends(get_current_user)):
 
 
 @app.post("/foods/bulk")
-async def food_bulk(
-    fdc_ids: List[int],
-    _: User = Depends(get_current_user),
-):
-    """Fetch up to 20 foods at once by FDC ID list."""
-    foods = await get_foods_bulk(fdc_ids)
-    return [extract_nutrients(f) for f in foods]
+async def food_bulk(food_ids: List[str], _: User = Depends(get_current_user)):
+    """Fetch up to 20 foods at once from the offline index by ID list."""
+    return [f.as_detail() for f in (food_index.get(i) for i in food_ids) if f is not None]
 
 
 # ─────────────────────────────────────────────
