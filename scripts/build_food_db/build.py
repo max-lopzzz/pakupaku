@@ -4,7 +4,9 @@ import sqlite3
 from typing import Dict, List, Optional
 
 from scripts.build_food_db.model import NUTRIENT_FIELDS, NormalisedRow
-from scripts.build_food_db.match import group_foods, apply_decisions, write_conflicts, load_decisions
+from scripts.build_food_db.match import (
+    group_foods, apply_decisions, write_conflicts, load_decisions, MergeGroup,
+)
 from scripts.build_food_db.aggregate import aggregate_group
 from scripts.build_food_db.portions import attach_portions, load_fndds_portions
 from scripts.build_food_db.sources import ALL_SOURCES
@@ -26,8 +28,12 @@ FOODS_TABLE_DDL = (
 
 
 def build(source_rows: List[NormalisedRow], fndds_portions: Dict[str, list],
-          decisions: Dict[str, str], out_path: str) -> None:
-    groups = group_foods(source_rows)
+          decisions: Dict[str, str], out_path: str,
+          groups: Optional[List[MergeGroup]] = None) -> None:
+    # ``main()`` already groups once for the unresolved-conflict check and
+    # passes the result back in; standalone callers let ``build`` group itself.
+    if groups is None:
+        groups = group_foods(source_rows)
     groups = apply_decisions(groups, decisions)          # raises on unresolved
 
     aggregated = []
@@ -43,9 +49,13 @@ def build(source_rows: List[NormalisedRow], fndds_portions: Dict[str, list],
         key=lambda pair: (pair[0][0].canonical_name.lower(), pair[0][0].prep_state),
     )
 
-    if os.path.exists(out_path):
-        os.remove(out_path)
-    con = sqlite3.connect(out_path)
+    # Write to a sidecar then os.replace() so a mid-build crash can never
+    # destroy a previously committed artifact.
+    tmp_path = out_path + ".tmp"
+    if os.path.exists(tmp_path):
+        os.remove(tmp_path)
+    con = sqlite3.connect(tmp_path)
+    con.execute("PRAGMA page_size = 4096")   # pin for cross-machine determinism
     con.execute(FOODS_TABLE_DDL)
     for i, ((af, group), portions) in enumerate(ordered, start=1):
         aliases = sorted({r.name for r in group.rows})
@@ -60,6 +70,7 @@ def build(source_rows: List[NormalisedRow], fndds_portions: Dict[str, list],
         )
     con.commit()
     con.close()
+    os.replace(tmp_path, out_path)
 
 
 def main(root: Optional[str] = None, out_path: Optional[str] = None) -> None:
@@ -95,7 +106,7 @@ def main(root: Optional[str] = None, out_path: Optional[str] = None) -> None:
     out = out_path or os.path.join(
         os.path.dirname(os.path.dirname(root)), "data", "foods.sqlite")
     os.makedirs(os.path.dirname(out), exist_ok=True)
-    build(rows, portions, decisions, out)
+    build(rows, portions, decisions, out, groups=groups)
     print("wrote", out)
 
 
