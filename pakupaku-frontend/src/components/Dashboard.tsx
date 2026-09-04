@@ -11,25 +11,6 @@ const MOOD_IMAGES: Record<"hungry" | "full" | "happy", string> = {
   happy:  puppyHappy,
 };
 
-// ─── USDA nutrient extraction (mirrors RecipeBuilder) ─────
-
-const NUTRIENT_ID_MAP: Record<number, string> = {
-  1008: "calories",
-  1003: "protein_g",
-  1004: "fat_g",
-  1005: "carbs_g",
-  1079: "fiber_g",
-};
-
-function extractNutrientsFromSearch(foodNutrients: any[]): Record<string, number> {
-  const out: Record<string, number> = {};
-  for (const n of foodNutrients) {
-    const key = NUTRIENT_ID_MAP[n.nutrientId as number];
-    if (key && n.value != null) out[key] = n.value;
-  }
-  return out; // per 100g
-}
-
 const UNIT_TO_G: Record<string, number> = { g: 1, ml: 1, oz: 28.3495, cup: 240, tbsp: 15, tsp: 5 };
 const STANDARD_UNITS = ["g", "ml", "oz", "cup", "tbsp", "tsp"];
 
@@ -166,19 +147,14 @@ function FoodLogInput({ category, logDate, onLogged }: FoodLogInputProps) {
         );
         if (!res.ok) return;
         const data = await res.json();
-        const results: FoodSuggestion[] = (data.foods ?? [])
-          .filter((f: any) => f.dataType !== "Branded")
-          .map((f: any) => {
-            const n = extractNutrientsFromSearch(f.foodNutrients ?? []);
-            return {
-              food_id:           String(f.fdcId),
-              description:       f.description,
-              calories_per_100g: n.calories   ?? null,
-              protein_per_100g:  n.protein_g  ?? null,
-              fat_per_100g:      n.fat_g      ?? null,
-              carbs_per_100g:    n.carbs_g    ?? null,
-            };
-          });
+        const results: FoodSuggestion[] = (data.foods ?? []).map((f: any) => ({
+          food_id:           f.food_id,
+          description:        f.description,
+          calories_per_100g: f.calories_per_100g ?? null,
+          protein_per_100g:  f.protein_per_100g  ?? null,
+          fat_per_100g:      f.fat_per_100g      ?? null,
+          carbs_per_100g:    f.carbs_per_100g    ?? null,
+        }));
         setSuggestions(results);
         setShowDropdown(results.length > 0);
       } catch { /* ignore */ }
