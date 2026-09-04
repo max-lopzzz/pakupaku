@@ -62,7 +62,7 @@ a = Analysis(
         "jose.jwt",
         # email
         "aiosmtplib",
-        # httpx for USDA calls
+        # httpx for recipe_import.fetch_page
         "httpx",
         # misc
         "dotenv",

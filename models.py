@@ -196,7 +196,7 @@ class FoodLog(Base):
     )
 
     # ── What was eaten ────────────────────────
-    # For USDA foods: food_id is set, recipe_id is None
+    # For generic foods: food_id (offline food-index id) is set, recipe_id is None
     # For custom recipes: recipe_id is set, food_id is None
     food_id:     Mapped[Optional[str]]        = mapped_column(String,   nullable=True)
     recipe_id:   Mapped[Optional[uuid.UUID]]  = mapped_column(
@@ -209,7 +209,7 @@ class FoodLog(Base):
     # ── Portion ───────────────────────────────
     amount_g:    Mapped[float] = mapped_column(Float, nullable=False)
     # Nutrient values are stored per-log so they remain accurate even if
-    # the USDA data is updated later.
+    # the underlying food record is updated later.
     calories:    Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     protein_g:   Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     fat_g:       Mapped[Optional[float]] = mapped_column(Float, nullable=True)
@@ -296,7 +296,7 @@ class RecipeIngredient(Base):
         nullable=False, index=True,
     )
 
-    # ── USDA reference ────────────────────────
+    # ── Food reference ───────────────────────
     food_id:    Mapped[Optional[str]] = mapped_column(String,      nullable=True)
     food_name:  Mapped[str]        = mapped_column(String(255), nullable=False)
     brand_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)

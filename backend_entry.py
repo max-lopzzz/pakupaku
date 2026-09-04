@@ -45,11 +45,6 @@ else:
 # config.py reads these via os.getenv() at import time.
 os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{db_path}"
 os.environ["SECRET_KEY"] = secret_key
-# USDA's own published demo key — works out of the box for light use, low
-# rate limit. Users who hit the limit can set a real USDA_API_KEY
-# themselves (free, instant, at https://api.data.gov/signup) before
-# launching; this only fills in when they haven't.
-os.environ.setdefault("USDA_API_KEY", "DEMO_KEY")
 
 # ─── Now safe to import the app ────────────────────────────────────────────────
 from main import app  # noqa: E402  (must come after the env vars above)
@@ -110,6 +105,9 @@ async def _create_tables():
         await conn.run_sync(Base.metadata.create_all)
         await _migrate_fdc_to_food_id(conn)      # NEW — must precede _add_missing_columns
         await _add_missing_columns(conn)
+    # NOTE: the desktop build does not seed the ``foods`` table yet — that
+    # waits on the bundled ``data/foods.sqlite`` artifact (Plan 1 Task 9).
+    # Until then the packaged app serves an empty food index.
 
 
 asyncio.run(_create_tables())
