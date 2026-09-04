@@ -196,9 +196,9 @@ class FoodLog(Base):
     )
 
     # ── What was eaten ────────────────────────
-    # For USDA foods: fdc_id is set, recipe_id is None
-    # For custom recipes: recipe_id is set, fdc_id is None
-    fdc_id:      Mapped[Optional[int]]        = mapped_column(Integer,  nullable=True)
+    # For USDA foods: food_id is set, recipe_id is None
+    # For custom recipes: recipe_id is set, food_id is None
+    food_id:     Mapped[Optional[str]]        = mapped_column(String,   nullable=True)
     recipe_id:   Mapped[Optional[uuid.UUID]]  = mapped_column(
         GUID(), ForeignKey("recipes.id", ondelete="SET NULL"),
         nullable=True,
@@ -297,7 +297,7 @@ class RecipeIngredient(Base):
     )
 
     # ── USDA reference ────────────────────────
-    fdc_id:     Mapped[Optional[int]] = mapped_column(Integer,     nullable=True)
+    food_id:    Mapped[Optional[str]] = mapped_column(String,      nullable=True)
     food_name:  Mapped[str]        = mapped_column(String(255), nullable=False)
     brand_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 

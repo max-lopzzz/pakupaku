@@ -564,7 +564,7 @@ async def create_log(
 
     log = FoodLog(
         user_id    = current_user.id,
-        fdc_id     = payload.fdc_id,
+        food_id    = payload.food_id,
         recipe_id  = payload.recipe_id,
         food_name  = payload.food_name,
         brand_name = payload.brand_name,
@@ -727,7 +727,7 @@ async def create_recipe(
     for ing in payload.ingredients:
         obj = RecipeIngredient(
             recipe_id  = recipe.id,
-            fdc_id     = ing.fdc_id,
+            food_id    = ing.food_id,
             food_name  = ing.food_name,
             brand_name = ing.brand_name,
             amount_g   = ing.amount_g,
@@ -877,7 +877,7 @@ async def copy_recipe(
     for ing in source.ingredients:
         obj = RecipeIngredient(
             recipe_id  = copy.id,
-            fdc_id     = ing.fdc_id,
+            food_id    = ing.food_id,
             food_name  = ing.food_name,
             brand_name = ing.brand_name,
             amount_g   = ing.amount_g,
@@ -969,7 +969,7 @@ async def update_recipe(
         for ing in payload.ingredients:
             obj = RecipeIngredient(
                 recipe_id  = recipe.id,
-                fdc_id     = ing.fdc_id,
+                food_id    = ing.food_id,
                 food_name  = ing.food_name,
                 brand_name = ing.brand_name,
                 amount_g   = ing.amount_g,
