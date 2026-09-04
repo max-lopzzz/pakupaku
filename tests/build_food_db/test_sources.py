@@ -168,3 +168,25 @@ def test_frida_extractor_reads_xlsx(tmp_path):
 
     chicken = by_key["breast chicken"]
     assert round(chicken.calories_per_100g, 1) == 164.9    # kcal blank -> kJ
+
+
+def test_all_sources_registered_and_rejected_ones_absent():
+    from scripts.build_food_db.sources import ALL_SOURCES, SOURCES_BY_ID
+
+    ids = [s.id for s in ALL_SOURCES]
+    assert ids == ["usda", "cofid", "ciqual", "afcd", "cnf", "frida"]
+    assert len(ids) == len(set(ids)) == 6
+    assert set(SOURCES_BY_ID) == set(ids)
+    # every registered source exposes the Source.extract interface
+    for s in ALL_SOURCES:
+        assert callable(getattr(s, "extract", None))
+    # the four licence-rejected regional sources have no module
+    import importlib
+    for missing in ("fao_regional", "korea"):
+        try:
+            importlib.import_module(
+                "scripts.build_food_db.sources." + missing
+            )
+        except ModuleNotFoundError:
+            continue
+        raise AssertionError(missing + " should not exist")
