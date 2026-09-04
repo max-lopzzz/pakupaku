@@ -99,7 +99,7 @@ function extractNutrients(foodNutrients: any[]): NutrientData {
 // ─── Types ────────────────────────────────────────────────
 
 interface FoodSuggestion extends NutrientData {
-  fdc_id:      number;
+  food_id:     string;
   description: string;
   brand:       string | null;
 }
@@ -118,7 +118,7 @@ export interface IngredientRow extends NutrientData {
   showBrandDropdown: boolean;
 
   // resolved food
-  fdc_id:    number | null;
+  food_id:   string | null;
   food_name: string;
   brand_name: string;
 
@@ -135,7 +135,7 @@ function blankRow(): IngredientRow {
     mode: "search",
     query: "", suggestions: [], showDropdown: false,
     brandSuggestions: [], showBrandDropdown: false,
-    fdc_id: null, food_name: "", brand_name: "",
+    food_id: null, food_name: "", brand_name: "",
     calories_per_100g: null, protein_per_100g: null,
     fat_per_100g: null, carbs_per_100g: null, fiber_per_100g: null,
     portionsMap: {},
@@ -145,7 +145,7 @@ function blankRow(): IngredientRow {
 
 interface SavedIngredient {
   id:          string;
-  fdc_id?:     number;
+  food_id?:    string;
   food_name:   string;
   brand_name?: string;
   amount_g:    number;
@@ -206,7 +206,7 @@ function rowFromImportedIngredient(ing: ImportedIngredient): IngredientRow {
     query: match ? match.description : ing.food_name,
     suggestions: [], showDropdown: false,
     brandSuggestions: [], showBrandDropdown: false,
-    fdc_id: match ? match.fdc_id : null,
+    food_id: match ? String(match.fdc_id) : null,  // TODO(task 7): use match.food_id once ImportedIngredientCandidate is renamed
     food_name: match ? match.description : ing.food_name,
     brand_name: match?.brand ?? "",
     calories_per_100g: match?.calories_per_100g ?? null,
@@ -260,7 +260,7 @@ export function formValuesFromRecipe(recipe: RecipeResponse): RecipeFormValues {
   // Nutrients are already per-amount_g in the DB, so we store them back
   // as per-100g by reversing.
   const rows: IngredientRow[] = recipe.ingredients.map(ing => {
-    const isCustom = ing.fdc_id == null;
+    const isCustom = ing.food_id == null;
     const per100 = (v?: number) =>
       v != null && ing.amount_g > 0 ? (v / ing.amount_g) * 100 : null;
     return {
@@ -270,7 +270,7 @@ export function formValuesFromRecipe(recipe: RecipeResponse): RecipeFormValues {
       showDropdown:      false,
       brandSuggestions:  [],
       showBrandDropdown: false,
-      fdc_id:            ing.fdc_id ?? null,
+      food_id:           ing.food_id ?? null,
       food_name:         ing.food_name,
       brand_name:        ing.brand_name ?? "",
       calories_per_100g: per100(ing.calories),
@@ -323,7 +323,7 @@ export interface RecipeSavePayload {
   diet_tags: string[];
   is_shared: boolean;
   ingredients: Array<{
-    fdc_id?: number;
+    food_id?: string;
     food_name: string;
     brand_name?: string;
     amount_g: number;
@@ -401,7 +401,7 @@ export default function RecipeEditForm({
       ingredients: valid.map(r => {
         const amount_g = toGrams(r.amount, r.unit, r.portionsMap);
         return {
-          fdc_id:     r.fdc_id ?? undefined,
+          food_id:    r.food_id ?? undefined,
           food_name:  r.food_name.trim(),
           brand_name: r.brand_name.trim() || undefined,
           amount_g,
@@ -594,7 +594,7 @@ function IngredientInput({ row, onUpdate, onRemove }: IngredientInputProps) {
         const pool    = hasBrand ? branded : (generic.length > 0 ? generic : dedupeByDescription(branded));
 
         const suggestions: FoodSuggestion[] = pool.map((f: any) => ({
-          fdc_id:      f.fdcId,
+          food_id:     String(f.fdcId),
           description: f.description,
           brand:       f.brandOwner || f.brandName || null,
           ...extractNutrients(f.foodNutrients ?? []),
@@ -638,7 +638,7 @@ function IngredientInput({ row, onUpdate, onRemove }: IngredientInputProps) {
   };
 
   const handleQueryChange = (value: string) => {
-    onUpdate({ query: value, food_name: value, fdc_id: null });
+    onUpdate({ query: value, food_name: value, food_id: null });
     runSearch(value, row.brand_name);
   };
 
@@ -659,7 +659,7 @@ function IngredientInput({ row, onUpdate, onRemove }: IngredientInputProps) {
       query:             food.description,
       food_name:         food.description,
       brand_name:        food.brand ?? "",
-      fdc_id:            food.fdc_id,
+      food_id:           food.food_id,
       calories_per_100g: food.calories_per_100g,
       protein_per_100g:  food.protein_per_100g,
       fat_per_100g:      food.fat_per_100g,
@@ -679,9 +679,9 @@ function IngredientInput({ row, onUpdate, onRemove }: IngredientInputProps) {
     const token = localStorage.getItem("token");
     const headers = { Authorization: token ? `Bearer ${token}` : "" };
 
-    const fetchPortions = async (fdc_id: number): Promise<Record<string, number> | null> => {
+    const fetchPortions = async (food_id: string): Promise<Record<string, number> | null> => {
       try {
-        const res = await apiFetch(`/foods/${fdc_id}`, { headers });
+        const res = await apiFetch(`/foods/${food_id}`, { headers });
         if (!res.ok) return null;
         const detail = await res.json();
         const map: Record<string, number> = {};
@@ -695,7 +695,7 @@ function IngredientInput({ row, onUpdate, onRemove }: IngredientInputProps) {
     };
 
     // Tier 1: try the selected food directly
-    let portionsMap = await fetchPortions(food.fdc_id);
+    let portionsMap = await fetchPortions(food.food_id);
 
     // Tier 2: if that failed (e.g. Foundation 404), re-search the same
     // description and pick the first Survey/SR Legacy result, which reliably
@@ -713,7 +713,7 @@ function IngredientInput({ row, onUpdate, onRemove }: IngredientInputProps) {
           const RELIABLE = new Set(["Survey (FNDDS)", "SR Legacy"]);
           for (const f of (data.foods ?? [])) {
             if (!RELIABLE.has(f.dataType)) continue;
-            portionsMap = await fetchPortions(f.fdcId);
+            portionsMap = await fetchPortions(String(f.fdcId));
             if (portionsMap) break;
           }
         }
@@ -764,7 +764,7 @@ function IngredientInput({ row, onUpdate, onRemove }: IngredientInputProps) {
               <ul className="autocomplete-dropdown">
                 {row.suggestions.map(food => (
                   <li
-                    key={food.fdc_id}
+                    key={food.food_id}
                     className="autocomplete-item"
                     onMouseDown={e => { e.preventDefault(); selectFood(food); }}
                   >
@@ -785,10 +785,10 @@ function IngredientInput({ row, onUpdate, onRemove }: IngredientInputProps) {
           type="button"
           className="ingredient-mode-toggle"
           onClick={() => onUpdate(isCustom
-            ? { mode: "search", food_name: "", query: "", fdc_id: null,
+            ? { mode: "search", food_name: "", query: "", food_id: null,
                 calories_per_100g: null, protein_per_100g: null,
                 fat_per_100g: null, carbs_per_100g: null, fiber_per_100g: null }
-            : { mode: "custom", suggestions: [], showDropdown: false, fdc_id: null,
+            : { mode: "custom", suggestions: [], showDropdown: false, food_id: null,
                 portionsMap: {} }
           )}
         >

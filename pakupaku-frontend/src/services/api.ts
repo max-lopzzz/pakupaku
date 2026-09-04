@@ -283,7 +283,7 @@ export async function apiOnboardingCustom(payload: {
 
 export interface FoodLogRow {
   id:         string;
-  fdc_id:     number | null;
+  food_id:    string | null;
   recipe_id:  string | null;
   food_name:  string;
   brand_name: string | null;
@@ -318,12 +318,12 @@ export async function apiCreateLog(payload: Omit<FoodLogRow, "id" | "logged_at">
 
   await db.run(
     `INSERT INTO food_logs
-      (id, user_id, fdc_id, recipe_id, food_name, brand_name,
+      (id, user_id, food_id, recipe_id, food_name, brand_name,
        amount_g, calories, protein_g, fat_g, carbs_g, fiber_g,
        sugar_g, sodium_mg, meal, log_date, logged_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [id, uid,
-     payload.fdc_id ?? null, payload.recipe_id ?? null,
+     payload.food_id ?? null, payload.recipe_id ?? null,
      payload.food_name, payload.brand_name ?? null,
      payload.amount_g,
      payload.calories ?? null, payload.protein_g ?? null,
@@ -350,7 +350,7 @@ export async function apiDeleteLog(logId: string): Promise<void> {
 export interface RecipeIngredient {
   id?:        string;
   recipe_id?: string;
-  fdc_id:     number | null;
+  food_id:    string | null;
   food_name:  string;
   brand_name: string | null;
   amount_g:   number;
@@ -448,11 +448,11 @@ export async function apiCreateRecipe(payload: {
   for (const ing of payload.ingredients) {
     await db.run(
       `INSERT INTO recipe_ingredients
-         (id, recipe_id, fdc_id, food_name, brand_name,
+         (id, recipe_id, food_id, food_name, brand_name,
           amount_g, calories, protein_g, fat_g, carbs_g, fiber_g)
        VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
       [uuid(), id,
-       ing.fdc_id ?? null, ing.food_name, ing.brand_name ?? null,
+       ing.food_id ?? null, ing.food_name, ing.brand_name ?? null,
        ing.amount_g,
        ing.calories ?? null, ing.protein_g ?? null, ing.fat_g ?? null,
        ing.carbs_g ?? null, ing.fiber_g ?? null]
@@ -504,11 +504,11 @@ export async function apiUpdateRecipe(
     for (const ing of payload.ingredients) {
       await db.run(
         `INSERT INTO recipe_ingredients
-           (id, recipe_id, fdc_id, food_name, brand_name,
+           (id, recipe_id, food_id, food_name, brand_name,
             amount_g, calories, protein_g, fat_g, carbs_g, fiber_g)
          VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
         [uuid(), recipeId,
-         ing.fdc_id ?? null, ing.food_name, ing.brand_name ?? null,
+         ing.food_id ?? null, ing.food_name, ing.brand_name ?? null,
          ing.amount_g,
          ing.calories ?? null, ing.protein_g ?? null, ing.fat_g ?? null,
          ing.carbs_g ?? null, ing.fiber_g ?? null]

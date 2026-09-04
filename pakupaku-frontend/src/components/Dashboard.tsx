@@ -36,7 +36,7 @@ const STANDARD_UNITS = ["g", "ml", "oz", "cup", "tbsp", "tsp"];
 // ─── Food suggestion type (mirrors RecipeBuilder) ─────────
 
 interface FoodSuggestion {
-  fdc_id:            number;
+  food_id:           string;
   description:       string;
   calories_per_100g: number | null;
   protein_per_100g:  number | null;
@@ -171,7 +171,7 @@ function FoodLogInput({ category, logDate, onLogged }: FoodLogInputProps) {
           .map((f: any) => {
             const n = extractNutrientsFromSearch(f.foodNutrients ?? []);
             return {
-              fdc_id:            f.fdcId,
+              food_id:           String(f.fdcId),
               description:       f.description,
               calories_per_100g: n.calories   ?? null,
               protein_per_100g:  n.protein_g  ?? null,
@@ -194,9 +194,9 @@ function FoodLogInput({ category, logDate, onLogged }: FoodLogInputProps) {
     const token   = localStorage.getItem("token");
     const headers = { Authorization: `Bearer ${token ?? ""}` };
 
-    const fetchPortions = async (fdc_id: number): Promise<Record<string, number> | null> => {
+    const fetchPortions = async (food_id: string): Promise<Record<string, number> | null> => {
       try {
-        const res = await apiFetch(`/foods/${fdc_id}`, { headers });
+        const res = await apiFetch(`/foods/${food_id}`, { headers });
         if (!res.ok) return null;
         const detail = await res.json();
         const map: Record<string, number> = {};
@@ -207,7 +207,7 @@ function FoodLogInput({ category, logDate, onLogged }: FoodLogInputProps) {
       } catch { return null; }
     };
 
-    let portions = await fetchPortions(food.fdc_id);
+    let portions = await fetchPortions(food.food_id);
     if (!portions) {
       try {
         const res = await apiFetch(
@@ -219,7 +219,7 @@ function FoodLogInput({ category, logDate, onLogged }: FoodLogInputProps) {
           const RELIABLE = new Set(["Survey (FNDDS)", "SR Legacy"]);
           for (const f of data.foods ?? []) {
             if (!RELIABLE.has(f.dataType)) continue;
-            portions = await fetchPortions(f.fdcId);
+            portions = await fetchPortions(String(f.fdcId));
             if (portions) break;
           }
         }
@@ -246,7 +246,7 @@ function FoodLogInput({ category, logDate, onLogged }: FoodLogInputProps) {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token ?? ""}` },
         body: JSON.stringify({
-          fdc_id:    selected.fdc_id,
+          food_id:   selected.food_id,
           food_name: selected.description,
           amount_g,
           calories:  sc(selected.calories_per_100g),
@@ -288,7 +288,7 @@ function FoodLogInput({ category, logDate, onLogged }: FoodLogInputProps) {
           <ul className="food-autocomplete-dropdown">
             {suggestions.map(f => (
               <li
-                key={f.fdc_id}
+                key={f.food_id}
                 onMouseDown={e => { e.preventDefault(); selectFood(f); }}
                 className="food-autocomplete-item"
               >
