@@ -2,6 +2,7 @@ import os
 
 from scripts.build_food_db.sources.base import to_mg, to_mcg, kj_to_kcal
 from scripts.build_food_db.sources.usda import SOURCE as USDA
+from scripts.build_food_db.sources.cofid import SOURCE as COFID
 
 FIX = os.path.join(os.path.dirname(__file__), "fixtures")
 
@@ -39,3 +40,26 @@ def test_usda_extractor_reads_generic_rows_only(tmp_path):
     assert broccoli.calories_per_100g == 34.0
     assert broccoli.canonical_key == "broccoli"
     assert broccoli.vitamin_c_mg_per_100g == 89.2
+
+
+def test_cofid_extractor_reads_broccoli(tmp_path):
+    from tests.build_food_db.conftest import single_file_raw_dir
+    raw = single_file_raw_dir(tmp_path, "cofid", "cofid_slice.csv",
+                              "cofid_2021.csv")
+
+    rows = COFID.extract(raw)
+
+    by_key = {r.canonical_key: r for r in rows}
+    assert "broccoli" in by_key
+    broc = by_key["broccoli"]
+    assert broc.source_id == "cofid"
+    assert broc.source_food_id == "13-001"
+    assert broc.calories_per_100g == 33.0
+    assert broc.protein_per_100g == 4.4
+    assert broc.sodium_mg_per_100g == 8.0
+    assert broc.vitamin_c_mg_per_100g == 87.0
+    assert broc.prep_state == "raw"
+
+    # energy falls back to kJ->kcal when the kcal column is blank
+    chicken = by_key["breast chicken"]
+    assert round(chicken.calories_per_100g, 1) == 156.1

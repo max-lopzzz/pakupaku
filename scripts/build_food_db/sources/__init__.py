@@ -10,7 +10,9 @@ from typing import List
 
 from scripts.build_food_db.sources.base import Source
 from scripts.build_food_db.sources.usda import SOURCE as USDA
+from scripts.build_food_db.sources.cofid import SOURCE as COFID
 
 ALL_SOURCES: List[Source] = [
     USDA,
+    COFID,
 ]
