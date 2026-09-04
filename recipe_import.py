@@ -151,7 +151,7 @@ def extract_structured_recipe(html: str) -> Optional[RawRecipe]:
 # Standard units RecipeBuilder.tsx's UNIT_TO_G already knows how to
 # convert to grams. Anything else parses through as a "natural unit"
 # (e.g. "clove", "large", "slice") the same way RecipeBuilder already
-# handles USDA food-specific portion units.
+# handles food-specific portion units from the food database.
 _UNIT_ALIASES = {
     "g": "g", "gram": "g", "grams": "g",
     "ml": "ml", "milliliter": "ml", "milliliters": "ml",

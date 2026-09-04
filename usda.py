@@ -3,6 +3,8 @@ usda.py
 -------
 Async USDA FoodData Central API client for PakuPaku.
 
+NOTE: This module is no longer imported by any request path; the runtime food source is food_index.py over the offline foods table. This file is kept for reference only.
+
 Endpoints wrapped:
   - search_foods()      /foods/search
   - get_food()          /food/{fdc_id}

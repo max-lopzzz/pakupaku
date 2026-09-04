@@ -6,7 +6,7 @@ PakuPaku FastAPI application.
 Route groups:
   /auth       — register, login
   /users      — profile, onboarding, preferences
-  /foods      — USDA search and detail (via usda.py)
+  /foods      — offline generic-food index (food_index.py)
   /logs       — food log CRUD + daily summary
   /recipes    — custom recipe CRUD
 """
@@ -515,7 +515,7 @@ async def onboarding_custom(
 
 
 # ─────────────────────────────────────────────
-#  FOOD (USDA) ROUTES
+#  FOOD ROUTES
 # ─────────────────────────────────────────────
 
 @app.get("/foods/search")
@@ -769,7 +769,7 @@ async def import_recipe(
 ):
     """
     Fetch a blog URL and return a draft recipe with ingredients matched
-    to USDA foods. Nothing is saved — the frontend opens this in the
+    to foods from the offline food index. Nothing is saved — the frontend opens this in the
     recipe builder for review before the user calls POST /recipes.
     """
     return await build_import_draft(payload.url)

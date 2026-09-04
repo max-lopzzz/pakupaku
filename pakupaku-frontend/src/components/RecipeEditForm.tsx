@@ -18,12 +18,12 @@ const UNIT_TO_G: Record<string, number> = {
 const STANDARD_UNITS = ["g", "ml", "oz", "cup", "tbsp", "tsp", "lb", "kg", "l"];
 const STANDARD_UNIT_SET = new Set(STANDARD_UNITS);
 
-/** Natural units are food-specific USDA portions that aren't in our standard list. */
+/** Natural units are food-specific portions from the food database that aren't in our standard list. */
 function naturalUnits(portionsMap: Record<string, number>): string[] {
   return Object.keys(portionsMap).filter(u => !STANDARD_UNIT_SET.has(u));
 }
 
-// portionsMap overrides the generic table with food-specific gram weights from USDA
+// portionsMap overrides the generic table with food-specific gram weights from the food database
 function toGrams(amount: string, unit: string, portionsMap: Record<string, number> = {}): number {
   const conv = { ...UNIT_TO_G, ...portionsMap };
   return (parseFloat(amount) || 0) * (conv[unit] ?? 1);
@@ -78,7 +78,7 @@ export interface IngredientRow extends NutrientData {
   food_name: string;
   brand_name: string;
 
-  // food-specific unit → grams from USDA (overrides generic UNIT_TO_G)
+  // food-specific unit → grams from the food database (overrides generic UNIT_TO_G)
   portionsMap: Record<string, number>;
 
   // amount
@@ -662,7 +662,7 @@ function IngredientInput({ row, onUpdate, onRemove }: IngredientInputProps) {
                 portionsMap: {} }
           )}
         >
-          {isCustom ? "↩ search USDA" : "enter manually"}
+          {isCustom ? "↩ search foods" : "enter manually"}
         </button>
       </div>
 
