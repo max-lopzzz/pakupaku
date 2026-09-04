@@ -14,6 +14,8 @@ bcrypt==4.1.2
 python-dotenv==1.0.1
 beautifulsoup4==4.15.0
 httpx==0.28.1
+openpyxl==3.1.5  # read .xlsx national food-composition tables in the build pipeline
+rapidfuzz==3.9.7  # fuzzy food-name matching, build pipeline + runtime index (3.10.x drops Python 3.8)
 
 # Test-only, kept here so `pip install -r requirements.txt` alone is
 # enough to run the suite locally.

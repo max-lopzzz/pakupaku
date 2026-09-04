@@ -1,0 +1,11 @@
+FoodID,FoodCode,FoodGroupID,FoodSourceID,FoodDescription,FoodDescriptionF,FoodDateOfEntry,FoodDateOfPublication,CountryCode,ScientificName
+2,2,11,4,"Broccoli, raw","Brocoli, cru",1982-01-01,,,Brassica oleracea
+3,3,11,4,"Carrots, raw","Carottes, crues",1982-01-01,,,Daucus carota
+4,4,11,4,"Potato, flesh and skin, raw","Pomme de terre, chair et pelure, crue",1982-01-01,,,Solanum tuberosum
+5,5,9,4,"Apple, raw, with skin","Pomme, crue, avec pelure",1982-01-01,,,Malus domestica
+6,6,9,4,"Banana, raw","Banane, crue",1982-01-01,,,Musa
+7,7,20,4,"Rice, white, long-grain, regular, raw","Riz, blanc, grain long, ordinaire, cru",1982-01-01,,,Oryza sativa
+8,8,1,4,"Milk, fluid, whole, 3.25% M.F.","Lait, fluide, entier, 3,25 % M.G.",1982-01-01,,,
+9,9,5,4,"Chicken, breast, meat only, roasted","Poulet, poitrine, viande seulement, roti",1982-01-01,,,
+10,10,11,4,"Spinach, raw","Epinards, crus",1982-01-01,,,Spinacia oleracea
+11,11,18,4,"Bread, white, commercial","Pain, blanc, commercial",1982-01-01,,,

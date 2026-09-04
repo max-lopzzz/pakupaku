@@ -1,0 +1,13 @@
+fdc_id,portion_description,modifier,amount,gram_weight
+1001,cup,,,154.0
+1001,floret,,,16.0
+1002,cup,,,240.0
+1003,medium,,,173.0
+1004,cup chopped,,,122.0
+1005,cup cooked,,,158.0
+1005,tbsp,,,12.0
+1006,medium,,,182.0
+1007,,oz,3,85.0
+1008,cup,,,240.0
+1009,cup,,,28.0
+1010,slice,,,100.0

@@ -1,0 +1,11 @@
+fdc_id,data_type,description,food_category_id,publication_date
+1001,foundation_food,"Broccoli, raw",11,2020-10-30
+1002,foundation_food,"Water, tap, drinking",14,2019-04-01
+1003,sr_legacy_food,"Potatoes, flesh and skin, raw",11,2019-04-01
+1004,sr_legacy_food,"Carrots, raw",11,2019-04-01
+1005,foundation_food,"Rice, white, long-grain, regular, raw, unenriched",20,2020-10-30
+1006,sr_legacy_food,"Apple, raw, with skin",9,2019-04-01
+1007,foundation_food,"Chicken, broilers or fryers, breast, meat only, cooked, roasted",5,2020-10-30
+1008,sr_legacy_food,"Milk, whole, 3.25% milkfat",1,2019-04-01
+1009,branded_food,"SUPER CRUNCH BRANDED CEREAL",8,2021-07-01
+1010,survey_fndds_food,"Pizza, cheese, from restaurant",21,2022-10-01
