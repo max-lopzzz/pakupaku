@@ -2,8 +2,7 @@
  * api.ts
  * ──────────────────────────────────────────────────────
  * Drop-in replacement for all fetch() calls in the components.
- * Talks to the local SQLite DB (via db.ts + auth.ts) instead of
- * the Python backend. USDA food search still goes to the internet.
+ * Talks to the local SQLite DB (via db.ts + auth.ts).
  */
 
 import { getDb } from "./db";
@@ -36,111 +35,6 @@ function uuid(): string {
     const r = (Math.random() * 16) | 0;
     return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
   });
-}
-
-// ── USDA ──────────────────────────────────────────────────────────────────────
-
-const USDA_BASE = "https://api.nal.usda.gov/fdc/v1";
-const USDA_KEY  = process.env.REACT_APP_USDA_API_KEY ?? "";
-
-export async function apiFoodSearch(
-  query: string,
-  pageSize = 50
-): Promise<{ foods: any[] }> {
-  const params = new URLSearchParams({
-    query,
-    pageSize: String(pageSize),
-    api_key:  USDA_KEY,
-  });
-  const res = await fetch(`${USDA_BASE}/foods/search?${params}`);
-  if (!res.ok) throw new Error("USDA search failed");
-  return res.json();
-}
-
-export async function apiFoodDetail(
-  fdcId: number
-): Promise<{ portions: { unit: string; grams_per_unit: number }[] }> {
-  const res = await fetch(`${USDA_BASE}/food/${fdcId}?api_key=${USDA_KEY}`);
-  if (!res.ok) throw new Error("USDA food detail failed");
-  const food = await res.json();
-
-  // Port of usda.py extract_nutrients() portion parsing
-  const UNIT_ALIASES: Record<string, string> = {
-    c: "cup", cup: "cup", cups: "cup",
-    tbs: "tbsp", tbsp: "tbsp", tablespoon: "tbsp", tablespoons: "tbsp",
-    tsp: "tsp", teaspoon: "tsp", teaspoons: "tsp",
-    oz: "oz", ounce: "oz", ounces: "oz",
-    g: "g", gram: "g", grams: "g",
-    ml: "ml", milliliter: "ml", milliliters: "ml",
-    millilitre: "ml", millilitres: "ml",
-  };
-  const DENYLIST = new Set(["individual","school","guideline","specified","container","quantity","amount","serving"]);
-
-  function normalise(raw: string): string | null {
-    const key = UNIT_ALIASES[raw] ?? raw;
-    if (key && !DENYLIST.has(key) && key.length <= 20) return key;
-    return null;
-  }
-
-  function unitAndGrams(p: any): [string | null, number | null] {
-    const gramWeight = p.gramWeight;
-    if (!gramWeight) return [null, null];
-    const unitInfo = p.measureUnit ?? {};
-    const unitId   = unitInfo.id;
-    const amount   = parseFloat(p.amount ?? "1") || 1;
-
-    // Path A: real measureUnit ID (Foundation)
-    if (unitId && unitId !== 9999) {
-      const raw = (unitInfo.name ?? unitInfo.abbreviation ?? "").trim().toLowerCase();
-      const key = normalise(raw);
-      if (key && amount > 0) return [key, Math.round((gramWeight / Math.max(amount, 0.001)) * 100) / 100];
-    }
-
-    // Path B: Survey FNDDS — portionDescription
-    const desc = (p.portionDescription ?? "").trim();
-    if (desc) {
-      const m = desc.match(/^(\d+(?:\/\d+)?(?:\.\d+)?)\s+(fl\s+oz|[a-z]+)/i);
-      if (m) {
-        let amt = m[1].includes("/")
-          ? parseFloat(m[1].split("/")[0]) / parseFloat(m[1].split("/")[1])
-          : parseFloat(m[1]);
-        const key = normalise(m[2].trim().toLowerCase());
-        if (key && amt > 0) return [key, Math.round((gramWeight / amt) * 100) / 100];
-      }
-    }
-
-    // Path C: SR Legacy — modifier
-    const modifier = (p.modifier ?? "").trim();
-    if (modifier && !/^\d+$/.test(modifier)) {
-      const clean = modifier.replace(/\s*\(.*\)/, "").trim().toLowerCase();
-      for (const candidate of [clean, clean.split(" ")[0]].filter(Boolean)) {
-        const key = normalise(candidate);
-        if (key && amount > 0) return [key, Math.round((gramWeight / Math.max(amount, 0.001)) * 100) / 100];
-      }
-    }
-
-    return [null, null];
-  }
-
-  const portions: { unit: string; grams_per_unit: number }[] = [];
-  const seen = new Set<string>();
-
-  for (const p of food.foodPortions ?? []) {
-    const [unit, gpg] = unitAndGrams(p);
-    if (unit && gpg && !seen.has(unit)) {
-      portions.push({ unit, grams_per_unit: gpg });
-      seen.add(unit);
-    }
-  }
-
-  // Branded serving size
-  const ss = food.servingSize;
-  const su = (food.servingSizeUnit ?? "").trim().toLowerCase();
-  if (ss && su && su !== "g" && !seen.has(su)) {
-    portions.push({ unit: su, grams_per_unit: Math.round(parseFloat(ss) * 100) / 100 });
-  }
-
-  return { portions };
 }
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
