@@ -14,7 +14,7 @@ const draft = {
       unit: "cup",
       food_name: "flour",
       best_match: {
-        fdc_id: 123456,
+        food_id: "gen:00123",
         description: "Flour, wheat, all-purpose",
         brand: null,
         calories_per_100g: 364,

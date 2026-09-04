@@ -175,7 +175,7 @@ export interface RecipeResponse {
 }
 
 export interface ImportedIngredientCandidate extends NutrientData {
-  fdc_id:      number;
+  food_id:     string;
   description: string;
   brand:       string | null;
   portions_map: Record<string, number>;
@@ -206,7 +206,7 @@ function rowFromImportedIngredient(ing: ImportedIngredient): IngredientRow {
     query: match ? match.description : ing.food_name,
     suggestions: [], showDropdown: false,
     brandSuggestions: [], showBrandDropdown: false,
-    food_id: match ? String(match.fdc_id) : null,  // TODO(task 7): use match.food_id once ImportedIngredientCandidate is renamed
+    food_id: match ? match.food_id : null,
     food_name: match ? match.description : ing.food_name,
     brand_name: match?.brand ?? "",
     calories_per_100g: match?.calories_per_100g ?? null,
