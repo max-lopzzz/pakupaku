@@ -1,7 +1,7 @@
 import json
 import os
 import sqlite3
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from scripts.build_food_db.model import NUTRIENT_FIELDS, NormalisedRow
 from scripts.build_food_db.match import group_foods, apply_decisions, write_conflicts, load_decisions
@@ -62,17 +62,28 @@ def build(source_rows: List[NormalisedRow], fndds_portions: Dict[str, list],
     con.close()
 
 
-def main() -> None:
-    root = os.path.dirname(__file__)
+def main(root: Optional[str] = None, out_path: Optional[str] = None) -> None:
+    """Run the whole build.
+
+    ``root`` is the package dir holding ``raw/`` and ``review/`` (defaults to
+    this module's own dir); ``out_path`` defaults to ``<repo>/data/foods.sqlite``.
+    Both are parameters so the pipeline can be driven end-to-end from a test.
+    """
+    root = root or os.path.dirname(__file__)
     raw = os.path.join(root, "raw")
+    review = os.path.join(root, "review")
+    os.makedirs(review, exist_ok=True)
+
     rows: List[NormalisedRow] = []
     for src in ALL_SOURCES:
-        rows.extend(src.extract(raw))
+        # every extractor joins its own filename onto the dir it is given,
+        # so each one gets its own raw/<source_id>/ dir, not the raw root.
+        rows.extend(src.extract(os.path.join(raw, src.id)))
     portions = load_fndds_portions(raw)
 
     groups = group_foods(rows)
-    write_conflicts(groups, os.path.join(root, "review", "conflicts.csv"))
-    decisions = load_decisions(os.path.join(root, "review", "decisions.csv"))
+    write_conflicts(groups, os.path.join(review, "conflicts.csv"))
+    decisions = load_decisions(os.path.join(review, "decisions.csv"))
 
     unresolved = [g.group_id for g in groups if not g.auto_accepted and g.group_id not in decisions]
     if unresolved:
@@ -81,7 +92,8 @@ def main() -> None:
             "review/decisions.csv" % len(unresolved)
         )
 
-    out = os.path.join(os.path.dirname(os.path.dirname(root)), "data", "foods.sqlite")
+    out = out_path or os.path.join(
+        os.path.dirname(os.path.dirname(root)), "data", "foods.sqlite")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     build(rows, portions, decisions, out)
     print("wrote", out)
