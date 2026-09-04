@@ -44,7 +44,6 @@ from config import CORS_ALLOWED_ORIGINS, FRONTEND_URL, SECRET_KEY
 
 logger = logging.getLogger(__name__)
 import food_index
-from seed_foods import seed_foods
 from recipe_import import build_import_draft
 from recipe_bulk_import import discover_recipe_links, bulk_extract_drafts
 from nutrition_calculator import (
@@ -82,13 +81,15 @@ if SECRET_KEY == "changeme":
 
 @app.on_event("startup")
 async def _load_food_index() -> None:
-    """Seed the runtime ``foods`` table from the offline artifact and load
-    the in-memory search index. A missing ``data/foods.sqlite`` or a cold
-    DB must not crash boot — on any failure we log and serve an empty index."""
+    """Load the already-seeded runtime ``foods`` table into the in-memory
+    search index. Seeding the table from ``data/foods.sqlite`` is a
+    deploy-time step (``seed_foods.py`` in the Render build command / the
+    desktop bundle), not something this hook does — re-seeding on every
+    cold start would be a redundant full table rewrite and would race
+    across uvicorn workers. A cold DB or empty table must not crash
+    boot — on any failure we log and serve an empty index."""
     try:
         async with AsyncSessionLocal() as s:
-            await seed_foods(s)
-            await s.commit()
             await food_index.load(s)
     except Exception:
         logger.exception("food index startup load failed — serving an empty index")
@@ -539,7 +540,7 @@ async def food_detail(food_id: str, _: User = Depends(get_current_user)):
 
 @app.post("/foods/bulk")
 async def food_bulk(food_ids: List[str], _: User = Depends(get_current_user)):
-    """Fetch up to 20 foods at once from the offline index by ID list."""
+    """Fetch a batch of foods from the offline index by ID list."""
     return [f.as_detail() for f in (food_index.get(i) for i in food_ids) if f is not None]
 
 
