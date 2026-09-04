@@ -61,7 +61,7 @@ class _Cnf(Source):
             rows[fid] = NormalisedRow(
                 source_id="cnf", source_food_id=fid,
                 name=(f.get(fc["name"]) or "").strip(),
-                category=(f.get(fc["category"]) or None),
+                category=None,  # raw source categories aren't reconciled yet (Plan-2)
             )
         kj_energy: Dict[str, float] = {}
         for a in read_csv_rows(os.path.join(raw_dir, FILES["amount"])):

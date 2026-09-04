@@ -56,7 +56,7 @@ class _Cofid(Source):
                 source_id="cofid",
                 source_food_id=(r.get(c["id"]) or "").strip(),
                 name=name,
-                category=(r.get(c["category"]) or None),
+                category=None,  # raw source categories aren't reconciled yet (Plan-2)
                 calories_per_100g=kcal,
                 protein_per_100g=parse_float(r.get(c["protein_g"])),
                 fat_per_100g=parse_float(r.get(c["fat_g"])),

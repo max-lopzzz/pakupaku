@@ -59,7 +59,10 @@ class _Usda(Source):
             rows[fdc_id] = NormalisedRow(
                 source_id="usda", source_food_id=fdc_id,
                 name=f[fc["name"]].strip(),
-                category=(f.get(fc["category"]) or None),
+                # raw source category columns are an incoherent mix across
+                # sources (USDA numeric ids, CoFID codes, French strings);
+                # a shared vocabulary is Plan-2 work. Leave it unset for now.
+                category=None,
             )
         for fn in read_csv_rows(os.path.join(raw_dir, "food_nutrient.csv")):
             fid = fn[nc["food_id"]]

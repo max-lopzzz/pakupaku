@@ -59,7 +59,7 @@ class _Afcd(Source):
             rows[key] = NormalisedRow(
                 source_id="afcd", source_food_id=key,
                 name=(d.get(dc["name"]) or "").strip(),
-                category=(d.get(dc["category"]) or None),
+                category=None,  # raw source categories aren't reconciled yet (Plan-2)
             )
         for n in read_xlsx_rows(os.path.join(raw_dir, FILES["nutrients"]),
                                 SHEET_NUTRIENTS):
