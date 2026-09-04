@@ -13,8 +13,11 @@ async def test_seed_replaces_foods_table_from_artifact(db_session, tmp_path):
     names = (await db_session.execute(
         select(models.Food.canonical_name).order_by(models.Food.id)
     )).scalars().all()
-    assert n == 2
-    assert names == ["Broccoli, raw", "Water, tap, drinking"]
+    assert n == 5
+    assert names == [
+        "Broccoli, raw", "Water, tap, drinking", "Coconut water",
+        "Butter", "Butter beans, canned",
+    ]
 
 
 async def test_seed_missing_artifact_is_a_noop(db_session, tmp_path):

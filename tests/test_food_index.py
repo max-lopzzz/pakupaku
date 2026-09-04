@@ -42,6 +42,23 @@ async def test_water_resolves_to_the_generic_zero_kcal_entry(db_session, tmp_pat
     assert m.calories_per_100g == 0.0
 
 
+async def test_water_prefers_plain_tap_water_over_coconut_water(db_session, tmp_path):
+    # "coconut water" is a token-superset of the query, so token_set_ratio
+    # ties it at 100 with "drinking tap water"; the re-rank must not let it win.
+    await _load(db_session, tmp_path)
+    assert food_index.best_match("water").id == "gen:00002"
+
+
+async def test_butter_beans_does_not_collapse_to_butter(db_session, tmp_path):
+    # token_set_ratio("beans butter", "butter") == 100 because "butter" is a
+    # subset of the query — but it is MISSING the "beans" token, so the fuzzy
+    # re-rank must rank "butter beans, canned" (covers both tokens) first.
+    await _load(db_session, tmp_path)
+    m = food_index.best_match("butter beans")
+    assert m.id == "gen:00005"
+    assert m.description == "Butter beans, canned"
+
+
 async def test_search_result_shape(db_session, tmp_path):
     await _load(db_session, tmp_path)
     r = food_index.search("broccoli", 5)[0].as_search_result()

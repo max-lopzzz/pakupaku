@@ -75,12 +75,15 @@ def _loaded() -> bool:
 async def load(session: AsyncSession) -> None:
     """Rebuild the index from every ``foods`` row on ``session``.
 
-    Idempotent: clears ``_by_id`` / ``_by_key`` first, so it is safe to
-    call again after a re-seed.
+    Idempotent and failure-atomic: the new maps are built into locals and
+    only swapped into the module globals once every row has been read, so
+    a malformed row raising mid-build leaves the previously loaded index
+    intact rather than half-rebuilt (which ``_ranked`` could ``KeyError``
+    on).
     """
-    global _keys
-    _by_id.clear()
-    _by_key.clear()
+    global _by_id, _by_key, _keys
+    by_id: Dict[str, Food] = {}
+    by_key: Dict[str, List[Food]] = {}
     rows = (await session.execute(select(FoodRow))).scalars().all()
     for r in rows:
         f = Food(
@@ -88,15 +91,16 @@ async def load(session: AsyncSession) -> None:
             portions=json.loads(r.portions or "[]"),
             **{n: getattr(r, n) for n in _NUTRIENTS},
         )
-        _by_id[f.id] = f
+        by_id[f.id] = f
         names = [r.canonical_name] + json.loads(r.aliases or "[]")
         for name in names:
-            _by_key.setdefault(canonical_key(name), []).append(f)
-    _keys = list(_by_key)
+            by_key.setdefault(canonical_key(name), []).append(f)
+    _by_id, _by_key, _keys = by_id, by_key, list(by_key)
 
 
 def _ranked(query: str, limit: int) -> List[Food]:
     key = canonical_key(query)
+    query_tokens = set(key.split())
     seen = set()
     out: List[Food] = []
 
@@ -106,14 +110,33 @@ def _ranked(query: str, limit: int) -> List[Food]:
                 seen.add(f.id)
                 out.append(f)
 
+    # 1. Exact canonical-key hit(s) pinned first, in load order.
     if key in _by_key:
         _add(_by_key[key])
-    for cand, score, _ in process.extract(
+
+    # 2. Fuzzy candidates. ``token_set_ratio`` scores 100 for *any* candidate
+    #    whose tokens are a subset of the query's, so "butter" ties
+    #    "butter beans, canned" for query "butter beans" and the raw order
+    #    would return plain butter. Re-rank: candidates that cover every query
+    #    token keep their (score-descending, load-order-stable) order; the
+    #    rest are demoted and ordered by a secondary ``token_sort_ratio``.
+    covers_all: List[str] = []
+    partial: List = []  # (cand_key, set_score, sort_score)
+    for cand, set_score, _ in process.extract(
         key, _keys, scorer=fuzz.token_set_ratio, limit=limit * 3
     ):
-        if score < MATCH_CONFIDENCE_FLOOR:
-            break
-        _add(_by_key[cand])
+        if set_score < MATCH_CONFIDENCE_FLOOR:
+            break  # process.extract yields descending set_score
+        if query_tokens <= set(cand.split()):
+            covers_all.append(cand)
+        else:
+            partial.append((cand, set_score, fuzz.token_sort_ratio(key, cand)))
+    partial.sort(key=lambda t: (-t[1], -t[2]))
+
+    for cand in covers_all:
+        _add(_by_key.get(cand, []))
+    for cand, _, _ in partial:
+        _add(_by_key.get(cand, []))
     return out[:limit]
 
 
