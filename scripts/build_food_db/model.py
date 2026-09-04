@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
 
 NUTRIENT_FIELDS: Tuple[str, ...] = (

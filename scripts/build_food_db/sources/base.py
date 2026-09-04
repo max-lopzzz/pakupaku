@@ -38,7 +38,7 @@ def read_csv_rows(path: str, delimiter: str = ",",
         yield from csv.DictReader(fh, delimiter=delimiter)
 
 
-def read_xlsx_rows(path: str, sheet=None) -> Iterator[Dict[str, str]]:
+def read_xlsx_rows(path: str, sheet: Optional[str] = None) -> Iterator[Dict[str, str]]:
     """Yield dict rows from an .xlsx sheet, keyed by the first row's headers.
 
     Uses ``openpyxl`` in ``read_only=True`` mode so multi-thousand-row
@@ -76,7 +76,18 @@ _NULL_TOKENS = {
 def parse_float(raw: Optional[str]) -> Optional[float]:
     if raw is None:
         return None
-    text = raw.strip().replace("\xa0", "").replace(" ", "").replace(",", ".")
+    text = raw.strip().replace("\xa0", "").replace(" ", "")
+    # A comma is a decimal separator (French / Danish tables: "12,34") only
+    # when there is exactly one and at most two digits follow it. Otherwise it
+    # is a thousands separator ("1,200" -> 1200) and is stripped.
+    if text.count(",") == 1:
+        intpart, frac = text.split(",")
+        if 0 < len(frac) <= 2 and frac.isdigit():
+            text = intpart + "." + frac
+        else:
+            text = text.replace(",", "")
+    else:
+        text = text.replace(",", "")
     # national tables mark "below detection limit" as "< 0.1" etc.
     if text.startswith("<"):
         return None
