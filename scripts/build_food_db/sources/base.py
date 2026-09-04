@@ -38,7 +38,27 @@ def read_csv_rows(path: str, delimiter: str = ",",
         yield from csv.DictReader(fh, delimiter=delimiter)
 
 
-def read_xlsx_rows(path: str, sheet: Optional[str] = None) -> Iterator[Dict[str, str]]:
+def find_header(headers, *needles: str, exclude: Optional[str] = None) -> Optional[str]:
+    """Return the first header whose whitespace-normalised text contains
+    every needle (case-insensitive substring match).
+
+    National-table spreadsheets often wrap column headers across multiple
+    lines (embedded ``\\n``) with inconsistent punctuation, so exact-string
+    keys are fragile; this matches on normalised substrings instead.
+    """
+    for h in headers:
+        if h is None:
+            continue
+        norm = " ".join(str(h).split()).lower()
+        if exclude is not None and exclude.lower() in norm:
+            continue
+        if all(n.lower() in norm for n in needles):
+            return h
+    return None
+
+
+def read_xlsx_rows(path: str, sheet: Optional[str] = None,
+                    header_row: int = 1) -> Iterator[Dict[str, str]]:
     """Yield dict rows from an .xlsx sheet, keyed by the first row's headers.
 
     Uses ``openpyxl`` in ``read_only=True`` mode so multi-thousand-row
@@ -52,12 +72,19 @@ def read_xlsx_rows(path: str, sheet: Optional[str] = None) -> Iterator[Dict[str,
         ws = wb[sheet] if sheet is not None else wb.active
         rows = ws.iter_rows(values_only=True)
         try:
+            for _ in range(header_row - 1):
+                next(rows)
             header = next(rows)
         except StopIteration:
             return
         headers = ["" if h is None else str(h).strip() for h in header]
         for raw in rows:
             record = {}
+            # Column 0 is always available under this synthetic key too, even
+            # when its header cell is blank (some national tables leave the
+            # id column unlabelled) — callers that need the id positionally
+            # (see cofid.py) read this instead of a named column.
+            record["__col0__"] = "" if not raw or raw[0] is None else str(raw[0])
             for idx, key in enumerate(headers):
                 if key == "":
                     continue

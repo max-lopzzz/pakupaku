@@ -1,37 +1,44 @@
 import os
-from typing import List
+from typing import Dict, List
 
 from scripts.build_food_db.model import NormalisedRow
 from scripts.build_food_db.normalise import normalise_row
-from scripts.build_food_db.sources.base import (
-    Source, read_xlsx_rows, parse_float, kj_to_kcal,
-)
+from scripts.build_food_db.sources.base import Source, read_xlsx_rows, parse_float, kj_to_kcal
 
-# Frida, the Danish Food Composition Database (DTU), version 5.3. Single
-# downloadable spreadsheet with a per-100g data sheet. Frida publishes
-# energy in both kcal and kJ; the kcal column is used directly, falling
-# back to kJ -> kcal. Minerals are mg and vitamins ug already, so no
-# g->mg/mcg conversion is required.
-FILE = "Frida_5.3.xlsx"
-SHEET = None
+# Frida, the Danish Food Composition Database (DTU / National Food
+# Institute), version 6.1 (data.dtu.dk, DOI 10.11583/DTU.32312844). Ships as
+# a relational workbook rather than one flat per-100g sheet: "Data_Normalised"
+# is a long table of (FoodID, ParameterID, ResVal) rows, one per
+# food/nutrient pair, already expressed per 100 g in each parameter's own
+# unit (see the "Parameter" sheet's Unit column) — so no g->mg/mcg scaling
+# is needed. FoodName on each row is already the English name, so no
+# separate join to the "Food" sheet is required for what this build uses.
+FILE = "Frida_6.1.xlsx"
+SHEET = "Data_Normalised"
 COLS = {
-    "id": "FoodID",
+    "food_id": "FoodID",
     "name": "FoodName",
-    "category": "FoodGroup",
-    "energy_kcal": "Energy (kcal)",
-    "energy_kj": "Energy (kJ)",
-    "protein_g": "Protein (g)",
-    "fat_g": "Fat (g)",
-    "carbs_g": "Carbohydrate (g)",
-    "fibre_g": "Dietary fibre (g)",
-    "sugar_g": "Sugars (g)",
-    "sodium_mg": "Sodium (mg)",
-    "calcium_mg": "Calcium (mg)",
-    "iron_mg": "Iron (mg)",
-    "vitamin_c_mg": "Vitamin C (mg)",
-    "vitamin_d_mcg": "Vitamin D (µg)",
-    "vitamin_b12_mcg": "Vitamin B-12 (µg)",
+    "parameter_id": "ParameterID",
+    "value": "ResVal",
 }
+# Frida ParameterID -> NormalisedRow field, resolved against the real
+# "Parameter" sheet (English ParameterName -> ParameterID) in version 6.1.
+# 137 (Energy, kJ) is used only as a fallback when 356 (kcal) is absent.
+_PARAMETER_MAP = {
+    "356": "calories_per_100g",
+    "218": "protein_per_100g",
+    "141": "fat_per_100g",
+    "170": "carbs_per_100g",     # Carbohydrate by difference (matches USDA/CNF convention)
+    "168": "fiber_per_100g",
+    "245": "sugar_per_100g",     # Sum sugars
+    "201": "sodium_mg_per_100g",
+    "108": "calcium_mg_per_100g",
+    "162": "iron_mg_per_100g",
+    "47": "vitamin_c_mg_per_100g",
+    "126": "vitamin_d_mcg_per_100g",
+    "38": "vitamin_b12_mcg_per_100g",
+}
+_ENERGY_KJ_ID = "137"
 
 
 class _Frida(Source):
@@ -39,34 +46,36 @@ class _Frida(Source):
 
     def extract(self, raw_dir: str) -> List[NormalisedRow]:
         c = COLS
-        rows: List[NormalisedRow] = []
+        rows: Dict[str, NormalisedRow] = {}
+        kj_energy: Dict[str, float] = {}
         for r in read_xlsx_rows(os.path.join(raw_dir, FILE), SHEET):
-            name = (r.get(c["name"]) or "").strip()
-            if not name:
+            fid = (r.get(c["food_id"]) or "").strip()
+            if not fid:
                 continue
-            kcal = parse_float(r.get(c["energy_kcal"]))
-            if kcal is None:
-                kcal = kj_to_kcal(parse_float(r.get(c["energy_kj"])))
-            row = NormalisedRow(
-                source_id="frida",
-                source_food_id=(r.get(c["id"]) or "").strip(),
-                name=name,
-                category=None,  # raw source categories aren't reconciled yet (Plan-2)
-                calories_per_100g=kcal,
-                protein_per_100g=parse_float(r.get(c["protein_g"])),
-                fat_per_100g=parse_float(r.get(c["fat_g"])),
-                carbs_per_100g=parse_float(r.get(c["carbs_g"])),
-                fiber_per_100g=parse_float(r.get(c["fibre_g"])),
-                sugar_per_100g=parse_float(r.get(c["sugar_g"])),
-                sodium_mg_per_100g=parse_float(r.get(c["sodium_mg"])),
-                calcium_mg_per_100g=parse_float(r.get(c["calcium_mg"])),
-                iron_mg_per_100g=parse_float(r.get(c["iron_mg"])),
-                vitamin_c_mg_per_100g=parse_float(r.get(c["vitamin_c_mg"])),
-                vitamin_d_mcg_per_100g=parse_float(r.get(c["vitamin_d_mcg"])),
-                vitamin_b12_mcg_per_100g=parse_float(r.get(c["vitamin_b12_mcg"])),
-            )
-            rows.append(normalise_row(row))
-        return rows
+            row = rows.get(fid)
+            if row is None:
+                name = (r.get(c["name"]) or "").strip()
+                if not name:
+                    continue
+                row = NormalisedRow(
+                    source_id="frida", source_food_id=fid, name=name,
+                    category=None,  # raw source categories aren't reconciled yet (Plan-2)
+                )
+                rows[fid] = row
+            pid = (r.get(c["parameter_id"]) or "").strip()
+            val = parse_float(r.get(c["value"]))
+            if val is None:
+                continue
+            if pid == _ENERGY_KJ_ID:
+                kj_energy[fid] = val
+                continue
+            field = _PARAMETER_MAP.get(pid)
+            if field:
+                setattr(row, field, val)
+        for fid, row in rows.items():
+            if row.calories_per_100g is None and fid in kj_energy:
+                row.calories_per_100g = kj_to_kcal(kj_energy[fid])
+        return [normalise_row(r) for r in rows.values()]
 
 
 SOURCE = _Frida()

@@ -1,4 +1,4 @@
-FoodID,NutrientID,NutrientValue,StandardError,NumberOfObservations,NutrientSourceID,NutrientDateOfEntry
+Food_Code,Nutrient_Code,Nutrient_Amount,StandardError,NumberOfObservations,NutrientSourceID,NutrientDateOfEntry
 2,208,34,,,4,1982-01-01
 2,203,2.82,,,4,1982-01-01
 2,204,0.37,,,4,1982-01-01
