@@ -1,6 +1,7 @@
 # scripts/build_food_db/match.py
 import csv
 from dataclasses import dataclass, field
+from statistics import median
 from typing import Dict, List
 
 from rapidfuzz import fuzz
@@ -8,7 +9,19 @@ from rapidfuzz import fuzz
 from scripts.build_food_db.model import NUTRIENT_FIELDS, NormalisedRow
 
 TOKEN_SET_THRESHOLD = 92
-NUTRIENT_TOLERANCE = 0.25
+# Macros are measured the same way everywhere and should agree closely;
+# micronutrients vary a lot between national tables for legitimate reasons
+# (soil, cultivar, fortification, assay method), so a uniform tolerance
+# would flood the review list with non-conflicts.
+MACRO_FIELDS = (
+    "calories_per_100g", "protein_per_100g", "fat_per_100g",
+    "carbs_per_100g", "fiber_per_100g",
+)
+# Starting values — tune both against the real conflicts.csv on the first
+# full build run (see the plan's Task 9).
+MACRO_TOLERANCE = 0.25
+MICRO_TOLERANCE = 0.60
+# spreads at or below this many units are noise whatever the relative size
 NUTRIENT_ABS_FLOOR = 0.5
 
 
@@ -21,16 +34,26 @@ class MergeGroup:
 
 
 def _nutrients_agree(rows: List[NormalisedRow]) -> bool:
+    """Do these rows describe the same food closely enough to auto-merge?
+
+    The spread is compared to the *median* rather than the minimum: one
+    outlying low value would otherwise inflate the relative spread and
+    reject a group whose values are in fact tightly clustered.
+    """
     for f in NUTRIENT_FIELDS:
         vals = [v for v in (getattr(r, f) for r in rows) if v is not None]
         if len(vals) < 2:
             continue
-        lo, hi = min(vals), max(vals)
-        if hi - lo <= NUTRIENT_ABS_FLOOR:
+        spread = max(vals) - min(vals)
+        if spread <= NUTRIENT_ABS_FLOOR:
             continue
-        if lo <= 0:
+        m = median(vals)
+        if m <= 0:
+            # no meaningful relative comparison; the absolute floor above is
+            # the only test such a nutrient gets, and it already failed.
             return False
-        if (hi - lo) / lo > NUTRIENT_TOLERANCE:
+        tolerance = MACRO_TOLERANCE if f in MACRO_FIELDS else MICRO_TOLERANCE
+        if spread / m > tolerance:
             return False
     return True
 
