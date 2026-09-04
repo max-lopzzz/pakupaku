@@ -68,11 +68,19 @@ def read_xlsx_rows(path: str, sheet=None) -> Iterator[Dict[str, str]]:
         wb.close()
 
 
+_NULL_TOKENS = {
+    "", "-", "n", "tr", "trace", "traces", "[n]", "nd", "n/a", "na", "*",
+}
+
+
 def parse_float(raw: Optional[str]) -> Optional[float]:
     if raw is None:
         return None
-    text = raw.strip().replace(",", ".")
-    if text in ("", "-", "N", "Tr", "tr", "trace", "[N]"):
+    text = raw.strip().replace("\xa0", "").replace(" ", "").replace(",", ".")
+    # national tables mark "below detection limit" as "< 0.1" etc.
+    if text.startswith("<"):
+        return None
+    if text.lower() in _NULL_TOKENS:
         return None
     try:
         return float(text)

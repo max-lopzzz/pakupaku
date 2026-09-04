@@ -29,6 +29,18 @@ def cnf_raw_dir(tmp_path):
     return str(d)
 
 
+def afcd_raw_dir(tmp_path):
+    """Copy the committed AFCD *_slice.xlsx fixtures into tmp_path/afcd/ under
+    the real Release 2 workbook names, and return that dir."""
+    d = tmp_path / "afcd"
+    d.mkdir()
+    shutil.copy(os.path.join(FIX, "afcd_food_details_slice.xlsx"),
+                d / "Release2_Food_Details.xlsx")
+    shutil.copy(os.path.join(FIX, "afcd_nutrients_slice.xlsx"),
+                d / "Release2_Food_Nutrients_per_100g.xlsx")
+    return str(d)
+
+
 def single_file_raw_dir(tmp_path, source_id, fixture_name, real_name):
     """Copy one committed fixture slice into tmp_path/<source_id>/<real_name>
     and return that dir as a str. Used by the single-file extractors."""

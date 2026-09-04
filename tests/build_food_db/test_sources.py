@@ -1,9 +1,12 @@
 import os
 
-from scripts.build_food_db.sources.base import to_mg, to_mcg, kj_to_kcal
+from scripts.build_food_db.sources.base import (
+    to_mg, to_mcg, kj_to_kcal, read_xlsx_rows,
+)
 from scripts.build_food_db.sources.usda import SOURCE as USDA
 from scripts.build_food_db.sources.cofid import SOURCE as COFID
 from scripts.build_food_db.sources.cnf import SOURCE as CNF
+from scripts.build_food_db.sources.ciqual import SOURCE as CIQUAL
 
 FIX = os.path.join(os.path.dirname(__file__), "fixtures")
 
@@ -87,3 +90,81 @@ def test_cnf_extractor_joins_amount_to_food_and_nutrient(tmp_path):
     # chicken has no kcal row, only kJ -> converted
     chicken = by_key["breast chicken meat only"]
     assert round(chicken.calories_per_100g, 1) == 164.9
+
+
+def test_read_xlsx_rows_maps_headers_to_dicts():
+    path = os.path.join(FIX, "ciqual_slice.xlsx")
+    rows = list(read_xlsx_rows(path, "Table Ciqual 2025"))
+    assert len(rows) == 10
+    first = rows[0]
+    assert first["alim_nom_fr"] == "Brocoli, cru"
+    assert first["alim_code"] == "20047"
+    # blank/None cells come back as "" not KeyError
+    assert first["Vitamine D (µg/100 g)"] == "0"
+
+
+def test_ciqual_extractor_handles_french_decimals(tmp_path):
+    from tests.build_food_db.conftest import single_file_raw_dir
+    raw = single_file_raw_dir(tmp_path, "ciqual", "ciqual_slice.xlsx",
+                              "Table_Ciqual_2025.xlsx")
+
+    rows = CIQUAL.extract(raw)
+
+    by_key = {r.canonical_key: r for r in rows}
+    broc = by_key["brocoli cru"]
+    assert broc.source_id == "ciqual"
+    assert broc.source_food_id == "20047"
+    assert broc.calories_per_100g == 34.3            # comma decimal parsed
+    assert broc.protein_per_100g == 2.98
+    assert broc.sodium_mg_per_100g == 8.52
+    assert broc.vitamin_c_mg_per_100g == 89.2
+    # Task-3 prep detection is English-only: French "cru" is not recognised
+    assert broc.prep_state == "unspecified"
+
+    apple = by_key["crue pomme"]
+    assert apple.sodium_mg_per_100g is None          # "traces" -> None
+    assert apple.vitamin_c_mg_per_100g == 4.6
+
+    rice = by_key["blanc cru riz"]
+    assert round(rice.calories_per_100g, 1) == 363.0   # kcal blank -> kJ/4.184
+
+
+def test_afcd_extractor_joins_two_workbooks_and_converts_kj(tmp_path):
+    from scripts.build_food_db.sources.afcd import SOURCE as AFCD
+    from tests.build_food_db.conftest import afcd_raw_dir
+    raw = afcd_raw_dir(tmp_path)
+
+    rows = AFCD.extract(raw)
+
+    by_key = {r.canonical_key: r for r in rows}
+    broc = by_key["broccoli"]
+    assert broc.source_id == "afcd"
+    assert broc.source_food_id == "F001234"
+    assert broc.calories_per_100g == round(141 / 4.184, 4)   # kJ -> kcal
+    assert broc.protein_per_100g == 4.4
+    assert broc.sodium_mg_per_100g == 7.0
+    assert broc.vitamin_c_mg_per_100g == 84.0
+    assert broc.category == "24101"
+    assert broc.prep_state == "raw"
+
+
+def test_frida_extractor_reads_xlsx(tmp_path):
+    from scripts.build_food_db.sources.frida import SOURCE as FRIDA
+    from tests.build_food_db.conftest import single_file_raw_dir
+    raw = single_file_raw_dir(tmp_path, "frida", "frida_slice.xlsx",
+                              "Frida_5.3.xlsx")
+
+    rows = FRIDA.extract(raw)
+
+    by_key = {r.canonical_key: r for r in rows}
+    broc = by_key["broccoli"]
+    assert broc.source_id == "frida"
+    assert broc.source_food_id == "42"
+    assert broc.calories_per_100g == 35.0
+    assert broc.protein_per_100g == 3.4
+    assert broc.sodium_mg_per_100g == 8.0
+    assert broc.vitamin_c_mg_per_100g == 89.0
+    assert broc.prep_state == "raw"
+
+    chicken = by_key["breast chicken"]
+    assert round(chicken.calories_per_100g, 1) == 164.9    # kcal blank -> kJ
