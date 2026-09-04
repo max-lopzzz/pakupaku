@@ -12,6 +12,16 @@
 
 **Predecessor:** `docs/superpowers/plans/2026-09-03-food-db-build-pipeline.md` — must be merged, and its Task 9 (real `data/foods.sqlite` committed) ideally done. This plan works against a tiny fixture `foods.sqlite` until then; the seed step no-ops gracefully when the artifact is absent.
 
+## Status
+
+Tasks 1–12 implemented, reviewed, and fixed at `e3e1f48` on branch `food-db-runtime-cutover` (based on `food-db-spec` @ `d209f7b`). 24 commits. `pytest` 138 passing, `tsc --noEmit` clean, frontend suite green (bar the pre-existing `App.test.tsx` CRA-boilerplate failure). Not yet merged — depends on Plan 1's PR #24 landing first.
+
+## Known limitations (parked, not fixed here)
+
+- **`food_index` full-coverage fuzzy ties fall to alphabetical row order.** When two foods' token sets *both* fully contain the query's tokens (e.g. query `"water"` against both `"Water, tap, drinking"` and `"Coconut water"`), `_ranked`'s partial-coverage re-rank (added in the final-review fix wave) doesn't apply — both candidates are "full coverage" — so the tie falls to `_keys` insertion order, which follows `canonical_name.lower()` sort from the build pipeline. On the real artifact this can return `"Coconut water"` for a bare `"water"` query instead of plain tap water. This is a real, traced residual (confirmed by two independent reviews), **not** a hypothetical: it survives because the two-tier partial/full-coverage split introduced for the "butter beans → butter" class of bug (fixed) doesn't distinguish among ties *within* the full-coverage tier.
+  - **Not the catastrophic failure class this project targeted** — no branded data exists in the offline DB at all, so the original bug (water → a branded product at ~10,000 kcal/100g) cannot recur. This residual's error magnitude is small (0 kcal vs ~19 kcal for water/coconut water, and similarly small deltas for analogous cases), and `best_match` is always shown to the user for confirmation before a recipe or log is saved.
+  - **Real fix, deliberately deferred:** either (a) a curated alias/synonym layer in the build pipeline so common bare words map directly to their plainest canonical entry (data-curation work, Plan 1 territory), or (b) a ranking heuristic that prefers a candidate whose `description` starts with/equals the raw query among full-coverage ties. Both are scoped follow-up work, not bug fixes to this plan.
+
 ## Global Constraints
 
 - **Python 3.8 syntax only** — `typing.Optional[X]` / `typing.List[X]` / `typing.Dict`, never `X | None` / `list[X]`.
