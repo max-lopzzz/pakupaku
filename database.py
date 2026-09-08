@@ -60,6 +60,12 @@ engine = create_async_engine(
     echo=False,       # set True to log all SQL queries during development
     pool_size=10,
     max_overflow=20,
+    # Neon's serverless Postgres suspends the compute after a few minutes
+    # idle (free tier) and recycles pooled backends, so a checked-out
+    # connection can be dead on arrival. pre_ping does a cheap liveness
+    # check at checkout and transparently replaces a stale connection —
+    # without it the first request after an idle period 500s.
+    pool_pre_ping=True,
 )
 
 

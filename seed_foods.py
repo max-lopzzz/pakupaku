@@ -27,6 +27,14 @@ logger = logging.getLogger(__name__)
 ARTIFACT_PATH = "data/foods.sqlite"
 _COLS = [c.name for c in Food.__table__.columns]
 
+# The full-table INSERT is broken into chunks so each execute() is a short
+# operation: a single ~2.5k-row insert holds one connection through many
+# asyncpg round-trips, and against Neon's serverless Postgres that
+# connection was being dropped mid-load ("connection was closed in the
+# middle of operation"). Smaller statements shrink that exposure window;
+# create_tables.py retries the whole seed on a disconnect.
+_INSERT_CHUNK = 200
+
 
 async def seed_foods(session: AsyncSession, artifact_path: str = ARTIFACT_PATH) -> int:
     """Replace every row of the ``foods`` table with the artifact's rows.
@@ -53,8 +61,8 @@ async def seed_foods(session: AsyncSession, artifact_path: str = ARTIFACT_PATH) 
         src.close()
 
     await session.execute(delete(Food))
-    if rows:
-        await session.execute(insert(Food), rows)
+    for i in range(0, len(rows), _INSERT_CHUNK):
+        await session.execute(insert(Food), rows[i:i + _INSERT_CHUNK])
 
     logger.info("seed_foods: loaded %d rows from %s", len(rows), artifact_path)
     return len(rows)
