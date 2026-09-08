@@ -101,23 +101,24 @@ Do these in order — each later step needs a value from the one before it.
    including `DATABASE_URL`, to the build step just like it does at
    runtime):
    ```
-   pip install -r requirements.txt && python3 create_tables.py && python3 seed_foods.py
+   pip install -r requirements.txt && python3 create_tables.py
    ```
-   `create_tables.py` (in this repo) mirrors the same `create_all()`
-   pattern `backend_entry.py` already uses for the desktop build. An
-   inline multi-line `python3 -c "..."` string is tempting here but
-   fragile in practice — Render's Build Command field collapses embedded
-   newlines, breaking Python's indentation-sensitive syntax with an
-   `IndentationError`. A real script file sidesteps that entirely, which
-   is why this repo has one instead. It creates the schema on Neon
-   (empty on first deploy) and is safe to leave configured permanently:
-   `create_all()` only creates tables that don't already exist, so it's
-   a no-op on every build after the first — the tradeoff versus a true
-   Pre-Deploy Command is that this now reruns on every deploy rather than
-   once, which costs a fraction of a second and nothing else.
+   `create_tables.py` (in this repo) does everything a deploy needs to
+   the database, in one idempotent step: `create_all()` for new tables,
+   the `fdc_id` → `food_id` rename for an existing DB (`create_all()`
+   can't rename a column on a table that already exists), and seeding the
+   `foods` table from the committed `data/foods.sqlite`. An inline
+   multi-line `python3 -c "..."` string is tempting here but fragile —
+   Render's Build Command field collapses embedded newlines, breaking
+   Python's indentation with an `IndentationError`. A real script file
+   sidesteps that, which is why this repo has one. Safe to leave
+   configured permanently: every step is a no-op / replace-in-place when
+   there's nothing to do, so it reruns harmlessly on every deploy
+   (a fraction of a second plus a ~2.5k-row `foods` reseed).
 
-   `seed_foods.py` is a no-op until `data/foods.sqlite` is committed; once
-   present, it replaces the `foods` table contents on every deploy.
+   If you're on a paid instance, this is the ideal Pre-Deploy Command
+   instead — same script, runs once per deploy rather than once per
+   build.
 6. Deploy. The build step above installs `requirements.txt` and creates
    the schema in one command, then Render starts uvicorn per the Start
    Command. The build step exiting successfully is what confirms the
@@ -169,24 +170,26 @@ Now that both URLs exist:
 
 ## 5. Applying schema changes to an existing database
 
-`create_tables.py` / `create_all()` only ever *creates* missing tables —
-it cannot rename or retype a column on a table that already exists. Any
-change that isn't a brand-new table needs a one-off SQL script run
-against Neon, before (or together with) the deploy that ships the code
-depending on it.
+`create_all()` only ever *creates* missing tables — it cannot rename or
+retype a column on a table that already exists. `create_tables.py` picks
+up that slack for the one migration the app currently needs (see below);
+anything beyond that still needs a one-off SQL script run against Neon,
+before (or together with) the deploy that ships the code depending on it.
 
-1. **The `fdc_id` → `food_id` rename.** The deploy that ships `food_id`
-   (this branch) requires `migrate_fdc_to_food_id.sql` to have been run
-   once against Neon first — otherwise every `POST /logs`, `POST
-   /recipes`, and recipe read 500s with `column food_logs.food_id does
-   not exist`. Run it from a machine with `psql` and the Neon
-   `DATABASE_URL` (the raw `postgresql://…` string, not the
-   `+asyncpg` rewrite):
+1. **The `fdc_id` → `food_id` rename** is applied automatically by
+   `create_tables.py` on every deploy (idempotent — a no-op once the
+   column has been renamed, and on a DB that never had `fdc_id`). No
+   manual step. `migrate_fdc_to_food_id.sql` is still in the repo with
+   the identical SQL if you ever want to run it by hand:
    ```
    psql "$DATABASE_URL" -f migrate_fdc_to_food_id.sql
    ```
-   The script is idempotent — safe to re-run, and a no-op on a database
-   that never had `fdc_id`.
+   (use the raw `postgresql://…` string, not the `+asyncpg` rewrite).
+   If a deploy 500s every `/logs` read with `column food_logs.food_id
+   does not exist`, the build's `create_tables.py` step did not run —
+   check the Build Command is exactly
+   `pip install -r requirements.txt && python3 create_tables.py` and the
+   build log shows its `seeded N foods` line.
 
 ## 6. Verify
 
