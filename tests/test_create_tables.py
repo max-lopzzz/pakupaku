@@ -15,7 +15,9 @@ Uses a throwaway sqlite engine because it needs an OLD-shape table (int
 import os
 import tempfile
 
+import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import create_tables as create_tables_mod
@@ -89,3 +91,67 @@ async def test_create_tables_seed_is_a_noop_when_artifact_absent(tmp_path):
     n, _, _, foods_n = await _run(tmp_path, seed=False)
     assert n == 0
     assert foods_n == 0         # table created by create_all, just empty
+
+
+async def test_create_tables_retries_the_seed_after_a_dropped_connection(tmp_path, monkeypatch):
+    """Neon drops connections mid-load; the seed must be retried whole."""
+    fd, db_path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    eng = create_async_engine("sqlite+aiosqlite:///%s" % db_path)
+    Session = async_sessionmaker(eng, expire_on_commit=False)
+    art = tmp_path / "foods.sqlite"
+    build_mini(str(art))
+
+    real_seed = create_tables_mod.seed_foods
+    calls = {"n": 0}
+
+    async def flaky_seed(session, **kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise DBAPIError("INSERT", None, Exception("connection was closed"),
+                             connection_invalidated=True)
+        return await real_seed(session, **kw)
+
+    monkeypatch.setattr(create_tables_mod, "seed_foods", flaky_seed)
+    monkeypatch.setattr(create_tables_mod.asyncio, "sleep", _no_sleep)
+
+    try:
+        async with eng.begin() as conn:
+            await conn.execute(text("CREATE TABLE food_logs (id TEXT, fdc_id INTEGER)"))
+            await conn.execute(text("CREATE TABLE recipe_ingredients (id TEXT, fdc_id INTEGER)"))
+        n = await create_tables_mod.create_tables(
+            db_engine=eng, session_factory=Session, artifact_path=str(art))
+        assert calls["n"] == 2
+        assert n == 6
+        async with eng.begin() as conn:
+            foods_n = (await conn.execute(text("SELECT count(*) FROM foods"))).scalar()
+        assert foods_n == 6
+    finally:
+        await eng.dispose()
+        os.remove(db_path)
+
+
+async def test_create_tables_gives_up_on_a_non_disconnect_error(tmp_path, monkeypatch):
+    fd, db_path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    eng = create_async_engine("sqlite+aiosqlite:///%s" % db_path)
+    Session = async_sessionmaker(eng, expire_on_commit=False)
+
+    async def boom_seed(session, **kw):
+        raise DBAPIError("INSERT", None, Exception("bad column"), connection_invalidated=False)
+
+    monkeypatch.setattr(create_tables_mod, "seed_foods", boom_seed)
+    try:
+        async with eng.begin() as conn:
+            await conn.execute(text("CREATE TABLE food_logs (id TEXT, fdc_id INTEGER)"))
+            await conn.execute(text("CREATE TABLE recipe_ingredients (id TEXT, fdc_id INTEGER)"))
+        with pytest.raises(DBAPIError):
+            await create_tables_mod.create_tables(
+                db_engine=eng, session_factory=Session, artifact_path=None)
+    finally:
+        await eng.dispose()
+        os.remove(db_path)
+
+
+async def _no_sleep(*_a, **_kw):
+    return None

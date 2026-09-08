@@ -28,11 +28,22 @@ Run directly:
 """
 
 import asyncio
+import logging
+
+from sqlalchemy.exc import DBAPIError
 
 from database import AsyncSessionLocal, Base, engine
 import models  # noqa: F401  (import side effect: registers every table on Base.metadata)
 from migrations import _migrate_fdc_to_food_id
 from seed_foods import seed_foods
+
+logger = logging.getLogger(__name__)
+
+_SEED_ATTEMPTS = 4
+
+
+def _is_disconnect(exc: BaseException) -> bool:
+    return isinstance(exc, DBAPIError) and bool(getattr(exc, "connection_invalidated", False))
 
 
 async def create_tables(db_engine=None, session_factory=None, artifact_path=None) -> int:
@@ -44,10 +55,23 @@ async def create_tables(db_engine=None, session_factory=None, artifact_path=None
         await _migrate_fdc_to_food_id(conn)
 
     kwargs = {} if artifact_path is None else {"artifact_path": artifact_path}
-    async with session_factory() as s:
-        seeded = await seed_foods(s, **kwargs)
-        await s.commit()
-    return seeded
+    # Neon (serverless Postgres) drops connections mid-operation under load,
+    # so the seed — delete + chunked re-insert, one transaction — is retried
+    # whole on a disconnect. Each attempt starts a fresh session, so the
+    # pool hands out a new connection after the previous one is invalidated.
+    for attempt in range(1, _SEED_ATTEMPTS + 1):
+        try:
+            async with session_factory() as s:
+                seeded = await seed_foods(s, **kwargs)
+                await s.commit()
+            return seeded
+        except DBAPIError as exc:
+            if attempt == _SEED_ATTEMPTS or not _is_disconnect(exc):
+                raise
+            logger.warning(
+                "create_tables: seed attempt %d hit a dropped connection, retrying", attempt
+            )
+            await asyncio.sleep(2 ** attempt)
 
 
 if __name__ == "__main__":
