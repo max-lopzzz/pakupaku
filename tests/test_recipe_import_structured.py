@@ -82,3 +82,13 @@ def test_extract_structured_recipe_no_instructions_is_none():
     """
     result = extract_structured_recipe(html)
     assert result.instructions is None
+
+
+def test_parse_servings_picks_the_largest_number_in_a_list():
+    from recipe_import import _parse_servings
+    assert _parse_servings(["1 loaf", "12 slices"]) == 12.0
+    assert _parse_servings(["15"]) == 15.0
+    assert _parse_servings("1 dozen cookies") == 12.0
+    assert _parse_servings("serves 4") == 4.0
+    assert _parse_servings(None) == 1.0
+    assert _parse_servings("a loaf") == 1.0

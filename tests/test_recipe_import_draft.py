@@ -335,3 +335,65 @@ def test_fetch_page_too_many_redirects(monkeypatch):
     # Proves the loop actually iterated multiple times rather than
     # accepting/rejecting after a single call.
     assert len(_FakeFetchClient.calls) > 1
+
+
+def test_og_image_fills_in_when_extraction_has_no_image(monkeypatch):
+    """The LLM path never sets an image; fall back to the page's og:image."""
+    html = (
+        '<html><head>'
+        '<meta property="og:image" content="https://cdn.example.com/hero.jpg">'
+        '</head><body>x</body></html>'
+    )
+
+    async def fake_fetch_page(url):
+        return html
+
+    async def fake_extract_via_llm(_html):
+        return RawRecipe(name="LLM Recipe", servings=1.0, image_url=None,
+                         ingredient_lines=["1 egg"])
+
+    def fake_parse_line(line):
+        return ParsedIngredient(raw_line=line, quantity=1.0, unit="g", food_name=line)
+
+    async def fake_match_ingredient(parsed):
+        return ImportedIngredient(
+            raw_line=parsed.raw_line, quantity=parsed.quantity, unit=parsed.unit,
+            food_name=parsed.food_name, best_match=None, alternates=[],
+        )
+
+    monkeypatch.setattr(recipe_import, "fetch_page", fake_fetch_page)
+    monkeypatch.setattr(recipe_import, "extract_structured_recipe", lambda h: None)
+    monkeypatch.setattr(recipe_import, "extract_recipe_via_llm", fake_extract_via_llm)
+    monkeypatch.setattr(recipe_import, "parse_ingredient_line", fake_parse_line)
+    monkeypatch.setattr(recipe_import, "match_ingredient", fake_match_ingredient)
+
+    draft = asyncio.run(build_import_draft("https://example.com/recipe"))
+    assert draft.image_url == "https://cdn.example.com/hero.jpg"
+
+
+def test_og_image_does_not_override_a_real_recipe_image(monkeypatch):
+    html = ('<html><head>'
+            '<meta property="og:image" content="https://cdn.example.com/og.jpg">'
+            '</head></html>')
+
+    async def fake_fetch_page(url):
+        return html
+
+    monkeypatch.setattr(recipe_import, "fetch_page", fake_fetch_page)
+    monkeypatch.setattr(
+        recipe_import, "extract_structured_recipe",
+        lambda h: RawRecipe(name="R", servings=1.0,
+                            image_url="https://example.com/real.jpg",
+                            ingredient_lines=["1 cup rice"]),
+    )
+    monkeypatch.setattr(recipe_import, "parse_ingredient_line",
+                        lambda l: ParsedIngredient(raw_line=l, quantity=1.0, unit="g", food_name=l))
+
+    async def fake_match(parsed):
+        return ImportedIngredient(raw_line=parsed.raw_line, quantity=parsed.quantity,
+                                  unit=parsed.unit, food_name=parsed.food_name,
+                                  best_match=None, alternates=[])
+    monkeypatch.setattr(recipe_import, "match_ingredient", fake_match)
+
+    draft = asyncio.run(build_import_draft("https://example.com/recipe"))
+    assert draft.image_url == "https://example.com/real.jpg"

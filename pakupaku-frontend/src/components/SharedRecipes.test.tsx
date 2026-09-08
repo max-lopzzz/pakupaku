@@ -9,10 +9,15 @@ const sharedRecipe = {
   diet_tags: ["vegan", "gluten_free"],
   instructions: "Step one.\nStep two.",
   source_url: "https://example.com/recipe",
+  ingredients: [
+    { food_name: "Carrot, raw", brand_name: null, amount_g: 120, calories: 41 },
+    { food_name: "Vegetable stock", brand_name: null, amount_g: 500, calories: 15 },
+  ],
   total_calories: 200,
   total_protein_g: 10,
   total_fat_g: 5,
   total_carbs_g: 20,
+  total_fiber_g: 4,
 };
 
 beforeEach(() => {
@@ -44,10 +49,22 @@ test("lists shared recipes and their diet tags", async () => {
   });
   expect(screen.getByText("vegan")).toBeInTheDocument();
   expect(screen.getByText("gluten free")).toBeInTheDocument();
-  expect(screen.getByText("Step one.")).toBeInTheDocument();
-  expect(screen.getByText("Step two.")).toBeInTheDocument();
+  // ingredients + per-serving nutrition are shown instead of the instruction steps
+  expect(screen.getByText(/Carrot, raw/)).toBeInTheDocument();
+  expect(screen.getByText("Per serving")).toBeInTheDocument();
+  expect(screen.getByText("200 kcal")).toBeInTheDocument();
+  expect(screen.queryByText("Step one.")).not.toBeInTheDocument();
   const sourceLink = screen.getByText("View original");
   expect(sourceLink).toHaveAttribute("href", "https://example.com/recipe");
+});
+
+test("shows a loading state before the recipes arrive", async () => {
+  render(<SharedRecipes onBack={() => {}} />);
+  expect(screen.getByText("Loading shared recipes…")).toBeInTheDocument();
+  await waitFor(() => {
+    expect(screen.getByText("Shared Soup")).toBeInTheDocument();
+  });
+  expect(screen.queryByText("Loading shared recipes…")).not.toBeInTheDocument();
 });
 
 test("save a copy calls the copy endpoint", async () => {

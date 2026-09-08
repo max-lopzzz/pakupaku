@@ -43,15 +43,27 @@ class RawRecipe:
     instructions: Optional[str] = None
 
 
+def _one_yield_number(text: str) -> Optional[float]:
+    t = str(text).strip().lower()
+    if not t:
+        return None
+    # "1 dozen" / "2 dozen" -> 12 / 24 (bread & cookie recipes phrase yield this way)
+    dozen = re.search(r"(\d+(?:\.\d+)?)\s*dozen", t)
+    if dozen:
+        return float(dozen.group(1)) * 12
+    match = re.search(r"\d+(\.\d+)?", t)
+    return float(match.group()) if match else None
+
+
 def _parse_servings(raw_yield) -> float:
-    """recipeYield can be an int, a string like "4" or "4 servings", or a
-    list containing either. Pull the first number out of it; default 1."""
-    if isinstance(raw_yield, list):
-        raw_yield = raw_yield[0] if raw_yield else None
-    if raw_yield is None:
-        return 1.0
-    match = re.search(r"\d+(\.\d+)?", str(raw_yield))
-    return float(match.group()) if match else 1.0
+    """recipeYield can be an int, a string ("4", "4 servings", "1 dozen"),
+    or a list of either ("['1 loaf', '12 slices']"). Take the *largest*
+    number found — a list usually pairs a container count ("1 loaf") with
+    the real portion count ("12 slices"), and the latter is what a per-
+    serving nutrition split should divide by. Default 1."""
+    candidates = raw_yield if isinstance(raw_yield, list) else [raw_yield]
+    numbers = [n for n in (_one_yield_number(c) for c in candidates if c is not None) if n]
+    return max(numbers) if numbers else 1.0
 
 
 def _parse_image(raw_image) -> Optional[str]:
@@ -63,6 +75,19 @@ def _parse_image(raw_image) -> Optional[str]:
         return raw_image.get("url")
     if isinstance(raw_image, str):
         return raw_image or None
+    return None
+
+
+def _og_image(html: str) -> Optional[str]:
+    """Page-level social-preview image (`og:image` / `twitter:image`).
+    Used as a fallback when the recipe markup has no image of its own —
+    notably the LLM extraction path, which never sets one."""
+    soup = BeautifulSoup(html, "html.parser")
+    for attr, key in (("property", "og:image"), ("name", "twitter:image"),
+                      ("name", "og:image")):
+        tag = soup.find("meta", attrs={attr: key})
+        if tag and tag.get("content"):
+            return tag["content"].strip() or None
     return None
 
 
@@ -565,6 +590,9 @@ async def build_import_draft(url: str) -> RecipeImportDraft:
         raw = await extract_recipe_via_llm(html)
     if raw is None:
         raise HTTPException(status_code=422, detail="Couldn't find a recipe on that page.")
+
+    if not raw.image_url:
+        raw.image_url = _og_image(html)
 
     parsed_lines = []
     for line in raw.ingredient_lines:
