@@ -1,0 +1,13 @@
+{
+  // Cloudflare Workers Static Assets config for the frontend.
+  // Deploy from this directory: `npm run build && npx wrangler deploy`.
+  // No `main` entry -> this is an assets-only deployment (no Worker script).
+  "name": "pakupaku-frontend",
+  "compatibility_date": "2026-09-08",
+  "assets": {
+    "directory": "./build",
+    // Serve index.html for any unmatched path so client-side routes
+    // (/dashboard, /verify-email, ...) load the app instead of 404ing.
+    "not_found_handling": "single-page-application"
+  }
+}
