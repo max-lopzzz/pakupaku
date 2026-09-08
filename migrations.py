@@ -13,38 +13,20 @@ and `from main import app` at import time.
 
 from sqlalchemy import text
 
-# The PostgreSQL half of the fdc_id -> food_id rename, also kept as a
-# standalone script (`migrate_fdc_to_food_id.sql`) for anyone who wants to
-# run it by hand with psql. Keep the two in sync. Each block is a no-op
-# when fdc_id has already been renamed, so re-running is safe.
-_PG_FDC_TO_FOOD_ID = [
-    """
-    DO $$
-    BEGIN
-      IF EXISTS (SELECT 1 FROM information_schema.columns
-                 WHERE table_name = 'food_logs' AND column_name = 'fdc_id') THEN
-        ALTER TABLE food_logs ALTER COLUMN fdc_id TYPE text USING fdc_id::text;
-        ALTER TABLE food_logs RENAME COLUMN fdc_id TO food_id;
-      END IF;
-    END $$;
-    """,
-    """
-    DO $$
-    BEGIN
-      IF EXISTS (SELECT 1 FROM information_schema.columns
-                 WHERE table_name = 'recipe_ingredients' AND column_name = 'fdc_id') THEN
-        ALTER TABLE recipe_ingredients ALTER COLUMN fdc_id TYPE text USING fdc_id::text;
-        ALTER TABLE recipe_ingredients RENAME COLUMN fdc_id TO food_id;
-      END IF;
-    END $$;
-    """,
-]
+# Only these two tables ever carried the legacy int `fdc_id`. Literal,
+# fixed list — safe to interpolate into DDL below.
+_FDC_TABLES = ("food_logs", "recipe_ingredients")
+
+# `migrate_fdc_to_food_id.sql` is the same rename as a standalone psql
+# script (DO-blocks, which psql runs natively). The Python paths below
+# avoid DO-blocks / dollar-quoting so they're safe under asyncpg's
+# prepared-statement handling.
 
 
 async def _migrate_fdc_to_food_id_sqlite(conn) -> None:
     """SQLite path: if a table still has the old int `fdc_id` column and no
     `food_id`, add `food_id TEXT` and copy the ids across (stringified)."""
-    for table in ("food_logs", "recipe_ingredients"):
+    for table in _FDC_TABLES:
         cols = [r[1] for r in (await conn.execute(text("PRAGMA table_info(%s)" % table))).fetchall()]
         if not cols or "food_id" in cols or "fdc_id" not in cols:
             continue
@@ -54,12 +36,29 @@ async def _migrate_fdc_to_food_id_sqlite(conn) -> None:
         ))
 
 
+async def _pg_has_column(conn, table: str, column: str) -> bool:
+    row = (await conn.execute(
+        text("SELECT 1 FROM information_schema.columns "
+             "WHERE table_name = :t AND column_name = :c"),
+        {"t": table, "c": column},
+    )).first()
+    return row is not None
+
+
 async def _migrate_fdc_to_food_id_pg(conn) -> None:
-    """PostgreSQL path: rename fdc_id -> food_id (retyped to text) on the
-    two tables that carry it, in-place, guarded so it is a no-op once the
-    column has already been renamed."""
-    for stmt in _PG_FDC_TO_FOOD_ID:
-        await conn.execute(text(stmt))
+    """PostgreSQL path: rename `fdc_id` -> `food_id` (retyped to text) on
+    the two tables that carry it, in-place. A no-op once the column has
+    already been renamed, so it is safe to run on every deploy. Plain
+    single statements only — no DO-block — so asyncpg is happy."""
+    for table in _FDC_TABLES:
+        if not await _pg_has_column(conn, table, "fdc_id"):
+            continue
+        if await _pg_has_column(conn, table, "food_id"):
+            continue
+        await conn.execute(text(
+            "ALTER TABLE %s ALTER COLUMN fdc_id TYPE text USING fdc_id::text" % table))
+        await conn.execute(text(
+            "ALTER TABLE %s RENAME COLUMN fdc_id TO food_id" % table))
 
 
 async def _migrate_fdc_to_food_id(conn) -> None:
