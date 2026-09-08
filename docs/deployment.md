@@ -157,6 +157,25 @@ Do these in order — each later step needs a value from the one before it.
 5. Deploy. Cloudflare assigns a URL like
    `https://pakupaku.pages.dev`.
 
+### Alternative: Cloudflare Worker with Static Assets
+
+The repo also carries `pakupaku-frontend/wrangler.jsonc`, so the same
+static build can be served by a Worker instead of a Pages project (one
+unified platform, and the route to take if you already manage the domain
+as a Worker). It's an assets-only Worker — no server code. `wrangler.jsonc`
+sets `not_found_handling: "single-page-application"` so client-side routes
+don't 404.
+
+- **Build command:** `npm run build`
+- **Deploy command:** `npx wrangler deploy`
+- Both run from `pakupaku-frontend/` (set that as the project/root
+  directory in the Cloudflare build settings).
+- Set the same env vars as the Pages route (`REACT_APP_API_URL`,
+  `NODE_VERSION`).
+- Attach the custom domain under the Worker's **Settings → Domains &
+  Routes**, then use that hostname wherever step 4 says "the Cloudflare
+  Pages URL".
+
 ## 4. Wire CORS back together
 
 Now that both URLs exist:
