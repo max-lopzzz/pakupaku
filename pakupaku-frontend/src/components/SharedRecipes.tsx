@@ -2,6 +2,13 @@ import { useEffect, useState } from "react";
 import "./SharedRecipes.css";
 import { apiFetch } from "../apiBase";
 
+interface SharedIngredient {
+  food_name: string;
+  brand_name?: string | null;
+  amount_g: number;
+  calories?: number | null;
+}
+
 interface SharedRecipe {
   id: string;
   name: string;
@@ -10,11 +17,16 @@ interface SharedRecipe {
   diet_tags?: string[];
   instructions?: string | null;
   source_url?: string | null;
+  ingredients?: SharedIngredient[];
   total_calories?: number;
   total_protein_g?: number;
   total_fat_g?: number;
   total_carbs_g?: number;
+  total_fiber_g?: number;
 }
+
+const fmt = (v?: number | null) =>
+  v == null ? "–" : (Math.round(v * 10) / 10).toString();
 
 type MealCategory = "breakfast" | "lunch" | "dinner" | "snacks";
 
@@ -32,6 +44,7 @@ export default function SharedRecipes({ onBack, userProfile }: SharedRecipesProp
   const isAdmin = !!userProfile?.is_admin;
 
   const [recipes, setRecipes] = useState<SharedRecipe[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError]     = useState("");
   const [loggingId, setLoggingId] = useState<string | null>(null);
   const [servings, setServings]   = useState("1");
@@ -51,6 +64,8 @@ export default function SharedRecipes({ onBack, userProfile }: SharedRecipesProp
         setRecipes(await res.json());
       } catch {
         setError("Unable to load shared recipes.");
+      } finally {
+        setLoading(false);
       }
     };
     fetchShared();
@@ -156,7 +171,9 @@ export default function SharedRecipes({ onBack, userProfile }: SharedRecipesProp
         {error && <p className="shared-recipes-error">{error}</p>}
         {copyMessage && <p className="shared-recipes-message">{copyMessage}</p>}
 
-        {recipes.length === 0 ? (
+        {loading ? (
+          <div className="empty-state">Loading shared recipes…</div>
+        ) : recipes.length === 0 ? (
           <div className="empty-state">No shared recipes yet.</div>
         ) : (
           <div className="shared-recipes-grid">
@@ -174,13 +191,29 @@ export default function SharedRecipes({ onBack, userProfile }: SharedRecipesProp
                     ))}
                   </div>
                 )}
-                {recipe.instructions && (
-                  <ol className="saved-recipe-instructions">
-                    {recipe.instructions.split("\n").filter(Boolean).map((step, i) => (
-                      <li key={i}>{step}</li>
+                {recipe.ingredients && recipe.ingredients.length > 0 && (
+                  <ul className="shared-recipe-ingredients">
+                    {recipe.ingredients.map((ing, i) => (
+                      <li key={i}>
+                        {ing.food_name}
+                        {ing.brand_name ? ` (${ing.brand_name})` : ""}
+                        {" — "}
+                        {Math.round(ing.amount_g)} g
+                      </li>
                     ))}
-                  </ol>
+                  </ul>
                 )}
+
+                <div className="shared-recipe-nutrition">
+                  <span className="shared-recipe-nutrition-label">Per serving</span>
+                  <span>{fmt(recipe.total_calories)} kcal</span>
+                  <span>{fmt(recipe.total_protein_g)} g protein</span>
+                  <span>{fmt(recipe.total_fat_g)} g fat</span>
+                  <span>{fmt(recipe.total_carbs_g)} g carbs</span>
+                  {recipe.total_fiber_g != null && (
+                    <span>{fmt(recipe.total_fiber_g)} g fiber</span>
+                  )}
+                </div>
                 {recipe.source_url && (
                   <a href={recipe.source_url} target="_blank" rel="noreferrer" className="saved-recipe-source-link">
                     View original
