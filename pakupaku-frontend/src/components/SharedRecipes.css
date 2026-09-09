@@ -1,12 +1,12 @@
 /* ── Root ────────────────────────────────────────────────── */
 .shared-recipes-root {
   min-height: 100vh;
-  padding: 2rem 1rem;
+  padding: 2rem clamp(1rem, 3vw, 2.5rem);
   font-family: "MorningBreeze";
 }
 
 .shared-recipes-container {
-  max-width: 900px;
+  max-width: 1500px;
   margin: 0 auto;
 }
 
