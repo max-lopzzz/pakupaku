@@ -66,15 +66,24 @@ def _parse_servings(raw_yield) -> float:
     return max(numbers) if numbers else 1.0
 
 
+def _https(url) -> Optional[str]:
+    """Upgrade a bare http:// image URL to https:// — the app is served
+    over https, so an http image is mixed content the browser may block
+    (Squarespace, for one, publishes http:// og:image URLs)."""
+    if isinstance(url, str) and url.startswith("http://"):
+        return "https://" + url[len("http://"):]
+    return url or None
+
+
 def _parse_image(raw_image) -> Optional[str]:
     """image can be a URL string, an ImageObject dict with a "url" key, or
     a list of either."""
     if isinstance(raw_image, list):
         raw_image = raw_image[0] if raw_image else None
     if isinstance(raw_image, dict):
-        return raw_image.get("url")
+        return _https(raw_image.get("url"))
     if isinstance(raw_image, str):
-        return raw_image or None
+        return _https(raw_image)
     return None
 
 
@@ -87,7 +96,7 @@ def _og_image(html: str) -> Optional[str]:
                       ("name", "og:image")):
         tag = soup.find("meta", attrs={attr: key})
         if tag and tag.get("content"):
-            return tag["content"].strip() or None
+            return _https(tag["content"].strip()) or None
     return None
 
 
