@@ -1,11 +1,11 @@
 .bulk-import-root {
   min-height: 100vh;
-  padding: 2rem 1rem;
+  padding: 2rem clamp(1rem, 3vw, 2.5rem);
   font-family: "MorningBreeze";
 }
 
 .bulk-import-container {
-  max-width: 720px;
+  max-width: 1000px;
   margin: 0 auto;
 }
 

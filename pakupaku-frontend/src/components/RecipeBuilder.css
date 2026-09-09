@@ -1,12 +1,12 @@
 /* ── Root ────────────────────────────────────────────────── */
 .recipe-builder-root {
   min-height: 100vh;
-  padding: 2rem 1rem;
+  padding: 2rem clamp(1rem, 3vw, 2.5rem);
   font-family: "MorningBreeze";
 }
 
 .recipe-builder-container {
-  max-width: 960px;
+  max-width: 1200px;
   margin: 0 auto;
 }
 
