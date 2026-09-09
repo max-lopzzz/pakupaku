@@ -55,21 +55,52 @@ export default function SharedRecipes({ onBack, userProfile }: SharedRecipesProp
   const [editName, setEditName]     = useState("");
   const [editServings, setEditServings] = useState("1");
   const [savingEdit, setSavingEdit] = useState(false);
+  const [cleaning, setCleaning]   = useState(false);
+  const [cleanupMsg, setCleanupMsg] = useState("");
+
+  const loadShared = async () => {
+    const res = await apiFetch("/recipes/shared", { headers: authHeaders() });
+    if (!res.ok) throw new Error();
+    setRecipes(await res.json());
+  };
 
   useEffect(() => {
-    const fetchShared = async () => {
-      try {
-        const res = await apiFetch("/recipes/shared", { headers: authHeaders() });
-        if (!res.ok) throw new Error();
-        setRecipes(await res.json());
-      } catch {
-        setError("Unable to load shared recipes.");
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchShared();
+    loadShared()
+      .catch(() => setError("Unable to load shared recipes."))
+      .finally(() => setLoading(false));
   }, []);
+
+  const runCleanup = async () => {
+    setError("");
+    setCleaning(true);
+    setCleanupMsg("Removing duplicates…");
+    try {
+      const d = await apiFetch("/recipes/shared/dedupe", { method: "POST", headers: authHeaders() });
+      if (!d.ok) throw new Error();
+      const { deleted } = await d.json();
+
+      setCleanupMsg("Backfilling images…");
+      let imagesAdded = 0;
+      for (let i = 0; i < 60; i++) {
+        const b = await apiFetch("/recipes/shared/backfill-images", { method: "POST", headers: authHeaders() });
+        if (!b.ok) throw new Error();
+        const { updated, checked, remaining } = await b.json();
+        imagesAdded += updated;
+        if (checked === 0 || remaining <= 0) break;
+      }
+
+      await loadShared();
+      setCleanupMsg(
+        `Removed ${deleted} duplicate${deleted !== 1 ? "s" : ""}` +
+        `, backfilled ${imagesAdded} image${imagesAdded !== 1 ? "s" : ""}.`,
+      );
+    } catch {
+      setError("Cleanup failed. It's safe to run again.");
+      setCleanupMsg("");
+    } finally {
+      setCleaning(false);
+    }
+  };
 
   const startLogging = (recipe: SharedRecipe) => {
     setLoggingId(recipe.id);
@@ -166,10 +197,21 @@ export default function SharedRecipes({ onBack, userProfile }: SharedRecipesProp
         <header className="shared-recipes-header">
           <button type="button" className="back-button" onClick={onBack}>← Back</button>
           <h1 className="shared-recipes-title">Shared Recipes</h1>
+          {isAdmin && (
+            <button
+              type="button"
+              className="shared-recipes-cleanup-btn"
+              onClick={runCleanup}
+              disabled={cleaning}
+            >
+              {cleaning ? "Cleaning up…" : "Clean up duplicates"}
+            </button>
+          )}
         </header>
 
         {error && <p className="shared-recipes-error">{error}</p>}
         {copyMessage && <p className="shared-recipes-message">{copyMessage}</p>}
+        {cleanupMsg && <p className="shared-recipes-message">{cleanupMsg}</p>}
 
         {loading ? (
           <div className="empty-state">Loading shared recipes…</div>

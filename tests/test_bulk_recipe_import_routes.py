@@ -120,3 +120,63 @@ def test_extract_empty_result_when_nothing_found(client, db_session, monkeypatch
         assert res.json()["drafts"] == []
     finally:
         app.dependency_overrides.pop(get_current_user, None)
+
+
+def test_discover_skips_urls_already_a_shared_recipe(client, db_session, monkeypatch):
+    from models import Recipe
+    admin = asyncio.get_event_loop().run_until_complete(
+        _make_user(db_session, is_admin=True)
+    )
+    # one of the two candidate URLs is already saved as a shared recipe
+    db_session.add(Recipe(
+        id=uuid.uuid4(), user_id=admin.id, name="Existing", servings=1.0,
+        is_shared=True, source_url="https://example.com/blog/recipe-1/",
+    ))
+    asyncio.get_event_loop().run_until_complete(db_session.commit())
+
+    async def fake_discover(url):
+        return ["https://example.com/blog/recipe-1", "https://example.com/blog/recipe-2"]
+
+    monkeypatch.setattr(main, "discover_recipe_links", fake_discover)
+    try:
+        res = _as(client, admin).post(
+            "/recipes/bulk-import/discover", json={"url": "https://example.com/blog"}
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert body["urls"] == ["https://example.com/blog/recipe-2"]
+        assert body["skipped_existing"] == 1
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+def test_dedupe_and_backfill_endpoints_require_admin(client, db_session):
+    user = asyncio.get_event_loop().run_until_complete(_make_user(db_session))
+    try:
+        assert _as(client, user).post("/recipes/shared/dedupe").status_code == 403
+        assert _as(client, user).post("/recipes/shared/backfill-images").status_code == 403
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+def test_dedupe_endpoint_collapses_duplicates(client, db_session):
+    from models import Recipe
+    admin = asyncio.get_event_loop().run_until_complete(
+        _make_user(db_session, is_admin=True)
+    )
+    for _ in range(3):
+        db_session.add(Recipe(
+            id=uuid.uuid4(), user_id=admin.id, name="Dup", servings=1.0,
+            is_shared=True, source_url="https://example.com/dup",
+        ))
+    asyncio.get_event_loop().run_until_complete(db_session.commit())
+    try:
+        res = _as(client, admin).post("/recipes/shared/dedupe")
+        assert res.status_code == 200
+        body = res.json()
+        assert body["deleted"] == 2
+        assert body["kept"] == 1
+        listed = _as(client, admin).get("/recipes/shared").json()
+        assert len(listed) == 1
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)

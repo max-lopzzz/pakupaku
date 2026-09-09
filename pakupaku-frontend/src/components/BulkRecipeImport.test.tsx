@@ -97,7 +97,7 @@ test("discover shows candidate count, extract auto-saves every draft, and summar
   fireEvent.click(screen.getByText("Find Recipes"));
 
   await waitFor(() => {
-    expect(screen.getByText("Found 2 candidate links on this page.")).toBeInTheDocument();
+    expect(screen.getByText("Found 2 new recipe links on this page.")).toBeInTheDocument();
   });
 
   fireEvent.click(screen.getByText("Extract 2 Recipes"));
@@ -135,7 +135,7 @@ test("zero extracted drafts shows a found-0 message instead of an empty saved-co
   fireEvent.click(screen.getByText("Find Recipes"));
 
   await waitFor(() => {
-    expect(screen.getByText("Found 1 candidate link on this page.")).toBeInTheDocument();
+    expect(screen.getByText("Found 1 new recipe link on this page.")).toBeInTheDocument();
   });
 
   fireEvent.click(screen.getByText("Extract 1 Recipe"));
@@ -155,7 +155,7 @@ test("auto-save marks every imported recipe as shared even though drafts default
   fireEvent.click(screen.getByText("Find Recipes"));
 
   await waitFor(() => {
-    expect(screen.getByText("Found 2 candidate links on this page.")).toBeInTheDocument();
+    expect(screen.getByText("Found 2 new recipe links on this page.")).toBeInTheDocument();
   });
 
   fireEvent.click(screen.getByText("Extract 2 Recipes"));
@@ -234,7 +234,7 @@ test("extraction runs in chunks and the progress bar advances as each chunk fini
   });
   fireEvent.click(screen.getByText("Find Recipes"));
   await waitFor(() => {
-    expect(screen.getByText("Found 30 candidate links on this page.")).toBeInTheDocument();
+    expect(screen.getByText("Found 30 new recipe links on this page.")).toBeInTheDocument();
   });
 
   fireEvent.click(screen.getByText("Extract 30 Recipes"));
@@ -288,7 +288,7 @@ test("a failed chunk keeps the earlier chunk's drafts and offers to save them", 
   });
   fireEvent.click(screen.getByText("Find Recipes"));
   await waitFor(() => {
-    expect(screen.getByText("Found 30 candidate links on this page.")).toBeInTheDocument();
+    expect(screen.getByText("Found 30 new recipe links on this page.")).toBeInTheDocument();
   });
 
   fireEvent.click(screen.getByText("Extract 30 Recipes"));
@@ -304,7 +304,7 @@ test("a failed chunk keeps the earlier chunk's drafts and offers to save them", 
   });
 });
 
-test("zero candidate links shows a message instead of an empty confirm screen", async () => {
+test("zero new recipe links shows a message instead of an empty confirm screen", async () => {
   (global.fetch as jest.Mock).mockImplementationOnce((url: RequestInfo | URL) => {
     if (String(url) === "/recipes/bulk-import/discover") {
       return Promise.resolve({ ok: true, json: async () => ({ urls: [] }) } as Response);
