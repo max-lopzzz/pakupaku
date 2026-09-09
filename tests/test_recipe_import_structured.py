@@ -92,3 +92,13 @@ def test_parse_servings_picks_the_largest_number_in_a_list():
     assert _parse_servings("serves 4") == 4.0
     assert _parse_servings(None) == 1.0
     assert _parse_servings("a loaf") == 1.0
+
+
+def test_image_urls_are_upgraded_to_https():
+    from recipe_import import _parse_image, _https
+    assert _https("http://cdn.example.com/a.jpg") == "https://cdn.example.com/a.jpg"
+    assert _https("https://cdn.example.com/a.jpg") == "https://cdn.example.com/a.jpg"
+    assert _https("") is None
+    assert _parse_image(["http://static1.squarespace.com/x.jpg?format=1500w"]) \
+        == "https://static1.squarespace.com/x.jpg?format=1500w"
+    assert _parse_image({"url": "http://img/o.png"}) == "https://img/o.png"
