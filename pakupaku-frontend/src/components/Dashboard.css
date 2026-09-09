@@ -16,11 +16,11 @@
 .dashboard-root {
   min-height: 100vh;
   font-family: "MorningBreeze";
-  padding: 2rem 1rem;
+  padding: 2rem clamp(1rem, 3vw, 2.5rem);
 }
 
 .dashboard-container {
-  max-width: 800px;
+  max-width: 1200px;
   margin: 0 auto;
 }
 
@@ -165,8 +165,8 @@
 
 .calorie-mascot {
   display: block;
-  width: 96px;
-  height: 96px;
+  width: 168px;
+  height: 168px;
   margin: 0 auto 0.5rem;
   object-fit: contain;
 }
