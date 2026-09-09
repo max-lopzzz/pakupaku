@@ -17,6 +17,23 @@
   margin-bottom: 1.5rem;
 }
 
+.shared-recipes-cleanup-btn {
+  margin-left: auto;
+  padding: 0.45rem 0.9rem;
+  border: 2px solid #badfdb;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #3a6b66;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.shared-recipes-cleanup-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /* .back-button is already defined globally by RecipeBuilder.css
    (statically imported from App.tsx, so it's always in the bundle) -
    reused as-is rather than redefined here to avoid a second,

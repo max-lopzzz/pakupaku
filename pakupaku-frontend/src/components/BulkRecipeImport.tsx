@@ -25,6 +25,7 @@ export default function BulkRecipeImport({ onBack, userProfile }: BulkRecipeImpo
   const [indexUrl, setIndexUrl] = useState("");
   const [discovering, setDiscovering] = useState(false);
   const [candidateUrls, setCandidateUrls] = useState<string[]>([]);
+  const [skippedExisting, setSkippedExisting] = useState(0);
   const [error, setError] = useState("");
   const [drafts, setDrafts] = useState<RecipeImportDraft[]>([]);
   const [savingIndex, setSavingIndex] = useState(0);
@@ -57,6 +58,7 @@ export default function BulkRecipeImport({ onBack, userProfile }: BulkRecipeImpo
       }
       const data = await res.json();
       setCandidateUrls(data.urls ?? []);
+      setSkippedExisting(data.skipped_existing ?? 0);
       setStep("confirm");
     } catch (err: any) {
       setError(err.message || "Unable to scan that page.");
@@ -186,6 +188,7 @@ export default function BulkRecipeImport({ onBack, userProfile }: BulkRecipeImpo
     setStep("input");
     setIndexUrl("");
     setCandidateUrls([]);
+    setSkippedExisting(0);
     setDrafts([]);
     setSavingIndex(0);
     setSavedCount(0);
@@ -231,11 +234,17 @@ export default function BulkRecipeImport({ onBack, userProfile }: BulkRecipeImpo
           <div className="bulk-import-card">
             {candidateUrls.length === 0 ? (
               <p className="empty-state">
-                No recipe links found on that page — for a single recipe, use Import instead.
+                {skippedExisting > 0
+                  ? `All ${skippedExisting} recipe link${skippedExisting !== 1 ? "s" : ""} on that page ` +
+                    "are already in the shared library — nothing new to import."
+                  : "No recipe links found on that page — for a single recipe, use Import instead."}
               </p>
             ) : (
               <p className="bulk-import-count">
-                Found {candidateUrls.length} candidate link{candidateUrls.length !== 1 ? "s" : ""} on this page.
+                Found {candidateUrls.length} new recipe link{candidateUrls.length !== 1 ? "s" : ""}
+                {skippedExisting > 0
+                  ? ` (${skippedExisting} already imported, skipped).`
+                  : " on this page."}
               </p>
             )}
             {error && <p className="recipe-error">{error}</p>}

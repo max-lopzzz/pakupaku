@@ -36,6 +36,7 @@ from schemas import (
     RecipeCreateRequest, RecipeUpdateRequest, RecipeResponse,
     ImportRecipeRequest, RecipeImportDraft,
     BulkDiscoverRequest, BulkDiscoverResponse, BulkExtractRequest, BulkExtractResponse,
+    SharedDedupeResponse, BackfillImagesResponse,
     BodyMeasurementCreate, BodyMeasurementResponse,
 )
 from auth import hash_password, verify_password, create_access_token, get_current_user
@@ -46,6 +47,9 @@ logger = logging.getLogger(__name__)
 import food_index
 from recipe_import import build_import_draft
 from recipe_bulk_import import discover_recipe_links, bulk_extract_drafts
+from shared_recipe_maintenance import (
+    backfill_shared_images, dedupe_shared_recipes, filter_unseen, shared_source_urls,
+)
 from nutrition_calculator import (
     calc_body_fat_navy, calc_bmr, interpolate_bmr_hrt,
     apply_metabolic_conditions, calc_tdee, calc_goal_adjustment,
@@ -779,38 +783,73 @@ async def import_recipe(
 @app.post("/recipes/bulk-import/discover", response_model=BulkDiscoverResponse)
 async def bulk_import_discover(
     payload:      BulkDiscoverRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
 ):
     """
     Fetch a blog index/archive URL, walk its pagination, and return the
     same-domain links across every page that look like individual recipe
-    posts. Only the archive pages are fetched here, one at a time — the
-    frontend shows the count and asks the admin to confirm before POST
-    /recipes/bulk-import/extract actually runs the (potentially slow)
-    extraction pass over them.
+    posts — minus any already saved as a shared recipe, so a re-run of the
+    same blog doesn't duplicate everything. Only the archive pages are
+    fetched here; the frontend shows the count and asks the admin to
+    confirm before POST /recipes/bulk-import/extract runs the (slow)
+    extraction pass.
     """
     if not current_user.is_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required.")
     urls = await discover_recipe_links(payload.url)
-    return BulkDiscoverResponse(urls=urls)
+    kept, skipped = filter_unseen(urls, await shared_source_urls(db))
+    return BulkDiscoverResponse(urls=kept, skipped_existing=skipped)
 
 
 @app.post("/recipes/bulk-import/extract", response_model=BulkExtractResponse)
 async def bulk_import_extract(
     payload:      BulkExtractRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
 ):
     """
     Run the same extraction pipeline as POST /recipes/import over every
-    URL in payload.urls, concurrency-bounded. URLs with no recipe found
-    are silently dropped. Nothing is saved — the frontend opens the
-    resulting drafts in a one-at-a-time review queue before calling
-    POST /recipes for each one the admin keeps.
+    URL in payload.urls (minus any already a shared recipe),
+    concurrency-bounded. URLs with no recipe found are silently dropped.
+    Nothing is saved here — the frontend saves each draft via POST
+    /recipes.
     """
     if not current_user.is_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required.")
-    drafts = await bulk_extract_drafts(payload.urls)
+    kept, _ = filter_unseen(payload.urls, await shared_source_urls(db))
+    drafts = await bulk_extract_drafts(kept)
     return BulkExtractResponse(drafts=drafts)
+
+
+@app.post("/recipes/shared/dedupe", response_model=SharedDedupeResponse)
+async def dedupe_shared(
+    current_user: User         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+):
+    """Admin: collapse duplicate shared recipes (same source URL / name)
+    down to one keeper each — the copy with an image if there is one,
+    otherwise the earliest."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required.")
+    result = await dedupe_shared_recipes(db)
+    await db.commit()
+    return result
+
+
+@app.post("/recipes/shared/backfill-images", response_model=BackfillImagesResponse)
+async def backfill_shared_recipe_images(
+    current_user: User         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+):
+    """Admin: for shared recipes saved with no image, re-fetch the source
+    page's og:image. Processes a bounded batch per call — the caller
+    repeats until ``remaining`` is 0."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required.")
+    result = await backfill_shared_images(db)
+    await db.commit()
+    return result
 
 
 @app.get("/recipes", response_model=List[RecipeResponse])

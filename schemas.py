@@ -498,6 +498,7 @@ class BulkDiscoverRequest(BaseModel):
 
 class BulkDiscoverResponse(BaseModel):
     urls: List[str]
+    skipped_existing: int = 0   # candidate links already saved as a shared recipe
 
 
 class BulkExtractRequest(BaseModel):
@@ -506,3 +507,16 @@ class BulkExtractRequest(BaseModel):
 
 class BulkExtractResponse(BaseModel):
     drafts: List[RecipeImportDraft]
+
+
+class SharedDedupeResponse(BaseModel):
+    shared_total: int
+    groups: int
+    deleted: int
+    kept: int
+
+
+class BackfillImagesResponse(BaseModel):
+    checked: int
+    updated: int
+    remaining: int
