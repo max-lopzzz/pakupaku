@@ -520,3 +520,93 @@ class BackfillImagesResponse(BaseModel):
     checked: int
     updated: int
     remaining: int
+
+
+# ─────────────────────────────────────────────
+#  MEAL PLANNER
+# ─────────────────────────────────────────────
+
+class MealPlanGenerateRequest(BaseModel):
+    days:          int = Field(..., ge=1, le=7)
+    meals_per_day: int = Field(..., ge=2, le=4)
+    diet_tags:     List[str] = Field(default_factory=list)
+
+    @validator("diet_tags")
+    def _validate(cls, v):
+        valid = {
+            "vegan", "vegetarian", "pescatarian", "flexitarian",
+            "gluten_free", "dairy_free", "nut_free", "soy_free",
+            "egg_free", "shellfish_free",
+            "keto", "low_carb", "paleo", "whole30", "low_fodmap",
+            "diabetic_friendly", "low_sodium", "low_fat", "high_protein",
+            "halal", "kosher", "mediterranean", "dash",
+        }
+        bad = set(v) - valid
+        if bad:
+            raise ValueError("Unknown diet tag(s): %s" % sorted(bad))
+        return v
+
+
+class MealPlanRecipeMini(BaseModel):
+    id:              uuid.UUID
+    name:            str
+    image_url:       Optional[str]
+    servings:        float
+    meal_type:       Optional[str]
+    total_calories:  Optional[float]
+    total_protein_g: Optional[float]
+    total_fat_g:     Optional[float]
+    total_carbs_g:   Optional[float]
+    total_fiber_g:   Optional[float]
+
+    class Config:
+        from_attributes = True
+
+
+class MealPlanEntryResponse(BaseModel):
+    id:        uuid.UUID
+    slot:      str
+    servings:  float
+    unfilled:  bool
+    recipe:    Optional[MealPlanRecipeMini]
+    calories:  Optional[float]
+    protein_g: Optional[float]
+    fat_g:     Optional[float]
+    carbs_g:   Optional[float]
+    fiber_g:   Optional[float]
+
+    class Config:
+        from_attributes = True
+
+
+class MealPlanDayResponse(BaseModel):
+    day_index:  int
+    logged_at:  Optional[datetime]
+    entries:    List[MealPlanEntryResponse]
+    totals:     Dict[str, float]
+    structurally_unfilled_slots: List[str]
+
+    class Config:
+        from_attributes = True
+
+
+class MealPlanTargets(BaseModel):
+    kcal:      Optional[float]
+    protein_g: Optional[float]
+    fat_g:     Optional[float]
+    carbs_g:   Optional[float]
+
+    class Config:
+        from_attributes = True
+
+
+class MealPlanResponse(BaseModel):
+    id:            uuid.UUID
+    days:          int
+    meals_per_day: int
+    created_at:    datetime
+    targets:       MealPlanTargets
+    plan_days:     List[MealPlanDayResponse]
+
+    class Config:
+        from_attributes = True
