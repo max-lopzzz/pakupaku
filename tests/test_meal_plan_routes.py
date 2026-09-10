@@ -1,5 +1,4 @@
 import asyncio
-import json
 import uuid
 
 from auth import get_current_user, hash_password
@@ -39,14 +38,16 @@ def _as(client, user):
     return client
 
 
+# conftest's autouse `_clear_current_user_override` fixture pops the
+# get_current_user override after every test, so individual tests no longer
+# need their own try/finally or trailing pop.
+
+
 def test_generate_422_without_calorie_target(client, db_session):
     u = asyncio.get_event_loop().run_until_complete(_user(db_session, kcal=None))
-    try:
-        res = _as(client, u).post("/meal-plan/generate", json={"days": 2, "meals_per_day": 3, "diet_tags": []})
-        assert res.status_code == 422
-        assert "onboarding" in res.json()["detail"].lower()
-    finally:
-        app.dependency_overrides.pop(get_current_user, None)
+    res = _as(client, u).post("/meal-plan/generate", json={"days": 2, "meals_per_day": 3, "diet_tags": []})
+    assert res.status_code == 422
+    assert "onboarding" in res.json()["detail"].lower()
 
 
 def test_generate_422_when_no_recipes_match_filters(client, db_session):
@@ -54,52 +55,56 @@ def test_generate_422_when_no_recipes_match_filters(client, db_session):
     u = loop.run_until_complete(_user(db_session))
     loop.run_until_complete(_recipe(db_session, u, name="Meat Stew", kcal=600, tags=None))
     loop.run_until_complete(db_session.commit())
-    try:
-        res = _as(client, u).post("/meal-plan/generate",
-                                  json={"days": 1, "meals_per_day": 3, "diet_tags": ["vegan"]})
-        assert res.status_code == 422
-        assert "no recipes" in res.json()["detail"].lower()
-    finally:
-        app.dependency_overrides.pop(get_current_user, None)
+    res = _as(client, u).post("/meal-plan/generate",
+                              json={"days": 1, "meals_per_day": 3, "diet_tags": ["vegan"]})
+    assert res.status_code == 422
+    assert "no recipes" in res.json()["detail"].lower()
 
 
 def test_generate_get_and_regenerate_replaces(client, db_session):
     loop = asyncio.get_event_loop()
     u = loop.run_until_complete(_user(db_session))
-    for i, (name, kcal, mt) in enumerate([
+    for name, kcal, mt in [
         ("Oats", 450, "breakfast"), ("Salad", 650, "lunch"),
         ("Curry", 700, "dinner"), ("Stew", 680, "dinner"), ("Bowl", 600, "any"),
-    ]):
+    ]:
         loop.run_until_complete(_recipe(db_session, u, name=name, kcal=kcal, mt=mt))
     loop.run_until_complete(db_session.commit())
-    try:
-        c = _as(client, u)
-        res = c.post("/meal-plan/generate", json={"days": 2, "meals_per_day": 3, "diet_tags": []})
-        assert res.status_code == 200
-        body = res.json()
-        assert body["days"] == 2 and len(body["plan_days"]) == 2
-        assert len(body["plan_days"][0]["entries"]) == 3
-        assert body["targets"]["kcal"] == 2000.0
-        first_id = body["id"]
+    c = _as(client, u)
+    res = c.post("/meal-plan/generate", json={"days": 2, "meals_per_day": 3, "diet_tags": []})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["days"] == 2 and len(body["plan_days"]) == 2
+    assert len(body["plan_days"][0]["entries"]) == 3
+    assert body["targets"]["kcal"] == 2000.0
+    first_id = body["id"]
 
-        got = c.get("/meal-plan").json()
-        assert got["id"] == first_id
+    got = c.get("/meal-plan").json()
+    assert got["id"] == first_id
 
-        res2 = c.post("/meal-plan/generate", json={"days": 1, "meals_per_day": 2, "diet_tags": []})
-        assert res2.status_code == 200
-        assert res2.json()["id"] != first_id
-        plans = loop.run_until_complete(db_session.execute(MealPlan.__table__.select())).fetchall()
-        assert len(plans) == 1
-    finally:
-        app.dependency_overrides.pop(get_current_user, None)
+    res2 = c.post("/meal-plan/generate", json={"days": 1, "meals_per_day": 2, "diet_tags": []})
+    assert res2.status_code == 200
+    assert res2.json()["id"] != first_id
+    plans = loop.run_until_complete(db_session.execute(MealPlan.__table__.select())).fetchall()
+    assert len(plans) == 1
+
+
+def test_meal_plan_response_carries_diet_tags(client, db_session):
+    loop = asyncio.get_event_loop()
+    u = loop.run_until_complete(_user(db_session))
+    for name, kcal, mt in [("Oats", 450, "breakfast"), ("Salad", 650, "lunch"), ("Curry", 700, "dinner")]:
+        loop.run_until_complete(_recipe(db_session, u, name=name, kcal=kcal, mt=mt, tags=["vegan"]))
+    loop.run_until_complete(db_session.commit())
+    c = _as(client, u)
+    body = c.post("/meal-plan/generate",
+                  json={"days": 1, "meals_per_day": 3, "diet_tags": ["vegan"]}).json()
+    assert body["diet_tags"] == ["vegan"]
+    assert c.get("/meal-plan").json()["diet_tags"] == ["vegan"]
 
 
 def test_get_meal_plan_null_when_none(client, db_session):
     u = asyncio.get_event_loop().run_until_complete(_user(db_session))
-    try:
-        assert _as(client, u).get("/meal-plan").json() is None
-    finally:
-        app.dependency_overrides.pop(get_current_user, None)
+    assert _as(client, u).get("/meal-plan").json() is None
 
 
 def test_delete_meal_plan(client, db_session):
@@ -108,14 +113,11 @@ def test_delete_meal_plan(client, db_session):
     for name, kcal, mt in [("Oats", 450, "breakfast"), ("Salad", 650, "lunch"), ("Curry", 700, "dinner")]:
         loop.run_until_complete(_recipe(db_session, u, name=name, kcal=kcal, mt=mt))
     loop.run_until_complete(db_session.commit())
-    try:
-        c = _as(client, u)
-        assert c.post("/meal-plan/generate", json={"days": 1, "meals_per_day": 3, "diet_tags": []}).status_code == 200
-        assert c.delete("/meal-plan").status_code == 204
-        assert c.get("/meal-plan").json() is None
-        assert c.delete("/meal-plan").status_code == 404
-    finally:
-        app.dependency_overrides.pop(get_current_user, None)
+    c = _as(client, u)
+    assert c.post("/meal-plan/generate", json={"days": 1, "meals_per_day": 3, "diet_tags": []}).status_code == 200
+    assert c.delete("/meal-plan").status_code == 204
+    assert c.get("/meal-plan").json() is None
+    assert c.delete("/meal-plan").status_code == 404
 
 
 from datetime import date, timedelta
@@ -159,7 +161,6 @@ def test_swap_404_for_another_users_entry(client, db_session):
     entry_id = body["plan_days"][0]["entries"][0]["id"]
     _as(client, u2)
     assert client.post("/meal-plan/entries/%s/swap" % entry_id).status_code == 404
-    app.dependency_overrides.pop(get_current_user, None)
 
 
 def test_swap_409_when_no_alternative(client, db_session):
@@ -174,7 +175,6 @@ def test_swap_409_when_no_alternative(client, db_session):
     body = c.post("/meal-plan/generate", json={"days": 1, "meals_per_day": 3, "diet_tags": []}).json()
     bfast = [e for e in body["plan_days"][0]["entries"] if e["slot"] == "breakfast"][0]
     assert c.post("/meal-plan/entries/%s/swap" % bfast["id"]).status_code == 409
-    app.dependency_overrides.pop(get_current_user, None)
 
 
 def test_day_log_creates_food_logs_then_409_then_force(client, db_session):
@@ -198,8 +198,6 @@ def test_day_log_creates_food_logs_then_409_then_force(client, db_session):
         FoodLog.__table__.select().where(FoodLog.user_id == u.id))).fetchall()
     assert len(logs2) == 6
 
-    app.dependency_overrides.pop(get_current_user, None)
-
 
 def test_day_log_404_for_out_of_range_day(client, db_session):
     loop = asyncio.get_event_loop()
@@ -207,41 +205,47 @@ def test_day_log_404_for_out_of_range_day(client, db_session):
     c = _as(client, u)
     _generate(c, u, db_session, days=1, meals=3)
     assert c.post("/meal-plan/days/5/log", json={}).status_code == 404
-    app.dependency_overrides.pop(get_current_user, None)
+
+
+def test_copy_recipe_keeps_source_meal_type(client, db_session):
+    loop = asyncio.get_event_loop()
+    owner = loop.run_until_complete(_user(db_session))
+    src = loop.run_until_complete(_recipe(db_session, owner, name="Shared Oats", kcal=450,
+                                          mt="breakfast", shared=True))
+    loop.run_until_complete(db_session.commit())
+
+    copier = loop.run_until_complete(_user(db_session))
+    res = _as(client, copier).post("/recipes/%s/copy" % src.id)
+    assert res.status_code == 201
+    assert res.json()["meal_type"] == "breakfast"
 
 
 def test_recipe_meal_type_round_trips_and_rejects_bad_values(client, db_session):
     u = asyncio.get_event_loop().run_until_complete(_user(db_session))
     u.is_admin = False
-    try:
-        c = _as(client, u)
-        res = c.post("/recipes", json={
-            "name": "Test Oats", "servings": 1,
-            "ingredients": [{"food_name": "oats", "amount_g": 50}],
-            "meal_type": "breakfast",
-        })
-        assert res.status_code == 201
-        rid = res.json()["id"]
-        assert res.json()["meal_type"] == "breakfast"
+    c = _as(client, u)
+    res = c.post("/recipes", json={
+        "name": "Test Oats", "servings": 1,
+        "ingredients": [{"food_name": "oats", "amount_g": 50}],
+        "meal_type": "breakfast",
+    })
+    assert res.status_code == 201
+    rid = res.json()["id"]
+    assert res.json()["meal_type"] == "breakfast"
 
-        assert c.patch("/recipes/%s" % rid, json={"meal_type": "dinner"}).json()["meal_type"] == "dinner"
-        assert c.post("/recipes", json={
-            "name": "Bad", "servings": 1,
-            "ingredients": [{"food_name": "x", "amount_g": 1}], "meal_type": "brunch",
-        }).status_code == 422
-    finally:
-        app.dependency_overrides.pop(get_current_user, None)
+    assert c.patch("/recipes/%s" % rid, json={"meal_type": "dinner"}).json()["meal_type"] == "dinner"
+    assert c.post("/recipes", json={
+        "name": "Bad", "servings": 1,
+        "ingredients": [{"food_name": "x", "amount_g": 1}], "meal_type": "brunch",
+    }).status_code == 422
 
 
 def test_user_diet_tags_round_trip(client, db_session):
     u = asyncio.get_event_loop().run_until_complete(_user(db_session))
-    try:
-        c = _as(client, u)
-        assert c.get("/users/me").json()["diet_tags"] == []
-        res = c.patch("/users/me", json={"diet_tags": ["vegan", "gluten_free"]})
-        assert res.status_code == 200
-        assert sorted(res.json()["diet_tags"]) == ["gluten_free", "vegan"]
-        assert sorted(c.get("/users/me").json()["diet_tags"]) == ["gluten_free", "vegan"]
-        assert c.patch("/users/me", json={"diet_tags": ["carnivore"]}).status_code == 422
-    finally:
-        app.dependency_overrides.pop(get_current_user, None)
+    c = _as(client, u)
+    assert c.get("/users/me").json()["diet_tags"] == []
+    res = c.patch("/users/me", json={"diet_tags": ["vegan", "gluten_free"]})
+    assert res.status_code == 200
+    assert sorted(res.json()["diet_tags"]) == ["gluten_free", "vegan"]
+    assert sorted(c.get("/users/me").json()["diet_tags"]) == ["gluten_free", "vegan"]
+    assert c.patch("/users/me", json={"diet_tags": ["carnivore"]}).status_code == 422

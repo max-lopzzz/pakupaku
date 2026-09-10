@@ -7,6 +7,7 @@ const planResponse = {
   meals_per_day: 3,
   created_at: "2026-09-10T00:00:00Z",
   targets: { kcal: 2000, protein_g: 120, fat_g: 65, carbs_g: 220 },
+  diet_tags: [],
   plan_days: [
     {
       day_index: 0,
@@ -67,6 +68,26 @@ test("pre-checks diet tags from the user profile", async () => {
   await waitFor(() => expect(screen.getByText("Generate plan")).toBeInTheDocument());
   const vegan = screen.getByLabelText("vegan") as HTMLInputElement;
   expect(vegan.checked).toBe(true);
+});
+
+test("Regenerate prefills the form from the loaded plan", async () => {
+  (global.fetch as jest.Mock).mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+    const u = String(url);
+    if (u.endsWith("/meal-plan") && (!init || !init.method || init.method === "GET"))
+      return Promise.resolve({ ok: true, json: async () => ({ ...planResponse, diet_tags: ["vegan"] }) } as Response);
+    return Promise.reject(new Error("unexpected " + u));
+  });
+  render(<MealPlanner onBack={() => {}} userProfile={{ diet_tags: [], safe_mode: false }} />);
+  await waitFor(() => expect(screen.getByText("Overnight Oats")).toBeInTheDocument());
+
+  fireEvent.click(screen.getByText("Regenerate"));
+
+  const daysInput = screen.getByLabelText("Days") as HTMLInputElement;
+  expect(daysInput.value).toBe("1");                       // plan.days, not the default 3
+  const mealsSelect = screen.getByLabelText("Meals per day") as HTMLSelectElement;
+  expect(mealsSelect.value).toBe("3");                     // plan.meals_per_day
+  expect((screen.getByLabelText("vegan") as HTMLInputElement).checked).toBe(true);  // plan.diet_tags
+  expect(screen.getByText("Back to plan")).toBeInTheDocument();
 });
 
 test("generate error is shown inline", async () => {

@@ -23,6 +23,26 @@ def test_infer_meal_type_default_any():
     assert infer_meal_type("Roasted Cauliflower Bowl", 480) == "any"
 
 
+def test_infer_meal_type_ambiguous_keywords_match_whole_words_only():
+    # "oat" must not fire inside "Goat", "toast" not inside "Toasted",
+    # "dip" not inside "Dippers".
+    assert infer_meal_type("Goat Cheese Salad", 420) != "breakfast"
+    assert infer_meal_type("Goat Cheese Salad", 420) == "any"
+    assert infer_meal_type("Toasted Sesame Noodles", 610) != "breakfast"
+    assert infer_meal_type("Toasted Sesame Noodles", 610) == "any"
+    # "Chicken Dippers" is not a snack by keyword — it falls through to the
+    # kcal rule (or "any" when kcal is high / unknown).
+    assert infer_meal_type("Chicken Dippers", 520) == "any"
+    assert infer_meal_type("Chicken Dippers", None) == "any"
+    assert infer_meal_type("Chicken Dippers", 150) == "snack"  # low-kcal rule, not keyword
+    # the real breakfast/snack words still work as whole words
+    assert infer_meal_type("Overnight Oats", 300) == "breakfast"
+    assert infer_meal_type("Sourdough Toast", 250) == "breakfast"
+    assert infer_meal_type("Spinach Dip", 180) == "snack"
+    assert infer_meal_type("Dark Chocolate Bark", 190) == "snack"
+    assert infer_meal_type("Protein Bar", 210) == "snack"
+
+
 async def test_backfill_only_touches_null_rows(db_session):
     u = User(id=uuid.uuid4(), email=f"{uuid.uuid4()}@e.com", username=uuid.uuid4().hex[:8],
              hashed_password=hash_password("x"), email_verified=True, safe_mode=False,

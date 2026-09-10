@@ -15,8 +15,20 @@ Schema families:
 
 import uuid
 from datetime import datetime, date
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, FrozenSet
 from pydantic import BaseModel, EmailStr, Field, validator
+
+
+# The full diet-tag allow-list, shared by every validator that accepts diet
+# tags (user profile, recipe create/update, meal-plan generate). Keep this in
+# sync with the frontend's DIET_TAGS in RecipeEditForm.tsx.
+_DIET_TAGS: FrozenSet[str] = frozenset({
+    "vegan", "vegetarian", "pescatarian", "flexitarian",
+    "gluten_free", "dairy_free", "nut_free", "soy_free", "egg_free", "shellfish_free",
+    "keto", "low_carb", "paleo", "whole30", "low_fodmap",
+    "diabetic_friendly", "low_sodium", "low_fat", "high_protein",
+    "halal", "kosher", "mediterranean", "dash",
+})
 
 
 def _validate_username(value: str) -> str:
@@ -221,15 +233,7 @@ class UserUpdateRequest(BaseModel):
     def _validate_user_diet_tags(cls, v):
         if v is None:
             return v
-        valid = {
-            "vegan", "vegetarian", "pescatarian", "flexitarian",
-            "gluten_free", "dairy_free", "nut_free", "soy_free",
-            "egg_free", "shellfish_free",
-            "keto", "low_carb", "paleo", "whole30", "low_fodmap",
-            "diabetic_friendly", "low_sodium", "low_fat", "high_protein",
-            "halal", "kosher", "mediterranean", "dash",
-        }
-        bad = set(v) - valid
+        bad = set(v) - _DIET_TAGS
         if bad:
             raise ValueError("Unknown diet tag(s): %s" % sorted(bad))
         return v
@@ -371,15 +375,7 @@ class RecipeCreateRequest(BaseModel):
     def validate_diet_tags(cls, v):
         if v is None:
             return v
-        valid = {
-            "vegan", "vegetarian", "pescatarian", "flexitarian",
-            "gluten_free", "dairy_free", "nut_free", "soy_free",
-            "egg_free", "shellfish_free",
-            "keto", "low_carb", "paleo", "whole30", "low_fodmap",
-            "diabetic_friendly", "low_sodium", "low_fat", "high_protein",
-            "halal", "kosher",
-            "mediterranean", "dash",
-        }
+        valid = _DIET_TAGS
         invalid = set(v) - valid
         if invalid:
             raise ValueError(f"Unknown diet tag(s): {sorted(invalid)}. Must be one of {sorted(valid)}")
@@ -411,15 +407,7 @@ class RecipeUpdateRequest(BaseModel):
     def validate_diet_tags(cls, v):
         if v is None:
             return v
-        valid = {
-            "vegan", "vegetarian", "pescatarian", "flexitarian",
-            "gluten_free", "dairy_free", "nut_free", "soy_free",
-            "egg_free", "shellfish_free",
-            "keto", "low_carb", "paleo", "whole30", "low_fodmap",
-            "diabetic_friendly", "low_sodium", "low_fat", "high_protein",
-            "halal", "kosher",
-            "mediterranean", "dash",
-        }
+        valid = _DIET_TAGS
         invalid = set(v) - valid
         if invalid:
             raise ValueError(f"Unknown diet tag(s): {sorted(invalid)}. Must be one of {sorted(valid)}")
@@ -580,15 +568,7 @@ class MealPlanGenerateRequest(BaseModel):
 
     @validator("diet_tags")
     def _validate(cls, v):
-        valid = {
-            "vegan", "vegetarian", "pescatarian", "flexitarian",
-            "gluten_free", "dairy_free", "nut_free", "soy_free",
-            "egg_free", "shellfish_free",
-            "keto", "low_carb", "paleo", "whole30", "low_fodmap",
-            "diabetic_friendly", "low_sodium", "low_fat", "high_protein",
-            "halal", "kosher", "mediterranean", "dash",
-        }
-        bad = set(v) - valid
+        bad = set(v) - _DIET_TAGS
         if bad:
             raise ValueError("Unknown diet tag(s): %s" % sorted(bad))
         return v
@@ -653,6 +633,7 @@ class MealPlanResponse(BaseModel):
     meals_per_day: int
     created_at:    datetime
     targets:       MealPlanTargets
+    diet_tags:     List[str]
     plan_days:     List[MealPlanDayResponse]
 
     class Config:

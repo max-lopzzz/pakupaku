@@ -1,14 +1,7 @@
 import { useEffect, useState } from "react";
 import "./MealPlanner.css";
 import { apiFetch } from "../apiBase";
-
-const DIET_TAGS = [
-  "vegan", "vegetarian", "pescatarian", "flexitarian",
-  "gluten_free", "dairy_free", "nut_free", "soy_free", "egg_free", "shellfish_free",
-  "keto", "low_carb", "paleo", "whole30", "low_fodmap",
-  "diabetic_friendly", "low_sodium", "low_fat", "high_protein",
-  "halal", "kosher", "mediterranean", "dash",
-];
+import { DIET_TAGS } from "./RecipeEditForm";
 
 interface RecipeMini {
   id: string; name: string; image_url: string | null;
@@ -27,6 +20,7 @@ interface Day {
 interface Plan {
   id: string; days: number; meals_per_day: number;
   targets: { kcal: number | null; protein_g: number | null; fat_g: number | null; carbs_g: number | null };
+  diet_tags?: string[];
   plan_days: Day[];
 }
 
@@ -60,10 +54,27 @@ export default function MealPlanner({ onBack, userProfile }: Props) {
   useEffect(() => {
     apiFetch("/meal-plan", { headers: authHeaders() })
       .then(r => (r.ok ? r.json() : null))
-      .then((p: Plan | null) => { setPlan(p); setShowForm(p == null); })
-      .catch(() => setError("Couldn't load your meal plan."))
+      .then((p: Plan | null) => {
+        setPlan(p);
+        setShowForm(p == null);
+        if (p) {
+          setDays(p.days);
+          setMealsPerDay(p.meals_per_day);
+          setTags(p.diet_tags ?? []);
+        }
+      })
+      .catch(() => { setError("Couldn't load your meal plan."); setShowForm(true); })
       .finally(() => setLoading(false));
   }, []);
+
+  const openRegenerateForm = () => {
+    if (plan) {
+      setDays(plan.days);
+      setMealsPerDay(plan.meals_per_day);
+      setTags(plan.diet_tags ?? []);
+    }
+    setShowForm(true);
+  };
 
   const toggleTag = (t: string) =>
     setTags(ts => (ts.includes(t) ? ts.filter(x => x !== t) : [...ts, t]));
@@ -146,8 +157,13 @@ export default function MealPlanner({ onBack, userProfile }: Props) {
           <button type="button" className="back-button" onClick={onBack}>← Back</button>
           <h1 className="meal-planner-title">Meal Planner</h1>
           {plan && !showForm && (
-            <button type="button" className="meal-planner-regen" onClick={() => setShowForm(true)}>
+            <button type="button" className="meal-planner-regen" onClick={openRegenerateForm}>
               Regenerate
+            </button>
+          )}
+          {plan && showForm && (
+            <button type="button" className="meal-planner-regen" onClick={() => setShowForm(false)}>
+              Back to plan
             </button>
           )}
         </header>
@@ -195,7 +211,7 @@ export default function MealPlanner({ onBack, userProfile }: Props) {
                         <div className="meal-planner-entry-empty">
                           No {e.slot} recipe available
                           {day.structurally_unfilled_slots.includes(e.slot)
-                            ? ` — add one with meal type "${e.slot}"` : ""}
+                            ? ` — you may not have any ${e.slot} recipes yet` : ""}
                         </div>
                       ) : (
                         <>

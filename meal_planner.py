@@ -1,6 +1,7 @@
 """Meal-plan generation engine. See docs/superpowers/specs/2026-09-10-meal-planner-design.md."""
 
 import random
+import re
 from dataclasses import dataclass
 from typing import Dict, FrozenSet, List, Optional
 
@@ -9,21 +10,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models import Recipe
 
+# Multi-word / unambiguous keys stay plain substring checks.
 _BREAKFAST_KEYWORDS = (
-    "oat", "oats", "overnight", "pancake", "waffle", "smoothie", "granola",
-    "toast", "porridge", "cereal", "chia pudding", "french toast", "breakfast",
+    "overnight", "pancake", "waffle", "smoothie", "granola",
+    "porridge", "cereal", "chia pudding", "french toast", "breakfast",
 )
 _SNACK_KEYWORDS = (
-    "bites", "bliss ball", "energy ball", "bark", "crackers", "dip", "snack", "bar ",
+    "bites", "bliss ball", "energy ball", "crackers", "snack",
 )
+# Short, ambiguous keys: whole-word match only, so "oat" doesn't fire on
+# "Goat Cheese Salad", "toast" on "Toasted Sesame Noodles", or "dip" on
+# "Chicken Dippers". The \bbar\b here replaces the old trailing-space "bar " hack.
+_BREAKFAST_WORD_RE = re.compile(r"\b(oat|oats|toast)\b")
+_SNACK_WORD_RE = re.compile(r"\b(dip|bark|bar)\b")
 _SNACK_KCAL_CEILING = 200.0
 
 
 def infer_meal_type(name: str, kcal: Optional[float]) -> str:
     n = (name or "").lower()
-    if any(k in n for k in _BREAKFAST_KEYWORDS):
+    if any(k in n for k in _BREAKFAST_KEYWORDS) or _BREAKFAST_WORD_RE.search(n):
         return "breakfast"
-    if any(k in n for k in _SNACK_KEYWORDS):
+    if any(k in n for k in _SNACK_KEYWORDS) or _SNACK_WORD_RE.search(n):
         return "snack"
     if isinstance(kcal, (int, float)) and kcal <= _SNACK_KCAL_CEILING:
         return "snack"

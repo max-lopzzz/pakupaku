@@ -191,7 +191,7 @@ Now that both URLs exist:
 
 `create_all()` only ever *creates* missing tables — it cannot rename or
 retype a column on a table that already exists. `create_tables.py` picks
-up that slack for the one migration the app currently needs (see below);
+up that slack for the two migrations the app currently needs (see below);
 anything beyond that still needs a one-off SQL script run against Neon,
 before (or together with) the deploy that ships the code depending on it.
 

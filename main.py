@@ -59,9 +59,12 @@ from nutrition_calculator import (
     apply_metabolic_conditions, calc_tdee, calc_goal_adjustment,
     calc_macros, hrt_navy_blend_t,
 )
-from meal_planner import generate_plan, swap_entry, RecipeOption, active_slots, slot_budgets, PlannedEntry
+from meal_planner import (
+    generate_plan, swap_entry, RecipeOption, active_slots, slot_budgets, PlannedEntry,
+    SLOT_ORDER,
+)
 
-SLOT_ORDER_INDEX = {"breakfast": 0, "lunch": 1, "dinner": 2, "snack": 3}
+SLOT_ORDER_INDEX = {s: i for i, s in enumerate(SLOT_ORDER)}  # breakfast=0, lunch=1, dinner=2, snack=3
 
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
@@ -762,16 +765,17 @@ def _plan_to_response(plan: MealPlan) -> MealPlanResponse:
                            ("fat_g", "fat_g"), ("carbs_g", "carbs_g"), ("fiber_g", "fiber_g")):
                 totals[tk] += getattr(e, ek) or 0.0
         totals = {k: round(v, 1) for k, v in totals.items()}
-        first_day_logged = json.loads(plan.logged_days or "{}").get(str(di))
+        this_day_logged = json.loads(plan.logged_days or "{}").get(str(di))
         plan_days.append(MealPlanDayResponse(
             day_index=di,
-            logged_at=(datetime.fromisoformat(first_day_logged) if first_day_logged else None),
+            logged_at=(datetime.fromisoformat(this_day_logged) if this_day_logged else None),
             entries=ent_resp, totals=totals, structurally_unfilled_slots=unfilled_slots,
         ))
     return MealPlanResponse(
         id=plan.id, days=plan.days, meals_per_day=plan.meals_per_day, created_at=plan.created_at,
         targets=MealPlanTargets(kcal=plan.target_kcal, protein_g=plan.target_protein_g,
                                 fat_g=plan.target_fat_g, carbs_g=plan.target_carbs_g),
+        diet_tags=[t for t in (plan.diet_tags or "").split(",") if t],
         plan_days=plan_days,
     )
 
@@ -993,6 +997,7 @@ async def copy_recipe(
         source_url   = source.source_url,
         instructions = source.instructions,
         diet_tags    = source.diet_tags,
+        meal_type    = source.meal_type,
         is_shared    = False,
     )
     db.add(copy)
@@ -1206,8 +1211,11 @@ async def generate_meal_plan(
                 plan_id=plan.id, day_index=di, slot=e.slot,
                 recipe_id=(uuid.UUID(e.option.id) if e.option is not None else None),
                 servings=e.servings,
-                calories=(e.kcal or None), protein_g=(e.protein_g or None),
-                fat_g=(e.fat_g or None), carbs_g=(e.carbs_g or None), fiber_g=(e.fiber_g or None),
+                calories=(e.kcal if e.option is not None else None),
+                protein_g=(e.protein_g if e.option is not None else None),
+                fat_g=(e.fat_g if e.option is not None else None),
+                carbs_g=(e.carbs_g if e.option is not None else None),
+                fiber_g=(e.fiber_g if e.option is not None else None),
             ))
     await db.flush()
     plan = await _load_plan(db, current_user.id)
@@ -1281,11 +1289,13 @@ async def swap_meal_plan_entry(
 
     entry.recipe_id = uuid.UUID(replacement.option.id)
     entry.servings = replacement.servings
-    entry.calories = replacement.kcal or None
-    entry.protein_g = replacement.protein_g or None
-    entry.fat_g = replacement.fat_g or None
-    entry.carbs_g = replacement.carbs_g or None
-    entry.fiber_g = replacement.fiber_g or None
+    # `replacement` is always a filled PlannedEntry, so keep real values —
+    # `x or None` would turn a legitimate 0.0 macro into NULL (renders as "–").
+    entry.calories = replacement.kcal
+    entry.protein_g = replacement.protein_g
+    entry.fat_g = replacement.fat_g
+    entry.carbs_g = replacement.carbs_g
+    entry.fiber_g = replacement.fiber_g
     db.expire(entry, ["recipe"])
     await db.flush()
 
