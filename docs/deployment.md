@@ -210,6 +210,11 @@ before (or together with) the deploy that ships the code depending on it.
    `pip install -r requirements.txt && python3 create_tables.py` and the
    build log shows its `seeded N foods` line.
 
+2. **`recipes.meal_type` / `users.diet_tags`** are added automatically by
+   `create_tables.py` on every deploy (idempotent). `create_tables.py`
+   also runs a one-time keyword backfill of `recipes.meal_type` for rows
+   where it is null.
+
 ## 6. Verify
 
 - [ ] Open the Cloudflare Pages URL, register a real account

@@ -61,6 +61,8 @@ import asyncio  # noqa: E402
 from database import Base, engine  # noqa: E402
 from sqlalchemy import text  # noqa: E402
 from migrations import _migrate_fdc_to_food_id  # noqa: E402
+from meal_planner import backfill_meal_types  # noqa: E402
+from database import AsyncSessionLocal  # noqa: E402
 
 
 async def _add_missing_columns(conn):
@@ -105,6 +107,9 @@ async def _create_tables():
         await conn.run_sync(Base.metadata.create_all)
         await _migrate_fdc_to_food_id(conn)      # NEW — must precede _add_missing_columns
         await _add_missing_columns(conn)
+    async with AsyncSessionLocal() as s:
+        await backfill_meal_types(s)
+        await s.commit()
     # NOTE: the desktop build does not seed the ``foods`` table yet — that
     # waits on the bundled ``data/foods.sqlite`` artifact (Plan 1 Task 9).
     # Until then the packaged app serves an empty food index.

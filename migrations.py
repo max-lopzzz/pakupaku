@@ -61,6 +61,28 @@ async def _migrate_fdc_to_food_id_pg(conn) -> None:
             "ALTER TABLE %s RENAME COLUMN fdc_id TO food_id" % table))
 
 
+_MEAL_PLANNER_COLUMNS = [
+    ("recipes", "meal_type", "VARCHAR(16)"),
+    ("users", "diet_tags", "VARCHAR(500)"),
+]
+
+
+async def _add_meal_planner_columns(conn) -> None:
+    """Add recipes.meal_type / users.diet_tags to an existing DB.
+    create_all() only creates whole tables, never a column on one that
+    already exists. Idempotent on every dialect."""
+    if conn.dialect.name == "postgresql":
+        for table, col, coltype in _MEAL_PLANNER_COLUMNS:
+            await conn.execute(text(
+                "ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s" % (table, col, coltype)
+            ))
+    else:
+        for table, col, _ in _MEAL_PLANNER_COLUMNS:
+            cols = [r[1] for r in (await conn.execute(text("PRAGMA table_info(%s)" % table))).fetchall()]
+            if cols and col not in cols:
+                await conn.execute(text("ALTER TABLE %s ADD COLUMN %s VARCHAR" % (table, col)))
+
+
 async def _migrate_fdc_to_food_id(conn) -> None:
     """Rename the legacy int `fdc_id` column to text `food_id` on
     `food_logs` / `recipe_ingredients`. Idempotent; a no-op on a fresh DB

@@ -159,6 +159,8 @@ class User(Base):
         Boolean, default=False, nullable=False
     )
 
+    diet_tags: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+
     # ── Relationships ─────────────────────────
     food_logs: Mapped[List["FoodLog"]]         = relationship(
         back_populates="user", cascade="all, delete-orphan"
@@ -261,6 +263,7 @@ class Recipe(Base):
     source_url:   Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
     instructions: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     diet_tags:    Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    meal_type:    Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     is_shared:    Mapped[bool]          = mapped_column(Boolean, default=False, nullable=False)
 
     # ── Totals (per serving, auto-calculated) ─
@@ -316,6 +319,58 @@ class RecipeIngredient(Base):
 
     def __repr__(self) -> str:
         return f"<RecipeIngredient {self.food_name} {self.amount_g}g>"
+
+
+# ─────────────────────────────────────────────
+#  MEAL PLANNER
+# ─────────────────────────────────────────────
+
+class MealPlan(Base):
+    __tablename__ = "meal_plans"
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    days: Mapped[int] = mapped_column(Integer, nullable=False)
+    meals_per_day: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    target_kcal:      Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    target_protein_g: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    target_fat_g:     Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    target_carbs_g:   Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    diet_tags:   Mapped[str] = mapped_column(Text, nullable=False, default="")
+    logged_days: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+
+    entries: Mapped[List["MealPlanEntry"]] = relationship(
+        back_populates="plan", cascade="all, delete-orphan",
+    )
+
+
+class MealPlanEntry(Base):
+    __tablename__ = "meal_plan_entries"
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
+    plan_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(), ForeignKey("meal_plans.id", ondelete="CASCADE"), nullable=False, index=True,
+    )
+    day_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    slot: Mapped[str] = mapped_column(String(16), nullable=False)
+    recipe_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        GUID(), ForeignKey("recipes.id", ondelete="SET NULL"), nullable=True,
+    )
+    servings: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+
+    calories:  Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    protein_g: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    fat_g:     Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    carbs_g:   Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    fiber_g:   Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    plan:   Mapped["MealPlan"] = relationship(back_populates="entries")
+    recipe: Mapped[Optional["Recipe"]] = relationship()
 
 
 # ─────────────────────────────────────────────
