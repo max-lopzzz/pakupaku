@@ -1,6 +1,7 @@
 import { useState } from "react";
 import "./Settings.css";
 import { apiFetch } from "../apiBase";
+import { DIET_TAGS } from "./RecipeEditForm";
 
 interface SettingsProps {
   userProfile: any;
@@ -38,6 +39,36 @@ export default function Settings({ userProfile, onBack, onLogout, onProfileUpdat
       onProfileUpdate(result);
     } catch { /* non-fatal */ } finally {
       setSafeSaving(false);
+    }
+  };
+
+  // ── Dietary preferences ───────────────────────────────────────────────────
+  const [dietTags, setDietTags]   = useState<string[]>(userProfile?.diet_tags ?? []);
+  const [dietSaving, setDietSaving] = useState(false);
+  const [dietMsg, setDietMsg]     = useState("");
+  const [dietError, setDietError] = useState("");
+
+  const toggleDietTag = (tag: string) =>
+    setDietTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]);
+
+  const handleDietSave = async () => {
+    setDietMsg("");
+    setDietError("");
+    setDietSaving(true);
+    try {
+      const res = await apiFetch("/users/me", {
+        method: "PATCH",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ diet_tags: dietTags }),
+      });
+      if (!res.ok) throw new Error(await errorDetail(res, "Failed to update dietary preferences."));
+      const result = await res.json();
+      onProfileUpdate(result);
+      setDietMsg("Dietary preferences updated!");
+    } catch (e: any) {
+      setDietError(e.message || "Failed to update dietary preferences.");
+    } finally {
+      setDietSaving(false);
     }
   };
 
@@ -197,6 +228,38 @@ export default function Settings({ userProfile, onBack, onLogout, onProfileUpdat
                 </label>
               </div>
             </div>
+          </div>
+        </section>
+
+        {/* Dietary preferences section */}
+        <section className="settings-section">
+          <h2 className="settings-section-title">Dietary preferences</h2>
+          <div className="settings-card">
+            <p className="settings-row-desc">
+              Used to filter recipes when generating a meal plan.
+            </p>
+            <div className="settings-diet-grid">
+              {DIET_TAGS.map(tag => (
+                <label key={tag} className="settings-diet-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={dietTags.includes(tag)}
+                    onChange={() => toggleDietTag(tag)}
+                  />
+                  {tag.replace(/_/g, " ")}
+                </label>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="settings-save-button"
+              onClick={handleDietSave}
+              disabled={dietSaving}
+            >
+              {dietSaving ? "Saving…" : "Save dietary preferences"}
+            </button>
+            {dietMsg   && <p className="settings-success">{dietMsg}</p>}
+            {dietError && <p className="settings-error">{dietError}</p>}
           </div>
         </section>
 
