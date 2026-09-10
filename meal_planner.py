@@ -167,3 +167,42 @@ def plan_day(buckets, day_target, budgets, recent_recipe_ids: FrozenSet[str],
         if best is None or sc < best.score:
             best = PlannedDay(entries, totals, sc)
     return best
+
+
+def generate_plan(options, days: int, meals_per_day: int, targets, diet_tags: FrozenSet[str],
+                  seed: Optional[int] = None, n: int = 400) -> List[PlannedDay]:
+    rng = random.Random(seed)
+    slots = active_slots(meals_per_day)
+    budgets = slot_budgets(targets["kcal"], slots)
+    buckets = build_buckets(options, diet_tags, slots)
+    day_target = {"kcal": targets["kcal"], "protein_g": targets.get("protein_g"),
+                  "fat_g": targets.get("fat_g"), "carbs_g": targets.get("carbs_g")}
+    plan: List[PlannedDay] = []
+    recent: FrozenSet[str] = frozenset()
+    for _ in range(days):
+        day = plan_day(buckets, day_target, budgets, recent, rng, n=n)
+        plan.append(day)
+        recent = frozenset(e.option.id for e in day.entries if e.option is not None)
+    return plan
+
+
+def swap_entry(options, day_entries, slot: str, budgets, day_target, diet_tags: FrozenSet[str],
+               exclude_recipe_id: Optional[str], seed: Optional[int] = None,
+               n: int = 400) -> Optional[PlannedEntry]:
+    rng = random.Random(seed)
+    slots = list(budgets.keys())
+    bucket = [o for o in build_buckets(options, diet_tags, slots).get(slot, [])
+              if o.id != exclude_recipe_id]
+    if not bucket:
+        return None
+    others = [e for e in day_entries if e.slot != slot]
+    best_entry: Optional[PlannedEntry] = None
+    best_score = None
+    for _ in range(n):
+        cand = _scaled_entry(slot, rng.choice(bucket), budgets[slot])
+        entries = others + [cand]
+        totals = _day_totals(entries)
+        sc = _score(entries, totals, day_target, frozenset())
+        if best_score is None or sc < best_score:
+            best_score, best_entry = sc, cand
+    return best_entry

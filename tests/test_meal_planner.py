@@ -135,3 +135,66 @@ def test_plan_day_unfilled_slot_when_bucket_empty():
     snack = [e for e in day.entries if e.slot == "snack"][0]
     assert snack.unfilled
     assert snack.kcal == 0.0
+
+
+from meal_planner import generate_plan, swap_entry
+
+
+def test_generate_plan_shape_and_determinism():
+    opts = [
+        _opt("b", "Oats", "breakfast", 450, p=20, f=12, c=70),
+        _opt("l", "Salad", "lunch", 650, p=35, f=25, c=70),
+        _opt("d", "Curry", "dinner", 700, p=40, f=25, c=80),
+        _opt("d2", "Stew", "dinner", 680, p=38, f=22, c=78),
+    ]
+    tgt = {"kcal": 1900.0, "protein_g": 110.0, "fat_g": 60.0, "carbs_g": 220.0}
+    a = generate_plan(opts, days=2, meals_per_day=3, targets=tgt, diet_tags=frozenset(), seed=7)
+    b = generate_plan(opts, days=2, meals_per_day=3, targets=tgt, diet_tags=frozenset(), seed=7)
+    assert len(a) == 2
+    assert all(len(day.entries) == 3 for day in a)
+    assert [[e.option.id for e in d.entries] for d in a] == [[e.option.id for e in d.entries] for d in b]
+
+
+def test_generate_plan_empty_bucket_leaves_slot_unfilled_not_crash():
+    opts = [_opt("b", "Oats", "breakfast", 450)]   # nothing for lunch/dinner/snack
+    tgt = {"kcal": 1800.0, "protein_g": None, "fat_g": None, "carbs_g": None}
+    plan = generate_plan(opts, days=1, meals_per_day=3, targets=tgt, diet_tags=frozenset(), seed=1)
+    slots = {e.slot: e for e in plan[0].entries}
+    assert not slots["breakfast"].unfilled
+    assert slots["lunch"].unfilled and slots["dinner"].unfilled
+
+
+def test_swap_entry_excludes_current_and_returns_best_alternative():
+    opts = [
+        _opt("keep_b", "B", "breakfast", 450),
+        _opt("cur_l", "Cur L", "lunch", 640),
+        _opt("alt_l", "Alt L", "lunch", 650, p=40, f=20, c=75),
+        _opt("keep_d", "D", "dinner", 700),
+    ]
+    budgets = slot_budgets(1900.0, ["breakfast", "lunch", "dinner"])
+    day_target = {"kcal": 1900.0, "protein_g": 110.0, "fat_g": 60.0, "carbs_g": 220.0}
+    # a day whose lunch is cur_l
+    from meal_planner import _scaled_entry
+    day_entries = [
+        _scaled_entry("breakfast", opts[0], budgets["breakfast"]),
+        _scaled_entry("lunch", opts[1], budgets["lunch"]),
+        _scaled_entry("dinner", opts[3], budgets["dinner"]),
+    ]
+    repl = swap_entry(opts, day_entries, "lunch", budgets, day_target,
+                      frozenset(), exclude_recipe_id="cur_l", seed=3)
+    assert repl is not None
+    assert repl.option.id == "alt_l"
+
+
+def test_swap_entry_returns_none_when_no_alternative():
+    opts = [_opt("only_l", "Only", "lunch", 640)]
+    budgets = slot_budgets(1900.0, ["breakfast", "lunch"])
+    from meal_planner import _scaled_entry
+    day_entries = [
+        _scaled_entry("breakfast", None, budgets["breakfast"]),
+        _scaled_entry("lunch", opts[0], budgets["lunch"]),
+    ]
+    repl = swap_entry(opts, day_entries, "lunch", budgets,
+                      {"kcal": 1900.0, "protein_g": None, "fat_g": None, "carbs_g": None},
+                      frozenset(), exclude_recipe_id="only_l", seed=1)
+    assert repl is None
