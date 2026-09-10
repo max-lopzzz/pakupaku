@@ -82,3 +82,52 @@ test("generate error is shown inline", async () => {
   fireEvent.click(screen.getByText("Generate plan"));
   await waitFor(() => expect(screen.getByText(/Finish onboarding/)).toBeInTheDocument());
 });
+
+test("Swap replaces one entry in place and updates day totals", async () => {
+  const swapResp = {
+    entry: { id: "e2", slot: "lunch", servings: 1, unfilled: false,
+      recipe: { id: "r9", name: "Tofu Poke Bowl", image_url: null, servings: 1,
+                meal_type: "lunch", total_calories: 640, total_protein_g: 42,
+                total_fat_g: 20, total_carbs_g: 62, total_fiber_g: 10 },
+      calories: 640, protein_g: 42, fat_g: 20, carbs_g: 62, fiber_g: 10 },
+    day_totals: { calories: 1940, protein_g: 120, fat_g: 57, carbs_g: 212, fiber_g: 28 },
+  };
+  (global.fetch as jest.Mock).mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+    const u = String(url);
+    if (u.endsWith("/meal-plan") && (!init || !init.method || init.method === "GET"))
+      return Promise.resolve({ ok: true, json: async () => planResponse } as Response);
+    if (u.includes("/entries/e2/swap"))
+      return Promise.resolve({ ok: true, json: async () => swapResp } as Response);
+    return Promise.reject(new Error("unexpected " + u));
+  });
+  render(<MealPlanner onBack={() => {}} userProfile={{ diet_tags: [], safe_mode: false }} />);
+  await waitFor(() => expect(screen.getByText("Chickpea Salad")).toBeInTheDocument());
+  const lunchCard = screen.getByText("Chickpea Salad").closest(".meal-planner-entry") as HTMLElement;
+  fireEvent.click(lunchCard.querySelector("button")!);   // the Swap button
+  await waitFor(() => expect(screen.getByText("Tofu Poke Bowl")).toBeInTheDocument());
+  expect(screen.queryByText("Chickpea Salad")).not.toBeInTheDocument();
+});
+
+test("Log this day posts, then shows a logged state; 409 prompts a force retry", async () => {
+  let logCalls = 0;
+  (global.fetch as jest.Mock).mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+    const u = String(url);
+    if (u.endsWith("/meal-plan") && (!init || !init.method || init.method === "GET"))
+      return Promise.resolve({ ok: true, json: async () => planResponse } as Response);
+    if (u.includes("/days/0/log")) {
+      logCalls += 1;
+      const body = init && init.body ? JSON.parse(String(init.body)) : {};
+      if (logCalls === 1)
+        return Promise.resolve({ ok: false, status: 409,
+          json: async () => ({ detail: "Day already logged. Send force to log it again." }) } as Response);
+      return Promise.resolve({ ok: true, json: async () => ({ created: 3, logged_at: "2026-09-10T10:00:00Z" }) } as Response);
+    }
+    return Promise.reject(new Error("unexpected " + u));
+  });
+  window.confirm = jest.fn(() => true) as any;
+  render(<MealPlanner onBack={() => {}} userProfile={{ diet_tags: [], safe_mode: false }} />);
+  await waitFor(() => expect(screen.getByText("Log this day")).toBeInTheDocument());
+  fireEvent.click(screen.getByText("Log this day"));
+  await waitFor(() => expect(logCalls).toBe(2));
+  await waitFor(() => expect(screen.getByText(/Logged/)).toBeInTheDocument());
+});

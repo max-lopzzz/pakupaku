@@ -55,6 +55,7 @@ export default function MealPlanner({ onBack, userProfile }: Props) {
   const [mealsPerDay, setMealsPerDay] = useState(3);
   const [tags, setTags] = useState<string[]>(userProfile?.diet_tags ?? []);
   const [showForm, setShowForm] = useState(false);
+  const [busyEntry, setBusyEntry] = useState<string | null>(null);
 
   useEffect(() => {
     apiFetch("/meal-plan", { headers: authHeaders() })
@@ -84,6 +85,57 @@ export default function MealPlanner({ onBack, userProfile }: Props) {
       setError("Couldn't generate a plan.");
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const swap = async (entryId: string) => {
+    setBusyEntry(entryId);
+    setError("");
+    try {
+      const res = await apiFetch(`/meal-plan/entries/${entryId}/swap`, {
+        method: "POST", headers: authHeaders(),
+      });
+      const body = await res.json();
+      if (!res.ok) { setError(body?.detail || "Couldn't swap that meal."); return; }
+      setPlan(p => {
+        if (!p) return p;
+        return {
+          ...p,
+          plan_days: p.plan_days.map(d => ({
+            ...d,
+            totals: d.entries.some(e => e.id === entryId) ? body.day_totals : d.totals,
+            entries: d.entries.map(e => (e.id === entryId ? body.entry : e)),
+          })),
+        };
+      });
+    } catch {
+      setError("Couldn't swap that meal.");
+    } finally {
+      setBusyEntry(null);
+    }
+  };
+
+  const logDay = async (dayIndex: number, force = false): Promise<void> => {
+    setError("");
+    try {
+      const res = await apiFetch(`/meal-plan/days/${dayIndex}/log`, {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ force }),
+      });
+      const body = await res.json();
+      if (res.status === 409 && !force) {
+        if (window.confirm("This day was already logged. Log it again?")) return logDay(dayIndex, true);
+        return;
+      }
+      if (!res.ok) { setError(body?.detail || "Couldn't log that day."); return; }
+      setPlan(p => p && {
+        ...p,
+        plan_days: p.plan_days.map(d =>
+          d.day_index === dayIndex ? { ...d, logged_at: body.logged_at } : d),
+      });
+    } catch {
+      setError("Couldn't log that day.");
     }
   };
 
@@ -161,6 +213,10 @@ export default function MealPlanner({ onBack, userProfile }: Props) {
                                 {num(e.calories)} kcal · {num(e.protein_g)}p · {num(e.fat_g)}f · {num(e.carbs_g)}c
                               </span>
                             )}
+                            <button type="button" className="meal-planner-swap"
+                              disabled={busyEntry === e.id} onClick={() => swap(e.id)}>
+                              {busyEntry === e.id ? "Swapping…" : "Swap"}
+                            </button>
                           </div>
                         </>
                       )}
@@ -188,6 +244,10 @@ export default function MealPlanner({ onBack, userProfile }: Props) {
                     );
                   })}
                 </div>
+                <button type="button" className="meal-planner-logday"
+                  disabled={!!day.logged_at} onClick={() => logDay(day.day_index)}>
+                  {day.logged_at ? "Logged ✓" : "Log this day"}
+                </button>
               </section>
             ))}
           </div>
