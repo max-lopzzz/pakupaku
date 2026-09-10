@@ -208,3 +208,40 @@ def test_day_log_404_for_out_of_range_day(client, db_session):
     _generate(c, u, db_session, days=1, meals=3)
     assert c.post("/meal-plan/days/5/log", json={}).status_code == 404
     app.dependency_overrides.pop(get_current_user, None)
+
+
+def test_recipe_meal_type_round_trips_and_rejects_bad_values(client, db_session):
+    u = asyncio.get_event_loop().run_until_complete(_user(db_session))
+    u.is_admin = False
+    try:
+        c = _as(client, u)
+        res = c.post("/recipes", json={
+            "name": "Test Oats", "servings": 1,
+            "ingredients": [{"food_name": "oats", "amount_g": 50}],
+            "meal_type": "breakfast",
+        })
+        assert res.status_code == 201
+        rid = res.json()["id"]
+        assert res.json()["meal_type"] == "breakfast"
+
+        assert c.patch("/recipes/%s" % rid, json={"meal_type": "dinner"}).json()["meal_type"] == "dinner"
+        assert c.post("/recipes", json={
+            "name": "Bad", "servings": 1,
+            "ingredients": [{"food_name": "x", "amount_g": 1}], "meal_type": "brunch",
+        }).status_code == 422
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+def test_user_diet_tags_round_trip(client, db_session):
+    u = asyncio.get_event_loop().run_until_complete(_user(db_session))
+    try:
+        c = _as(client, u)
+        assert c.get("/users/me").json()["diet_tags"] == []
+        res = c.patch("/users/me", json={"diet_tags": ["vegan", "gluten_free"]})
+        assert res.status_code == 200
+        assert sorted(res.json()["diet_tags"]) == ["gluten_free", "vegan"]
+        assert sorted(c.get("/users/me").json()["diet_tags"]) == ["gluten_free", "vegan"]
+        assert c.patch("/users/me", json={"diet_tags": ["carnivore"]}).status_code == 422
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)

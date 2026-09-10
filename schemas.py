@@ -191,6 +191,16 @@ class UserResponse(BaseModel):
     uses_custom_goals: bool
     is_admin: bool
 
+    diet_tags: List[str]
+
+    @validator("diet_tags", pre=True)
+    def _split_user_diet_tags(cls, v):
+        if v is None:
+            return []
+        if isinstance(v, str):
+            return [t for t in v.split(",") if t]
+        return v
+
     class Config:
         from_attributes = True
 
@@ -199,12 +209,30 @@ class UserUpdateRequest(BaseModel):
     """Partial update — all fields optional."""
     username:  Optional[str]  = Field(None, min_length=3, max_length=50)
     safe_mode: Optional[bool] = None
+    diet_tags: Optional[List[str]] = None
 
     @validator("username")
     def username_alphanumeric(cls, v):
         if v is None:
             return v
         return _validate_username(v)
+
+    @validator("diet_tags")
+    def _validate_user_diet_tags(cls, v):
+        if v is None:
+            return v
+        valid = {
+            "vegan", "vegetarian", "pescatarian", "flexitarian",
+            "gluten_free", "dairy_free", "nut_free", "soy_free",
+            "egg_free", "shellfish_free",
+            "keto", "low_carb", "paleo", "whole30", "low_fodmap",
+            "diabetic_friendly", "low_sodium", "low_fat", "high_protein",
+            "halal", "kosher", "mediterranean", "dash",
+        }
+        bad = set(v) - valid
+        if bad:
+            raise ValueError("Unknown diet tag(s): %s" % sorted(bad))
+        return v
 
 
 class ChangePasswordRequest(BaseModel):
@@ -329,6 +357,15 @@ class RecipeCreateRequest(BaseModel):
     instructions: Optional[str]       = None
     diet_tags:    Optional[List[str]] = None
     is_shared:    Optional[bool]      = None
+    meal_type:    Optional[str] = None
+
+    @validator("meal_type")
+    def _validate_meal_type(cls, v):
+        if v is None:
+            return v
+        if v not in {"breakfast", "lunch", "dinner", "snack", "any"}:
+            raise ValueError("meal_type must be one of breakfast, lunch, dinner, snack, any")
+        return v
 
     @validator("diet_tags")
     def validate_diet_tags(cls, v):
@@ -360,6 +397,15 @@ class RecipeUpdateRequest(BaseModel):
     instructions: Optional[str]       = None
     diet_tags:    Optional[List[str]] = None
     is_shared:    Optional[bool]      = None
+    meal_type:    Optional[str] = None
+
+    @validator("meal_type")
+    def _validate_meal_type(cls, v):
+        if v is None:
+            return v
+        if v not in {"breakfast", "lunch", "dinner", "snack", "any"}:
+            raise ValueError("meal_type must be one of breakfast, lunch, dinner, snack, any")
+        return v
 
     @validator("diet_tags")
     def validate_diet_tags(cls, v):
@@ -403,6 +449,7 @@ class RecipeResponse(BaseModel):
     instructions: Optional[str]
     diet_tags:    List[str]
     is_shared:    bool
+    meal_type:    Optional[str]
 
     @validator("diet_tags", pre=True)
     def _split_diet_tags(cls, v):

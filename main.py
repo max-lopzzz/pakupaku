@@ -309,6 +309,9 @@ async def update_me(
     if payload.safe_mode is not None:
         current_user.safe_mode = payload.safe_mode
 
+    if payload.diet_tags is not None:
+        current_user.diet_tags = _diet_tags_to_str(payload.diet_tags)
+
     await db.flush()
     return current_user
 
@@ -805,6 +808,7 @@ async def create_recipe(
         instructions = payload.instructions,
         diet_tags    = _diet_tags_to_str(payload.diet_tags),
         is_shared    = bool(payload.is_shared) and current_user.is_admin,
+        meal_type    = payload.meal_type,
     )
     db.add(recipe)
     await db.flush()   # assigns recipe.id
@@ -1080,6 +1084,7 @@ async def update_recipe(
     if payload.source_url   is not None: recipe.source_url   = payload.source_url
     if payload.instructions is not None: recipe.instructions = payload.instructions
     if payload.diet_tags    is not None: recipe.diet_tags    = _diet_tags_to_str(payload.diet_tags)
+    if payload.meal_type    is not None: recipe.meal_type    = payload.meal_type
     if payload.is_shared    is not None:
         recipe.is_shared = bool(payload.is_shared) and current_user.is_admin
 
