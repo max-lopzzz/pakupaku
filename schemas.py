@@ -610,3 +610,17 @@ class MealPlanResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class MealPlanSwapResponse(BaseModel):
+    entry:      MealPlanEntryResponse
+    day_totals: Dict[str, float]
+
+
+class MealPlanDayLogRequest(BaseModel):
+    force: bool = False
+
+
+class MealPlanDayLogResponse(BaseModel):
+    created:   int
+    logged_at: datetime

@@ -41,6 +41,7 @@ from schemas import (
     BodyMeasurementCreate, BodyMeasurementResponse,
     MealPlanGenerateRequest, MealPlanResponse, MealPlanRecipeMini,
     MealPlanEntryResponse, MealPlanDayResponse, MealPlanTargets,
+    MealPlanSwapResponse, MealPlanDayLogRequest, MealPlanDayLogResponse,
 )
 from auth import hash_password, verify_password, create_access_token, get_current_user
 from email_utils import send_verification_email, send_password_reset_email
@@ -58,7 +59,7 @@ from nutrition_calculator import (
     apply_metabolic_conditions, calc_tdee, calc_goal_adjustment,
     calc_macros, hrt_navy_blend_t,
 )
-from meal_planner import generate_plan, swap_entry, RecipeOption
+from meal_planner import generate_plan, swap_entry, RecipeOption, active_slots, slot_budgets, PlannedEntry
 
 SLOT_ORDER_INDEX = {"breakfast": 0, "lunch": 1, "dinner": 2, "snack": 3}
 
@@ -1226,6 +1227,105 @@ async def delete_meal_plan(
     if plan is None:
         raise HTTPException(status_code=404, detail="No meal plan to delete.")
     await db.delete(plan)
+
+
+@app.post("/meal-plan/entries/{entry_id}/swap", response_model=MealPlanSwapResponse)
+async def swap_meal_plan_entry(
+    entry_id:     uuid.UUID,
+    current_user: User         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+):
+    plan = await _load_plan(db, current_user.id)
+    if plan is None:
+        raise HTTPException(status_code=404, detail="No meal plan.")
+    entry = next((e for e in plan.entries if e.id == entry_id), None)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Entry not on your plan.")
+
+    slots = active_slots(plan.meals_per_day)
+    budgets = slot_budgets(plan.target_kcal, slots)
+    day_target = {"kcal": plan.target_kcal, "protein_g": plan.target_protein_g,
+                  "fat_g": plan.target_fat_g, "carbs_g": plan.target_carbs_g}
+    diet = frozenset(t for t in (plan.diet_tags or "").split(",") if t)
+
+    pool_rows = (await db.execute(
+        select(Recipe).where(
+            (Recipe.is_shared == True) | (Recipe.user_id == current_user.id),  # noqa: E712
+            Recipe.total_calories.isnot(None),
+        )
+    )).scalars().all()
+    options = [_recipe_to_option(r) for r in pool_rows]
+
+    day_entries = []
+    for e in plan.entries:
+        if e.day_index != entry.day_index:
+            continue
+        opt = next((o for o in options if e.recipe_id is not None and o.id == str(e.recipe_id)), None)
+        day_entries.append(PlannedEntry(
+            slot=e.slot, option=opt, servings=e.servings,
+            kcal=e.calories or 0.0, protein_g=e.protein_g or 0.0, fat_g=e.fat_g or 0.0,
+            carbs_g=e.carbs_g or 0.0, fiber_g=e.fiber_g or 0.0,
+        ))
+
+    replacement = swap_entry(
+        options, day_entries, entry.slot, budgets, day_target, diet,
+        exclude_recipe_id=(str(entry.recipe_id) if entry.recipe_id else None),
+    )
+    if replacement is None:
+        raise HTTPException(status_code=409, detail="No alternative recipe available for that slot.")
+
+    entry.recipe_id = uuid.UUID(replacement.option.id)
+    entry.servings = replacement.servings
+    entry.calories = replacement.kcal or None
+    entry.protein_g = replacement.protein_g or None
+    entry.fat_g = replacement.fat_g or None
+    entry.carbs_g = replacement.carbs_g or None
+    entry.fiber_g = replacement.fiber_g or None
+    db.expire(entry, ["recipe"])
+    await db.flush()
+
+    plan = await _load_plan(db, current_user.id)
+    resp = _plan_to_response(plan)
+    day = next(d for d in resp.plan_days if d.day_index == entry.day_index)
+    ent = next(e for e in day.entries if e.id == entry_id)
+    return MealPlanSwapResponse(entry=ent, day_totals=day.totals)
+
+
+@app.post("/meal-plan/days/{day_index}/log", response_model=MealPlanDayLogResponse)
+async def log_meal_plan_day(
+    day_index:    int,
+    payload:      MealPlanDayLogRequest,
+    current_user: User         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+):
+    plan = await _load_plan(db, current_user.id)
+    if plan is None or day_index < 0 or day_index >= plan.days:
+        raise HTTPException(status_code=404, detail="Day not in your plan.")
+
+    logged = json.loads(plan.logged_days or "{}")
+    if str(day_index) in logged and not payload.force:
+        raise HTTPException(status_code=409, detail="Day already logged. Send force to log it again.")
+
+    log_date = date.today() + timedelta(days=day_index)
+    created = 0
+    for e in plan.entries:
+        if e.day_index != day_index or e.recipe_id is None:
+            continue
+        recipe = e.recipe
+        db.add(FoodLog(
+            user_id=current_user.id, log_date=log_date, meal=e.slot,
+            recipe_id=e.recipe_id, food_name=(recipe.name if recipe else "Recipe"),
+            amount_g=round((e.servings or 1.0) * 100, 1),
+            calories=e.calories, protein_g=e.protein_g, fat_g=e.fat_g,
+            carbs_g=e.carbs_g, fiber_g=e.fiber_g,
+        ))
+        created += 1
+
+    now = datetime.utcnow()
+    logged[str(day_index)] = now.isoformat()
+    plan.logged_days = json.dumps(logged)
+    await db.flush()
+    return MealPlanDayLogResponse(created=created, logged_at=now)
 
 
 # ─────────────────────────────────────────────

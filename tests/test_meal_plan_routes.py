@@ -116,3 +116,95 @@ def test_delete_meal_plan(client, db_session):
         assert c.delete("/meal-plan").status_code == 404
     finally:
         app.dependency_overrides.pop(get_current_user, None)
+
+
+from datetime import date, timedelta
+from models import FoodLog
+
+
+def _generate(client, u, db_session, days=1, meals=3):
+    loop = asyncio.get_event_loop()
+    for name, kcal, mt in [
+        ("Oats", 450, "breakfast"), ("Toast", 400, "breakfast"),
+        ("Salad", 650, "lunch"), ("Wrap", 600, "lunch"),
+        ("Curry", 700, "dinner"), ("Stew", 680, "dinner"),
+    ]:
+        loop.run_until_complete(_recipe(db_session, u, name=name, kcal=kcal, mt=mt))
+    loop.run_until_complete(db_session.commit())
+    return client.post("/meal-plan/generate",
+                       json={"days": days, "meals_per_day": meals, "diet_tags": []}).json()
+
+
+def test_swap_replaces_a_single_entry(client, db_session):
+    loop = asyncio.get_event_loop()
+    u = loop.run_until_complete(_user(db_session))
+    c = _as(client, u)
+    body = _generate(c, u, db_session)
+    lunch = [e for e in body["plan_days"][0]["entries"] if e["slot"] == "lunch"][0]
+    old_recipe_id = lunch["recipe"]["id"]
+
+    res = c.post("/meal-plan/entries/%s/swap" % lunch["id"])
+    assert res.status_code == 200
+    swapped = res.json()
+    assert swapped["entry"]["slot"] == "lunch"
+    assert swapped["entry"]["recipe"]["id"] != old_recipe_id
+    assert "calories" in swapped["day_totals"]
+
+
+def test_swap_404_for_another_users_entry(client, db_session):
+    loop = asyncio.get_event_loop()
+    u1 = loop.run_until_complete(_user(db_session))
+    u2 = loop.run_until_complete(_user(db_session))
+    body = _generate(_as(client, u1), u1, db_session)
+    entry_id = body["plan_days"][0]["entries"][0]["id"]
+    _as(client, u2)
+    assert client.post("/meal-plan/entries/%s/swap" % entry_id).status_code == 404
+    app.dependency_overrides.pop(get_current_user, None)
+
+
+def test_swap_409_when_no_alternative(client, db_session):
+    loop = asyncio.get_event_loop()
+    u = loop.run_until_complete(_user(db_session))
+    # exactly one breakfast recipe -> nothing to swap it for
+    loop.run_until_complete(_recipe(db_session, u, name="Only Oats", kcal=450, mt="breakfast"))
+    loop.run_until_complete(_recipe(db_session, u, name="Lunch A", kcal=650, mt="lunch"))
+    loop.run_until_complete(_recipe(db_session, u, name="Dinner A", kcal=700, mt="dinner"))
+    loop.run_until_complete(db_session.commit())
+    c = _as(client, u)
+    body = c.post("/meal-plan/generate", json={"days": 1, "meals_per_day": 3, "diet_tags": []}).json()
+    bfast = [e for e in body["plan_days"][0]["entries"] if e["slot"] == "breakfast"][0]
+    assert c.post("/meal-plan/entries/%s/swap" % bfast["id"]).status_code == 409
+    app.dependency_overrides.pop(get_current_user, None)
+
+
+def test_day_log_creates_food_logs_then_409_then_force(client, db_session):
+    loop = asyncio.get_event_loop()
+    u = loop.run_until_complete(_user(db_session))
+    c = _as(client, u)
+    _generate(c, u, db_session, days=2, meals=3)
+
+    res = c.post("/meal-plan/days/1/log", json={})
+    assert res.status_code == 200
+    assert res.json()["created"] == 3
+    logs = loop.run_until_complete(db_session.execute(
+        FoodLog.__table__.select().where(FoodLog.user_id == u.id))).fetchall()
+    assert len(logs) == 3
+    assert all(row.log_date == date.today() + timedelta(days=1) for row in logs)
+    assert {row.meal for row in logs} == {"breakfast", "lunch", "dinner"}
+
+    assert c.post("/meal-plan/days/1/log", json={}).status_code == 409
+    assert c.post("/meal-plan/days/1/log", json={"force": True}).status_code == 200
+    logs2 = loop.run_until_complete(db_session.execute(
+        FoodLog.__table__.select().where(FoodLog.user_id == u.id))).fetchall()
+    assert len(logs2) == 6
+
+    app.dependency_overrides.pop(get_current_user, None)
+
+
+def test_day_log_404_for_out_of_range_day(client, db_session):
+    loop = asyncio.get_event_loop()
+    u = loop.run_until_complete(_user(db_session))
+    c = _as(client, u)
+    _generate(c, u, db_session, days=1, meals=3)
+    assert c.post("/meal-plan/days/5/log", json={}).status_code == 404
+    app.dependency_overrides.pop(get_current_user, None)
