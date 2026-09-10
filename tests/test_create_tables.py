@@ -161,7 +161,7 @@ async def test_create_tables_adds_meal_planner_columns_and_tables(tmp_path):
     try:
         # OLD-shape recipes/users tables without the new columns
         async with eng.begin() as conn:
-            await conn.execute(text("CREATE TABLE recipes (id TEXT PRIMARY KEY, name TEXT)"))
+            await conn.execute(text("CREATE TABLE recipes (id TEXT PRIMARY KEY, name TEXT, total_calories REAL)"))
             await conn.execute(text("CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT)"))
             await conn.execute(text("CREATE TABLE food_logs (id TEXT, fdc_id INTEGER)"))
             await conn.execute(text("CREATE TABLE recipe_ingredients (id TEXT, fdc_id INTEGER)"))
