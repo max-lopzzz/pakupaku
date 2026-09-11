@@ -267,3 +267,34 @@ def test_swap_entry_returns_none_when_no_alternative():
                       {"kcal": 1900.0, "protein_g": None, "fat_g": None, "carbs_g": None},
                       frozenset(), exclude_recipe_id="only_l", seed=1)
     assert repl is None
+
+
+def test_aggregate_groceries_merges_by_normalized_name_and_sums():
+    from meal_planner import aggregate_groceries
+    items = [
+        ("Oats", 150.0), ("oats", 50.0), ("  Oats  ", 25.0),   # merges: 225.0
+        ("Banana", 118.0),
+    ]
+    result = aggregate_groceries(items)
+    assert result == [
+        {"key": "banana", "name": "Banana", "amount_g": 118.0},
+        {"key": "oats", "name": "Oats", "amount_g": 225.0},
+    ]
+
+
+def test_aggregate_groceries_skips_blank_names_and_sorts_alphabetically():
+    from meal_planner import aggregate_groceries
+    items = [("Zucchini", 200.0), ("", 50.0), ("  ", 10.0), ("Apple", 150.0)]
+    result = aggregate_groceries(items)
+    assert [it["key"] for it in result] == ["apple", "zucchini"]
+
+
+def test_aggregate_groceries_rounds_amounts():
+    from meal_planner import aggregate_groceries
+    result = aggregate_groceries([("Rice", 100.333), ("Rice", 50.111)])
+    assert result == [{"key": "rice", "name": "Rice", "amount_g": 150.4}]
+
+
+def test_aggregate_groceries_empty_input():
+    from meal_planner import aggregate_groceries
+    assert aggregate_groceries([]) == []

@@ -152,3 +152,52 @@ test("Log this day posts, then shows a logged state; 409 prompts a force retry",
   await waitFor(() => expect(logCalls).toBe(2));
   await waitFor(() => expect(screen.getByText(/Logged/)).toBeInTheDocument());
 });
+
+test("Groceries tab loads the list and toggling an item persists via PATCH", async () => {
+  (global.fetch as jest.Mock).mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+    const u = String(url);
+    if (u.endsWith("/meal-plan") && (!init || !init.method || init.method === "GET"))
+      return Promise.resolve({ ok: true, json: async () => planResponse } as Response);
+    if (u.endsWith("/meal-plan/groceries") && (!init || !init.method || init.method === "GET")) {
+      return Promise.resolve({ ok: true, json: async () => ({ items: [
+        { key: "oats", name: "Oats", amount_g: 225, checked: false },
+        { key: "banana", name: "Banana", amount_g: 118, checked: false },
+      ] }) } as Response);
+    }
+    if (u.endsWith("/meal-plan/groceries/oats") && init?.method === "PATCH") {
+      const body = JSON.parse(String(init.body));
+      return Promise.resolve({ ok: true, json: async () => ({ items: [
+        { key: "oats", name: "Oats", amount_g: 225, checked: body.checked },
+        { key: "banana", name: "Banana", amount_g: 118, checked: false },
+      ] }) } as Response);
+    }
+    return Promise.reject(new Error("unexpected " + u));
+  });
+  render(<MealPlanner onBack={() => {}} userProfile={{ diet_tags: [], safe_mode: false }} />);
+  await waitFor(() => expect(screen.getByText("Overnight Oats")).toBeInTheDocument());
+
+  fireEvent.click(screen.getByText("Groceries"));
+  await waitFor(() => expect(screen.getByText("Oats")).toBeInTheDocument());
+  expect(screen.getByText("Banana")).toBeInTheDocument();
+  expect(screen.getByText("225g")).toBeInTheDocument();
+
+  const oatsCheckbox = screen.getByText("Oats").closest("label")!.querySelector("input")!;
+  expect(oatsCheckbox).not.toBeChecked();
+  fireEvent.click(oatsCheckbox);
+  await waitFor(() => expect(oatsCheckbox).toBeChecked());
+});
+
+test("Groceries tab shows an empty state when nothing is needed", async () => {
+  (global.fetch as jest.Mock).mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+    const u = String(url);
+    if (u.endsWith("/meal-plan") && (!init || !init.method || init.method === "GET"))
+      return Promise.resolve({ ok: true, json: async () => planResponse } as Response);
+    if (u.endsWith("/meal-plan/groceries") && (!init || !init.method || init.method === "GET"))
+      return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+    return Promise.reject(new Error("unexpected " + u));
+  });
+  render(<MealPlanner onBack={() => {}} userProfile={{ diet_tags: [], safe_mode: false }} />);
+  await waitFor(() => expect(screen.getByText("Overnight Oats")).toBeInTheDocument());
+  fireEvent.click(screen.getByText("Groceries"));
+  await waitFor(() => expect(screen.getByText(/Nothing to buy/)).toBeInTheDocument());
+});

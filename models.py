@@ -347,6 +347,9 @@ class MealPlan(Base):
     entries: Mapped[List["MealPlanEntry"]] = relationship(
         back_populates="plan", cascade="all, delete-orphan",
     )
+    grocery_items: Mapped[List["GroceryItem"]] = relationship(
+        back_populates="plan", cascade="all, delete-orphan",
+    )
 
 
 class MealPlanEntry(Base):
@@ -371,6 +374,27 @@ class MealPlanEntry(Base):
 
     plan:   Mapped["MealPlan"] = relationship(back_populates="entries")
     recipe: Mapped[Optional["Recipe"]] = relationship()
+
+
+class GroceryItem(Base):
+    """Checked/unchecked state for one ingredient on a meal plan's grocery
+    list. The list itself (names + amounts) is always computed live from
+    the plan's current entries — this table stores nothing but which
+    ingredient keys have been checked off, so a swap or a regenerate
+    never leaves stale amounts lying around. ``ingredient_key`` is the
+    normalized (lowercased, trimmed) ingredient name used to merge the
+    same ingredient across recipes."""
+
+    __tablename__ = "grocery_items"
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
+    plan_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(), ForeignKey("meal_plans.id", ondelete="CASCADE"), nullable=False, index=True,
+    )
+    ingredient_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    checked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    plan: Mapped["MealPlan"] = relationship(back_populates="grocery_items")
 
 
 # ─────────────────────────────────────────────

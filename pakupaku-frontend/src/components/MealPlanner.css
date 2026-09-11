@@ -35,3 +35,16 @@
 .meal-planner-logday { margin-top: 0.9rem; border: none; background: #badfdb; color: #3a2a2a;
   border-radius: 10px; padding: 0.55rem 1rem; font-weight: 700; cursor: pointer; }
 .meal-planner-logday:disabled { opacity: 0.6; cursor: default; }
+.meal-planner-tabs { display: flex; gap: 0.5rem; margin-bottom: 1.25rem; }
+.meal-planner-tab { border: 2px solid #badfdb; background: #fff; color: #3a6b66; font-weight: 600;
+  border-radius: 999px; padding: 0.4rem 1rem; cursor: pointer; }
+.meal-planner-tab-active { background: #badfdb; color: #3a2a2a; }
+.meal-planner-grocery-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column;
+  max-width: 560px; border: 2px solid #badfdb; border-radius: 16px; overflow: hidden; }
+.meal-planner-grocery-item { border-bottom: 1px solid #d8ede9; }
+.meal-planner-grocery-item:last-child { border-bottom: none; }
+.meal-planner-grocery-item label { display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.65rem 1rem; cursor: pointer; }
+.meal-planner-grocery-item label > span:first-of-type { flex: 1; color: #3a2a2a; }
+.meal-planner-grocery-checked { text-decoration: line-through; color: #8a6060; }
+.meal-planner-grocery-amount { font-size: 0.8rem; color: #6a4f4f; }
