@@ -17,12 +17,20 @@ _BREAKFAST_KEYWORDS = (
 )
 _SNACK_KEYWORDS = (
     "bites", "bliss ball", "energy ball", "crackers", "snack",
+    # Desserts and drinks: not a full meal, so they belong in the snack
+    # bucket rather than falling through to "any" (which the planning
+    # engine treats as eligible for breakfast/lunch/dinner too — without
+    # this, a plan could hand someone hot chocolate for breakfast or an
+    # ice cream sandwich for dinner).
+    "ice cream", "hot chocolate", "cotton candy", "milkshake", "cupcake",
+    "brownie", "popsicle", "sorbet", "gelato", "fudge", "marshmallow",
+    "gummies", "cocktail", "mocktail", "lemonade", "candy",
 )
 # Short, ambiguous keys: whole-word match only, so "oat" doesn't fire on
 # "Goat Cheese Salad", "toast" on "Toasted Sesame Noodles", or "dip" on
 # "Chicken Dippers". The \bbar\b here replaces the old trailing-space "bar " hack.
 _BREAKFAST_WORD_RE = re.compile(r"\b(oat|oats|toast)\b")
-_SNACK_WORD_RE = re.compile(r"\b(dip|bark|bar)\b")
+_SNACK_WORD_RE = re.compile(r"\b(dip|bark|bar|cake|cakes|cookie|cookies|pudding|shake|shakes)\b")
 _SNACK_KCAL_CEILING = 200.0
 
 
@@ -46,6 +54,26 @@ async def backfill_meal_types(session: AsyncSession) -> int:
             update(Recipe).where(Recipe.id == rid).values(meal_type=infer_meal_type(name, kcal))
         )
     return len(rows)
+
+
+async def reclassify_any_meal_types(session: AsyncSession) -> Dict[str, int]:
+    """One-shot re-run of ``infer_meal_type`` over recipes currently
+    classified ``"any"``, updating the ones an improved heuristic now
+    calls differently (e.g. a keyword list gaining new snack/dessert
+    terms). Scoped to ``"any"`` only — the value the backfill defaults to
+    when nothing matches — so it never overwrites a `breakfast`/`lunch`/
+    `dinner`/`snack` a human deliberately picked via the recipe form.
+    Caller owns the commit."""
+    rows = (await session.execute(
+        select(Recipe.id, Recipe.name, Recipe.total_calories).where(Recipe.meal_type == "any")
+    )).all()
+    reclassified = 0
+    for rid, name, kcal in rows:
+        new_type = infer_meal_type(name, kcal)
+        if new_type != "any":
+            await session.execute(update(Recipe).where(Recipe.id == rid).values(meal_type=new_type))
+            reclassified += 1
+    return {"scanned": len(rows), "reclassified": reclassified}
 
 
 SLOT_ORDER = ["breakfast", "lunch", "dinner", "snack"]

@@ -89,10 +89,16 @@ export default function SharedRecipes({ onBack, userProfile }: SharedRecipesProp
         if (checked === 0 || remaining <= 0) break;
       }
 
+      setCleanupMsg("Fixing meal categorization…");
+      const r = await apiFetch("/recipes/reclassify-meal-types", { method: "POST", headers: authHeaders() });
+      if (!r.ok) throw new Error();
+      const { reclassified } = await r.json();
+
       await loadShared();
       setCleanupMsg(
         `Removed ${deleted} duplicate${deleted !== 1 ? "s" : ""}` +
-        `, backfilled ${imagesAdded} image${imagesAdded !== 1 ? "s" : ""}.`,
+        `, backfilled ${imagesAdded} image${imagesAdded !== 1 ? "s" : ""}` +
+        `, fixed ${reclassified} meal type${reclassified !== 1 ? "s" : ""}.`,
       );
     } catch {
       setError("Cleanup failed. It's safe to run again.");

@@ -180,3 +180,33 @@ def test_dedupe_endpoint_collapses_duplicates(client, db_session):
         assert len(listed) == 1
     finally:
         app.dependency_overrides.pop(get_current_user, None)
+
+
+def test_reclassify_meal_types_requires_admin(client, db_session):
+    user = asyncio.get_event_loop().run_until_complete(_make_user(db_session))
+    try:
+        assert _as(client, user).post("/recipes/reclassify-meal-types").status_code == 403
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+def test_reclassify_meal_types_endpoint_fixes_stale_any_rows(client, db_session):
+    from models import Recipe
+    admin = asyncio.get_event_loop().run_until_complete(
+        _make_user(db_session, is_admin=True)
+    )
+    db_session.add(Recipe(
+        id=uuid.uuid4(), user_id=admin.id, name="Pink Hot Chocolate", servings=1.0,
+        total_calories=380, meal_type="any",
+    ))
+    db_session.add(Recipe(
+        id=uuid.uuid4(), user_id=admin.id, name="Lentil Ragu Pasta", servings=1.0,
+        total_calories=620, meal_type="any",
+    ))
+    asyncio.get_event_loop().run_until_complete(db_session.commit())
+    try:
+        res = _as(client, admin).post("/recipes/reclassify-meal-types")
+        assert res.status_code == 200
+        assert res.json() == {"scanned": 2, "reclassified": 1}
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)

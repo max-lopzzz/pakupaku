@@ -37,7 +37,7 @@ from schemas import (
     RecipeCreateRequest, RecipeUpdateRequest, RecipeResponse,
     ImportRecipeRequest, RecipeImportDraft,
     BulkDiscoverRequest, BulkDiscoverResponse, BulkExtractRequest, BulkExtractResponse,
-    SharedDedupeResponse, BackfillImagesResponse,
+    SharedDedupeResponse, BackfillImagesResponse, MealTypeReclassifyResponse,
     BodyMeasurementCreate, BodyMeasurementResponse,
     MealPlanGenerateRequest, MealPlanResponse, MealPlanRecipeMini,
     MealPlanEntryResponse, MealPlanDayResponse, MealPlanTargets,
@@ -61,7 +61,7 @@ from nutrition_calculator import (
 )
 from meal_planner import (
     generate_plan, swap_entry, RecipeOption, active_slots, slot_budgets, PlannedEntry,
-    SLOT_ORDER,
+    SLOT_ORDER, reclassify_any_meal_types,
 )
 
 SLOT_ORDER_INDEX = {s: i for i, s in enumerate(SLOT_ORDER)}  # breakfast=0, lunch=1, dinner=2, snack=3
@@ -935,6 +935,23 @@ async def backfill_shared_recipe_images(
     if not current_user.is_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required.")
     result = await backfill_shared_images(db)
+    await db.commit()
+    return result
+
+
+@app.post("/recipes/reclassify-meal-types", response_model=MealTypeReclassifyResponse)
+async def reclassify_meal_types(
+    current_user: User         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+):
+    """Admin: one-shot re-run of the meal_type heuristic over every recipe
+    still classified "any" — picks up keyword-list improvements (e.g. a
+    dessert/drink no longer defaulting to "any", which the planner treats
+    as eligible for breakfast/lunch/dinner) without touching a meal_type a
+    person set on purpose."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required.")
+    result = await reclassify_any_meal_types(db)
     await db.commit()
     return result
 

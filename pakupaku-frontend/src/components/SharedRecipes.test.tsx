@@ -168,3 +168,34 @@ test("log now posts to /logs with the recipe id and scaled nutrients", async () 
   expect(body.recipe_id).toBe(sharedRecipe.id);
   expect(body.calories).toBe(200); // 1 serving, default multiplier
 });
+
+test("admin cleanup dedupes, backfills images, and fixes meal types", async () => {
+  (global.fetch as jest.Mock).mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+    const u = String(url);
+    if (u === "/recipes/shared") {
+      return Promise.resolve({ ok: true, json: async () => [sharedRecipe] } as Response);
+    }
+    if (u === "/recipes/shared/dedupe" && init?.method === "POST") {
+      return Promise.resolve({ ok: true, json: async () => ({ deleted: 2, kept: 1, groups: 1, shared_total: 3 }) } as Response);
+    }
+    if (u === "/recipes/shared/backfill-images" && init?.method === "POST") {
+      return Promise.resolve({ ok: true, json: async () => ({ checked: 0, updated: 0, remaining: 0 }) } as Response);
+    }
+    if (u === "/recipes/reclassify-meal-types" && init?.method === "POST") {
+      return Promise.resolve({ ok: true, json: async () => ({ scanned: 5, reclassified: 3 }) } as Response);
+    }
+    return Promise.reject(new Error(`Unexpected fetch: ${u}`));
+  });
+
+  render(<SharedRecipes onBack={() => {}} userProfile={{ is_admin: true }} />);
+  await waitFor(() => screen.getByText("Shared Soup"));
+
+  fireEvent.click(screen.getByText("Clean up duplicates"));
+
+  await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(
+    "/recipes/reclassify-meal-types", expect.objectContaining({ method: "POST" })
+  ));
+  await waitFor(() => expect(
+    screen.getByText(/Removed 2 duplicates, backfilled 0 images, fixed 3 meal types\./)
+  ).toBeInTheDocument());
+});

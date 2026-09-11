@@ -557,6 +557,11 @@ class BackfillImagesResponse(BaseModel):
     remaining: int
 
 
+class MealTypeReclassifyResponse(BaseModel):
+    scanned: int
+    reclassified: int
+
+
 # ─────────────────────────────────────────────
 #  MEAL PLANNER
 # ─────────────────────────────────────────────
