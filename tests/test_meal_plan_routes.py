@@ -249,3 +249,93 @@ def test_user_diet_tags_round_trip(client, db_session):
     assert sorted(res.json()["diet_tags"]) == ["gluten_free", "vegan"]
     assert sorted(c.get("/users/me").json()["diet_tags"]) == ["gluten_free", "vegan"]
     assert c.patch("/users/me", json={"diet_tags": ["carnivore"]}).status_code == 422
+
+
+async def _ingredient(db_session, recipe, *, name, amount_g):
+    from models import RecipeIngredient
+    ing = RecipeIngredient(id=uuid.uuid4(), recipe_id=recipe.id, food_name=name, amount_g=amount_g)
+    db_session.add(ing)
+    await db_session.flush()
+    return ing
+
+
+def test_grocery_list_404_without_a_plan(client, db_session):
+    u = asyncio.get_event_loop().run_until_complete(_user(db_session))
+    assert _as(client, u).get("/meal-plan/groceries").status_code == 404
+
+
+def test_grocery_list_aggregates_scaled_ingredients_across_entries(client, db_session):
+    from meal_planner import slot_budgets
+    loop = asyncio.get_event_loop()
+    u = loop.run_until_complete(_user(db_session))   # kcal=2000 -> exact budgets below
+    budgets = slot_budgets(2000.0, ["breakfast", "lunch", "dinner"])
+
+    b = loop.run_until_complete(_recipe(db_session, u, name="Oat Bowl", kcal=budgets["breakfast"], mt="breakfast"))
+    l = loop.run_until_complete(_recipe(db_session, u, name="Veggie Salad", kcal=budgets["lunch"], mt="lunch"))
+    d = loop.run_until_complete(_recipe(db_session, u, name="Rice Bowl", kcal=budgets["dinner"], mt="dinner"))
+    loop.run_until_complete(_ingredient(db_session, b, name="Oats", amount_g=100.0))
+    loop.run_until_complete(_ingredient(db_session, l, name="Lettuce", amount_g=150.0))
+    loop.run_until_complete(_ingredient(db_session, l, name="Oats", amount_g=30.0))
+    loop.run_until_complete(_ingredient(db_session, d, name="Rice", amount_g=200.0))
+    loop.run_until_complete(db_session.commit())
+
+    c = _as(client, u)
+    body = c.post("/meal-plan/generate", json={"days": 1, "meals_per_day": 3, "diet_tags": []}).json()
+    # recipe kcal exactly matches its slot budget, so every entry lands at 1.0 servings
+    assert all(e["servings"] == 1.0 for e in body["plan_days"][0]["entries"])
+
+    res = c.get("/meal-plan/groceries")
+    assert res.status_code == 200
+    items = {it["name"]: it for it in res.json()["items"]}
+    assert items["Oats"]["amount_g"] == 130.0      # 100 (breakfast) + 30 (lunch), merged
+    assert items["Lettuce"]["amount_g"] == 150.0
+    assert items["Rice"]["amount_g"] == 200.0
+    assert all(not it["checked"] for it in items.values())
+
+
+def test_toggle_grocery_item_404_without_a_plan(client, db_session):
+    u = asyncio.get_event_loop().run_until_complete(_user(db_session))
+    assert _as(client, u).patch("/meal-plan/groceries/oats", json={"checked": True}).status_code == 404
+
+
+def test_toggle_grocery_item_checked_state_persists(client, db_session):
+    loop = asyncio.get_event_loop()
+    u = loop.run_until_complete(_user(db_session))
+    r = loop.run_until_complete(_recipe(db_session, u, name="Oat Bowl", kcal=2000.0, mt="any"))
+    loop.run_until_complete(_ingredient(db_session, r, name="Oats", amount_g=100.0))
+    loop.run_until_complete(db_session.commit())
+
+    c = _as(client, u)
+    c.post("/meal-plan/generate", json={"days": 1, "meals_per_day": 2, "diet_tags": []})
+    listed = c.get("/meal-plan/groceries").json()
+    key = listed["items"][0]["key"]
+    assert listed["items"][0]["checked"] is False
+
+    res = c.patch("/meal-plan/groceries/%s" % key, json={"checked": True})
+    assert res.status_code == 200
+    assert next(it for it in res.json()["items"] if it["key"] == key)["checked"] is True
+
+    refetched = c.get("/meal-plan/groceries").json()
+    assert next(it for it in refetched["items"] if it["key"] == key)["checked"] is True
+
+    # unchecking round-trips too
+    res2 = c.patch("/meal-plan/groceries/%s" % key, json={"checked": False})
+    assert next(it for it in res2.json()["items"] if it["key"] == key)["checked"] is False
+
+
+def test_grocery_list_survives_a_regenerate_with_a_fresh_checklist(client, db_session):
+    loop = asyncio.get_event_loop()
+    u = loop.run_until_complete(_user(db_session))
+    r = loop.run_until_complete(_recipe(db_session, u, name="Oat Bowl", kcal=2000.0, mt="any"))
+    loop.run_until_complete(_ingredient(db_session, r, name="Oats", amount_g=100.0))
+    loop.run_until_complete(db_session.commit())
+
+    c = _as(client, u)
+    c.post("/meal-plan/generate", json={"days": 1, "meals_per_day": 2, "diet_tags": []})
+    key = c.get("/meal-plan/groceries").json()["items"][0]["key"]
+    c.patch("/meal-plan/groceries/%s" % key, json={"checked": True})
+
+    # regenerating replaces the plan (new plan_id) -> old checked state doesn't apply
+    c.post("/meal-plan/generate", json={"days": 1, "meals_per_day": 2, "diet_tags": []})
+    refreshed = c.get("/meal-plan/groceries").json()
+    assert refreshed["items"][0]["checked"] is False

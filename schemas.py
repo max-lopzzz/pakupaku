@@ -657,3 +657,18 @@ class MealPlanDayLogRequest(BaseModel):
 class MealPlanDayLogResponse(BaseModel):
     created:   int
     logged_at: datetime
+
+
+class GroceryItemResponse(BaseModel):
+    key:      str
+    name:     str
+    amount_g: float
+    checked:  bool
+
+
+class GroceryListResponse(BaseModel):
+    items: List[GroceryItemResponse]
+
+
+class GroceryItemUpdateRequest(BaseModel):
+    checked: bool

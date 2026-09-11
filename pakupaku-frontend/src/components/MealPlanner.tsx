@@ -23,6 +23,9 @@ interface Plan {
   diet_tags?: string[];
   plan_days: Day[];
 }
+interface GroceryItem {
+  key: string; name: string; amount_g: number; checked: boolean;
+}
 
 interface Props { onBack: () => void; userProfile: any; }
 
@@ -50,6 +53,11 @@ export default function MealPlanner({ onBack, userProfile }: Props) {
   const [tags, setTags] = useState<string[]>(userProfile?.diet_tags ?? []);
   const [showForm, setShowForm] = useState(false);
   const [busyEntry, setBusyEntry] = useState<string | null>(null);
+
+  const [tab, setTab] = useState<"plan" | "groceries">("plan");
+  const [groceries, setGroceries] = useState<GroceryItem[] | null>(null);
+  const [groceriesLoading, setGroceriesLoading] = useState(false);
+  const [groceriesError, setGroceriesError] = useState("");
 
   useEffect(() => {
     apiFetch("/meal-plan", { headers: authHeaders() })
@@ -150,6 +158,43 @@ export default function MealPlanner({ onBack, userProfile }: Props) {
     }
   };
 
+  const loadGroceries = async () => {
+    setGroceriesError("");
+    setGroceriesLoading(true);
+    try {
+      const res = await apiFetch("/meal-plan/groceries", { headers: authHeaders() });
+      const body = await res.json();
+      if (!res.ok) { setGroceriesError("Couldn't load your grocery list."); return; }
+      setGroceries(body.items);
+    } catch {
+      setGroceriesError("Couldn't load your grocery list.");
+    } finally {
+      setGroceriesLoading(false);
+    }
+  };
+
+  const openGroceries = () => {
+    setTab("groceries");
+    loadGroceries();
+  };
+
+  const toggleGroceryItem = async (key: string, checked: boolean) => {
+    setGroceries(items => items && items.map(it => (it.key === key ? { ...it, checked } : it)));
+    try {
+      const res = await apiFetch(`/meal-plan/groceries/${encodeURIComponent(key)}`, {
+        method: "PATCH",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ checked }),
+      });
+      if (!res.ok) throw new Error();
+      const body = await res.json();
+      setGroceries(body.items);
+    } catch {
+      setGroceriesError("Couldn't save that change.");
+      loadGroceries();
+    }
+  };
+
   return (
     <div className="meal-planner-root">
       <div className="meal-planner-container">
@@ -167,6 +212,21 @@ export default function MealPlanner({ onBack, userProfile }: Props) {
             </button>
           )}
         </header>
+
+        {plan && !showForm && (
+          <div className="meal-planner-tabs">
+            <button type="button"
+              className={`meal-planner-tab${tab === "plan" ? " meal-planner-tab-active" : ""}`}
+              onClick={() => setTab("plan")}>
+              Plan
+            </button>
+            <button type="button"
+              className={`meal-planner-tab${tab === "groceries" ? " meal-planner-tab-active" : ""}`}
+              onClick={openGroceries}>
+              Groceries
+            </button>
+          </div>
+        )}
 
         {error && <p className="meal-planner-error">{error}</p>}
         {loading && <p className="empty-state">Loading…</p>}
@@ -199,7 +259,7 @@ export default function MealPlanner({ onBack, userProfile }: Props) {
           </div>
         )}
 
-        {!loading && !showForm && plan && (
+        {!loading && !showForm && plan && tab === "plan" && (
           <div className="meal-planner-days">
             {plan.plan_days.map(day => (
               <section key={day.day_index} className="meal-planner-day">
@@ -266,6 +326,32 @@ export default function MealPlanner({ onBack, userProfile }: Props) {
                 </button>
               </section>
             ))}
+          </div>
+        )}
+
+        {!loading && !showForm && plan && tab === "groceries" && (
+          <div className="meal-planner-groceries">
+            {groceriesError && <p className="meal-planner-error">{groceriesError}</p>}
+            {groceriesLoading && <p className="empty-state">Loading…</p>}
+            {!groceriesLoading && groceries && groceries.length === 0 && (
+              <p className="empty-state">Nothing to buy — every meal in this plan is already covered.</p>
+            )}
+            {!groceriesLoading && groceries && groceries.length > 0 && (
+              <ul className="meal-planner-grocery-list">
+                {groceries.map(it => (
+                  <li key={it.key} className="meal-planner-grocery-item">
+                    <label>
+                      <input type="checkbox" checked={it.checked}
+                        onChange={e => toggleGroceryItem(it.key, e.target.checked)} />
+                      <span className={it.checked ? "meal-planner-grocery-checked" : ""}>
+                        {it.name}
+                      </span>
+                      <span className="meal-planner-grocery-amount">{Math.round(it.amount_g)}g</span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
       </div>

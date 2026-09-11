@@ -27,7 +27,10 @@ from sqlalchemy import func, cast, Date
 from sqlalchemy.orm import selectinload
 
 from database import get_db, AsyncSessionLocal
-from models import User, FoodLog, Recipe, RecipeIngredient, BodyMeasurement, MealPlan, MealPlanEntry
+from models import (
+    User, FoodLog, Recipe, RecipeIngredient, BodyMeasurement,
+    MealPlan, MealPlanEntry, GroceryItem,
+)
 from schemas import (
     RegisterRequest, LoginRequest, TokenResponse,
     ForgotPasswordRequest, ResetPasswordRequest,
@@ -42,6 +45,7 @@ from schemas import (
     MealPlanGenerateRequest, MealPlanResponse, MealPlanRecipeMini,
     MealPlanEntryResponse, MealPlanDayResponse, MealPlanTargets,
     MealPlanSwapResponse, MealPlanDayLogRequest, MealPlanDayLogResponse,
+    GroceryListResponse, GroceryItemResponse, GroceryItemUpdateRequest,
 )
 from auth import hash_password, verify_password, create_access_token, get_current_user
 from email_utils import send_verification_email, send_password_reset_email
@@ -61,7 +65,7 @@ from nutrition_calculator import (
 )
 from meal_planner import (
     generate_plan, swap_entry, RecipeOption, active_slots, slot_budgets, PlannedEntry,
-    SLOT_ORDER, reclassify_any_meal_types,
+    SLOT_ORDER, reclassify_any_meal_types, aggregate_groceries,
 )
 
 SLOT_ORDER_INDEX = {s: i for i, s in enumerate(SLOT_ORDER)}  # breakfast=0, lunch=1, dinner=2, snack=3
@@ -1358,6 +1362,83 @@ async def log_meal_plan_day(
     plan.logged_days = json.dumps(logged)
     await db.flush()
     return MealPlanDayLogResponse(created=created, logged_at=now)
+
+
+async def _load_plan_with_ingredients(db: AsyncSession, user_id) -> Optional[MealPlan]:
+    res = await db.execute(
+        select(MealPlan).where(MealPlan.user_id == user_id)
+        .options(selectinload(MealPlan.entries)
+                 .selectinload(MealPlanEntry.recipe)
+                 .selectinload(Recipe.ingredients))
+    )
+    return res.scalars().first()
+
+
+async def _grocery_list_response(db: AsyncSession, plan: MealPlan) -> GroceryListResponse:
+    """Aggregate every filled entry's ingredients (scaled to that entry's
+    servings) into a shopping list, then overlay each ingredient's checked
+    state. The list is always computed fresh from the plan's current
+    entries — only ``checked`` is persisted — so a swap or regenerate can
+    never leave a stale amount on the list."""
+    raw_items = []
+    for e in plan.entries:
+        if e.recipe_id is None or e.recipe is None:
+            continue
+        recipe_servings = e.recipe.servings or 1.0
+        for ing in e.recipe.ingredients:
+            raw_items.append((ing.food_name, ing.amount_g / recipe_servings * e.servings))
+
+    aggregated = aggregate_groceries(raw_items)
+
+    checked_rows = (await db.execute(
+        select(GroceryItem.ingredient_key, GroceryItem.checked).where(GroceryItem.plan_id == plan.id)
+    )).all()
+    checked_map = {key: checked for key, checked in checked_rows}
+
+    return GroceryListResponse(items=[
+        GroceryItemResponse(
+            key=it["key"], name=it["name"], amount_g=it["amount_g"],
+            checked=checked_map.get(it["key"], False),
+        )
+        for it in aggregated
+    ])
+
+
+@app.get("/meal-plan/groceries", response_model=GroceryListResponse)
+async def get_grocery_list(
+    current_user: User         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+):
+    plan = await _load_plan_with_ingredients(db, current_user.id)
+    if plan is None:
+        raise HTTPException(status_code=404, detail="No meal plan.")
+    return await _grocery_list_response(db, plan)
+
+
+@app.patch("/meal-plan/groceries/{key}", response_model=GroceryListResponse)
+async def update_grocery_item(
+    key:          str,
+    payload:      GroceryItemUpdateRequest,
+    current_user: User         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+):
+    plan = await _load_plan_with_ingredients(db, current_user.id)
+    if plan is None:
+        raise HTTPException(status_code=404, detail="No meal plan.")
+
+    normalized_key = key.strip().lower()
+    existing = (await db.execute(
+        select(GroceryItem).where(
+            GroceryItem.plan_id == plan.id, GroceryItem.ingredient_key == normalized_key,
+        )
+    )).scalars().first()
+    if existing is not None:
+        existing.checked = payload.checked
+    else:
+        db.add(GroceryItem(plan_id=plan.id, ingredient_key=normalized_key, checked=payload.checked))
+    await db.flush()
+
+    return await _grocery_list_response(db, plan)
 
 
 # ─────────────────────────────────────────────

@@ -3,7 +3,7 @@
 import random
 import re
 from dataclasses import dataclass
-from typing import Dict, FrozenSet, List, Optional
+from typing import Dict, FrozenSet, List, Optional, Tuple
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -241,3 +241,24 @@ def swap_entry(options, day_entries, slot: str, budgets, day_target, diet_tags: 
         if best_score is None or sc < best_score:
             best_score, best_entry = sc, cand
     return best_entry
+
+
+def aggregate_groceries(items: List[Tuple[str, float]]) -> List[Dict[str, object]]:
+    """``items``: ``(food_name, amount_g)`` for every ingredient of every
+    filled meal-plan entry, already scaled to that entry's servings.
+    Merges by normalized (trimmed, lowercased) name, sums the scaled
+    amounts, and returns a name-sorted list of
+    ``{"key": str, "name": str, "amount_g": float}`` — ``key`` is the
+    merge key later used to look up/store checked state. Blank names are
+    skipped."""
+    merged: Dict[str, Dict[str, object]] = {}
+    for name, amount_g in items:
+        key = (name or "").strip().lower()
+        if not key:
+            continue
+        if key not in merged:
+            merged[key] = {"key": key, "name": name.strip(), "amount_g": 0.0}
+        merged[key]["amount_g"] += amount_g
+    for item in merged.values():
+        item["amount_g"] = round(item["amount_g"], 1)
+    return sorted(merged.values(), key=lambda it: it["key"])
