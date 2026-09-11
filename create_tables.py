@@ -34,7 +34,8 @@ from sqlalchemy.exc import DBAPIError
 
 from database import AsyncSessionLocal, Base, engine
 import models  # noqa: F401  (import side effect: registers every table on Base.metadata)
-from migrations import _migrate_fdc_to_food_id
+from migrations import _migrate_fdc_to_food_id, _add_meal_planner_columns
+from meal_planner import backfill_meal_types
 from seed_foods import seed_foods
 
 logger = logging.getLogger(__name__)
@@ -53,6 +54,7 @@ async def create_tables(db_engine=None, session_factory=None, artifact_path=None
     async with db_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await _migrate_fdc_to_food_id(conn)
+        await _add_meal_planner_columns(conn)
 
     kwargs = {} if artifact_path is None else {"artifact_path": artifact_path}
     # Neon (serverless Postgres) drops connections mid-operation under load,
@@ -63,6 +65,9 @@ async def create_tables(db_engine=None, session_factory=None, artifact_path=None
         try:
             async with session_factory() as s:
                 seeded = await seed_foods(s, **kwargs)
+                await s.commit()
+            async with session_factory() as s:
+                await backfill_meal_types(s)
                 await s.commit()
             return seeded
         except DBAPIError as exc:

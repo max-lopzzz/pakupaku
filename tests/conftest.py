@@ -61,6 +61,19 @@ async def db_session():
     _os.remove(path)
 
 
+@pytest.fixture(autouse=True)
+def _clear_current_user_override():
+    """Guarantee no test leaks a `get_current_user` dependency override into
+    the next one. Several route tests set
+    `app.dependency_overrides[get_current_user] = lambda: user` and used to
+    pop it with a bare trailing line that never runs if an assertion above
+    it fails. This autouse teardown makes that cleanup unconditional."""
+    yield
+    from auth import get_current_user
+    from main import app
+    app.dependency_overrides.pop(get_current_user, None)
+
+
 @pytest.fixture
 def client(db_session):
     """A TestClient whose get_db dependency yields db_session — every

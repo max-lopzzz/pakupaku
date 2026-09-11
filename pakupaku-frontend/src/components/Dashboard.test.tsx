@@ -39,6 +39,7 @@ test("Bulk Import button only appears for admins", () => {
       onOpenSettings={() => {}}
       onOpenSharedRecipes={() => {}}
       onOpenBulkImport={() => {}}
+      onOpenMealPlanner={() => {}}
     />
   );
   expect(screen.queryByText("Bulk Import")).not.toBeInTheDocument();
@@ -51,6 +52,7 @@ test("Bulk Import button only appears for admins", () => {
       onOpenSettings={() => {}}
       onOpenSharedRecipes={() => {}}
       onOpenBulkImport={() => {}}
+      onOpenMealPlanner={() => {}}
     />
   );
   expect(screen.getByText("Bulk Import")).toBeInTheDocument();

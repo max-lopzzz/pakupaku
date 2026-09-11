@@ -16,6 +16,7 @@ from typing import Optional, List
 import uuid
 import secrets
 import logging
+import json
 
 from fastapi import FastAPI, Depends, HTTPException, status, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -26,7 +27,7 @@ from sqlalchemy import func, cast, Date
 from sqlalchemy.orm import selectinload
 
 from database import get_db, AsyncSessionLocal
-from models import User, FoodLog, Recipe, RecipeIngredient, BodyMeasurement
+from models import User, FoodLog, Recipe, RecipeIngredient, BodyMeasurement, MealPlan, MealPlanEntry
 from schemas import (
     RegisterRequest, LoginRequest, TokenResponse,
     ForgotPasswordRequest, ResetPasswordRequest,
@@ -38,6 +39,9 @@ from schemas import (
     BulkDiscoverRequest, BulkDiscoverResponse, BulkExtractRequest, BulkExtractResponse,
     SharedDedupeResponse, BackfillImagesResponse,
     BodyMeasurementCreate, BodyMeasurementResponse,
+    MealPlanGenerateRequest, MealPlanResponse, MealPlanRecipeMini,
+    MealPlanEntryResponse, MealPlanDayResponse, MealPlanTargets,
+    MealPlanSwapResponse, MealPlanDayLogRequest, MealPlanDayLogResponse,
 )
 from auth import hash_password, verify_password, create_access_token, get_current_user
 from email_utils import send_verification_email, send_password_reset_email
@@ -55,6 +59,12 @@ from nutrition_calculator import (
     apply_metabolic_conditions, calc_tdee, calc_goal_adjustment,
     calc_macros, hrt_navy_blend_t,
 )
+from meal_planner import (
+    generate_plan, swap_entry, RecipeOption, active_slots, slot_budgets, PlannedEntry,
+    SLOT_ORDER,
+)
+
+SLOT_ORDER_INDEX = {s: i for i, s in enumerate(SLOT_ORDER)}  # breakfast=0, lunch=1, dinner=2, snack=3
 
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
@@ -301,6 +311,9 @@ async def update_me(
 
     if payload.safe_mode is not None:
         current_user.safe_mode = payload.safe_mode
+
+    if payload.diet_tags is not None:
+        current_user.diet_tags = _diet_tags_to_str(payload.diet_tags)
 
     await db.flush()
     return current_user
@@ -694,6 +707,79 @@ def _diet_tags_to_str(tags: Optional[List[str]]) -> Optional[str]:
     return ",".join(tags) if tags else None
 
 
+def _resolve_targets(user: User) -> dict:
+    if user.uses_custom_goals:
+        return {"kcal": user.custom_kcal, "protein_g": user.custom_protein,
+                "fat_g": user.custom_fat, "carbs_g": user.custom_carbs}
+    return {"kcal": user.target_kcal, "protein_g": user.protein_g,
+            "fat_g": user.fat_g, "carbs_g": user.carbs_g}
+
+
+def _recipe_to_option(r: Recipe) -> RecipeOption:
+    return RecipeOption(
+        id=str(r.id), name=r.name,
+        meal_type=(r.meal_type or "any"),
+        diet_tags=frozenset(t for t in (r.diet_tags or "").split(",") if t),
+        kcal=r.total_calories or 0.0,
+        protein_g=r.total_protein_g or 0.0, fat_g=r.total_fat_g or 0.0,
+        carbs_g=r.total_carbs_g or 0.0, fiber_g=r.total_fiber_g or 0.0,
+    )
+
+
+async def _load_plan(db: AsyncSession, user_id) -> Optional[MealPlan]:
+    res = await db.execute(
+        select(MealPlan).where(MealPlan.user_id == user_id)
+        .options(selectinload(MealPlan.entries).selectinload(MealPlanEntry.recipe))
+    )
+    return res.scalars().first()
+
+
+def _plan_to_response(plan: MealPlan) -> MealPlanResponse:
+    by_day: dict = {}
+    for e in plan.entries:
+        by_day.setdefault(e.day_index, []).append(e)
+    plan_days = []
+    for di in range(plan.days):
+        entries = sorted(by_day.get(di, []), key=lambda e: SLOT_ORDER_INDEX.get(e.slot, 9))
+        ent_resp, unfilled_slots = [], []
+        totals = {"calories": 0.0, "protein_g": 0.0, "fat_g": 0.0, "carbs_g": 0.0, "fiber_g": 0.0}
+        for e in entries:
+            unfilled = e.recipe_id is None
+            if unfilled:
+                unfilled_slots.append(e.slot)
+            rec = None
+            if e.recipe is not None:
+                rec = MealPlanRecipeMini(
+                    id=e.recipe.id, name=e.recipe.name, image_url=e.recipe.image_url,
+                    servings=e.recipe.servings, meal_type=e.recipe.meal_type,
+                    total_calories=e.recipe.total_calories, total_protein_g=e.recipe.total_protein_g,
+                    total_fat_g=e.recipe.total_fat_g, total_carbs_g=e.recipe.total_carbs_g,
+                    total_fiber_g=e.recipe.total_fiber_g,
+                )
+            ent_resp.append(MealPlanEntryResponse(
+                id=e.id, slot=e.slot, servings=e.servings, unfilled=unfilled, recipe=rec,
+                calories=e.calories, protein_g=e.protein_g, fat_g=e.fat_g,
+                carbs_g=e.carbs_g, fiber_g=e.fiber_g,
+            ))
+            for tk, ek in (("calories", "calories"), ("protein_g", "protein_g"),
+                           ("fat_g", "fat_g"), ("carbs_g", "carbs_g"), ("fiber_g", "fiber_g")):
+                totals[tk] += getattr(e, ek) or 0.0
+        totals = {k: round(v, 1) for k, v in totals.items()}
+        this_day_logged = json.loads(plan.logged_days or "{}").get(str(di))
+        plan_days.append(MealPlanDayResponse(
+            day_index=di,
+            logged_at=(datetime.fromisoformat(this_day_logged) if this_day_logged else None),
+            entries=ent_resp, totals=totals, structurally_unfilled_slots=unfilled_slots,
+        ))
+    return MealPlanResponse(
+        id=plan.id, days=plan.days, meals_per_day=plan.meals_per_day, created_at=plan.created_at,
+        targets=MealPlanTargets(kcal=plan.target_kcal, protein_g=plan.target_protein_g,
+                                fat_g=plan.target_fat_g, carbs_g=plan.target_carbs_g),
+        diet_tags=[t for t in (plan.diet_tags or "").split(",") if t],
+        plan_days=plan_days,
+    )
+
+
 def _compute_recipe_totals(ingredients, servings: float) -> dict:
     """Sum nutrient values across all ingredients and divide by servings."""
     def safe_sum(field):
@@ -726,6 +812,7 @@ async def create_recipe(
         instructions = payload.instructions,
         diet_tags    = _diet_tags_to_str(payload.diet_tags),
         is_shared    = bool(payload.is_shared) and current_user.is_admin,
+        meal_type    = payload.meal_type,
     )
     db.add(recipe)
     await db.flush()   # assigns recipe.id
@@ -910,6 +997,7 @@ async def copy_recipe(
         source_url   = source.source_url,
         instructions = source.instructions,
         diet_tags    = source.diet_tags,
+        meal_type    = source.meal_type,
         is_shared    = False,
     )
     db.add(copy)
@@ -1001,6 +1089,7 @@ async def update_recipe(
     if payload.source_url   is not None: recipe.source_url   = payload.source_url
     if payload.instructions is not None: recipe.instructions = payload.instructions
     if payload.diet_tags    is not None: recipe.diet_tags    = _diet_tags_to_str(payload.diet_tags)
+    if payload.meal_type    is not None: recipe.meal_type    = payload.meal_type
     if payload.is_shared    is not None:
         recipe.is_shared = bool(payload.is_shared) and current_user.is_admin
 
@@ -1072,6 +1161,186 @@ async def delete_recipe(
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found.")
     await db.delete(recipe)
+
+
+# ─────────────────────────────────────────────
+#  MEAL PLAN ROUTES
+# ─────────────────────────────────────────────
+
+@app.post("/meal-plan/generate", response_model=MealPlanResponse)
+async def generate_meal_plan(
+    payload:      MealPlanGenerateRequest,
+    current_user: User         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+):
+    targets = _resolve_targets(current_user)
+    if targets["kcal"] is None:
+        raise HTTPException(status_code=422,
+                            detail="Finish onboarding to set your calorie target before planning meals.")
+
+    pool_rows = (await db.execute(
+        select(Recipe).where(
+            (Recipe.is_shared == True) | (Recipe.user_id == current_user.id),  # noqa: E712
+            Recipe.total_calories.isnot(None),
+        )
+    )).scalars().all()
+    diet = frozenset(payload.diet_tags)
+    options = [_recipe_to_option(r) for r in pool_rows]
+    if not [o for o in options if diet <= o.diet_tags]:
+        raise HTTPException(status_code=422,
+                            detail="No recipes match those dietary filters. Add recipes or loosen the filter.")
+
+    planned = generate_plan(options, payload.days, payload.meals_per_day, targets, diet)
+
+    existing = await _load_plan(db, current_user.id)
+    if existing is not None:
+        await db.delete(existing)
+        await db.flush()
+
+    plan = MealPlan(
+        user_id=current_user.id, days=payload.days, meals_per_day=payload.meals_per_day,
+        target_kcal=targets["kcal"], target_protein_g=targets["protein_g"],
+        target_fat_g=targets["fat_g"], target_carbs_g=targets["carbs_g"],
+        diet_tags=",".join(payload.diet_tags), logged_days="{}",
+    )
+    db.add(plan)
+    await db.flush()
+    for di, day in enumerate(planned):
+        for e in day.entries:
+            db.add(MealPlanEntry(
+                plan_id=plan.id, day_index=di, slot=e.slot,
+                recipe_id=(uuid.UUID(e.option.id) if e.option is not None else None),
+                servings=e.servings,
+                calories=(e.kcal if e.option is not None else None),
+                protein_g=(e.protein_g if e.option is not None else None),
+                fat_g=(e.fat_g if e.option is not None else None),
+                carbs_g=(e.carbs_g if e.option is not None else None),
+                fiber_g=(e.fiber_g if e.option is not None else None),
+            ))
+    await db.flush()
+    plan = await _load_plan(db, current_user.id)
+    return _plan_to_response(plan)
+
+
+@app.get("/meal-plan", response_model=Optional[MealPlanResponse])
+async def get_meal_plan(
+    current_user: User         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+):
+    plan = await _load_plan(db, current_user.id)
+    return _plan_to_response(plan) if plan is not None else None
+
+
+@app.delete("/meal-plan", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_meal_plan(
+    current_user: User         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+):
+    plan = await _load_plan(db, current_user.id)
+    if plan is None:
+        raise HTTPException(status_code=404, detail="No meal plan to delete.")
+    await db.delete(plan)
+
+
+@app.post("/meal-plan/entries/{entry_id}/swap", response_model=MealPlanSwapResponse)
+async def swap_meal_plan_entry(
+    entry_id:     uuid.UUID,
+    current_user: User         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+):
+    plan = await _load_plan(db, current_user.id)
+    if plan is None:
+        raise HTTPException(status_code=404, detail="No meal plan.")
+    entry = next((e for e in plan.entries if e.id == entry_id), None)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Entry not on your plan.")
+
+    slots = active_slots(plan.meals_per_day)
+    budgets = slot_budgets(plan.target_kcal, slots)
+    day_target = {"kcal": plan.target_kcal, "protein_g": plan.target_protein_g,
+                  "fat_g": plan.target_fat_g, "carbs_g": plan.target_carbs_g}
+    diet = frozenset(t for t in (plan.diet_tags or "").split(",") if t)
+
+    pool_rows = (await db.execute(
+        select(Recipe).where(
+            (Recipe.is_shared == True) | (Recipe.user_id == current_user.id),  # noqa: E712
+            Recipe.total_calories.isnot(None),
+        )
+    )).scalars().all()
+    options = [_recipe_to_option(r) for r in pool_rows]
+
+    day_entries = []
+    for e in plan.entries:
+        if e.day_index != entry.day_index:
+            continue
+        opt = next((o for o in options if e.recipe_id is not None and o.id == str(e.recipe_id)), None)
+        day_entries.append(PlannedEntry(
+            slot=e.slot, option=opt, servings=e.servings,
+            kcal=e.calories or 0.0, protein_g=e.protein_g or 0.0, fat_g=e.fat_g or 0.0,
+            carbs_g=e.carbs_g or 0.0, fiber_g=e.fiber_g or 0.0,
+        ))
+
+    replacement = swap_entry(
+        options, day_entries, entry.slot, budgets, day_target, diet,
+        exclude_recipe_id=(str(entry.recipe_id) if entry.recipe_id else None),
+    )
+    if replacement is None:
+        raise HTTPException(status_code=409, detail="No alternative recipe available for that slot.")
+
+    entry.recipe_id = uuid.UUID(replacement.option.id)
+    entry.servings = replacement.servings
+    # `replacement` is always a filled PlannedEntry, so keep real values —
+    # `x or None` would turn a legitimate 0.0 macro into NULL (renders as "–").
+    entry.calories = replacement.kcal
+    entry.protein_g = replacement.protein_g
+    entry.fat_g = replacement.fat_g
+    entry.carbs_g = replacement.carbs_g
+    entry.fiber_g = replacement.fiber_g
+    db.expire(entry, ["recipe"])
+    await db.flush()
+
+    plan = await _load_plan(db, current_user.id)
+    resp = _plan_to_response(plan)
+    day = next(d for d in resp.plan_days if d.day_index == entry.day_index)
+    ent = next(e for e in day.entries if e.id == entry_id)
+    return MealPlanSwapResponse(entry=ent, day_totals=day.totals)
+
+
+@app.post("/meal-plan/days/{day_index}/log", response_model=MealPlanDayLogResponse)
+async def log_meal_plan_day(
+    day_index:    int,
+    payload:      MealPlanDayLogRequest,
+    current_user: User         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+):
+    plan = await _load_plan(db, current_user.id)
+    if plan is None or day_index < 0 or day_index >= plan.days:
+        raise HTTPException(status_code=404, detail="Day not in your plan.")
+
+    logged = json.loads(plan.logged_days or "{}")
+    if str(day_index) in logged and not payload.force:
+        raise HTTPException(status_code=409, detail="Day already logged. Send force to log it again.")
+
+    log_date = date.today() + timedelta(days=day_index)
+    created = 0
+    for e in plan.entries:
+        if e.day_index != day_index or e.recipe_id is None:
+            continue
+        recipe = e.recipe
+        db.add(FoodLog(
+            user_id=current_user.id, log_date=log_date, meal=e.slot,
+            recipe_id=e.recipe_id, food_name=(recipe.name if recipe else "Recipe"),
+            amount_g=round((e.servings or 1.0) * 100, 1),
+            calories=e.calories, protein_g=e.protein_g, fat_g=e.fat_g,
+            carbs_g=e.carbs_g, fiber_g=e.fiber_g,
+        ))
+        created += 1
+
+    now = datetime.utcnow()
+    logged[str(day_index)] = now.isoformat()
+    plan.logged_days = json.dumps(logged)
+    await db.flush()
+    return MealPlanDayLogResponse(created=created, logged_at=now)
 
 
 # ─────────────────────────────────────────────

@@ -191,7 +191,7 @@ Now that both URLs exist:
 
 `create_all()` only ever *creates* missing tables — it cannot rename or
 retype a column on a table that already exists. `create_tables.py` picks
-up that slack for the one migration the app currently needs (see below);
+up that slack for the two migrations the app currently needs (see below);
 anything beyond that still needs a one-off SQL script run against Neon,
 before (or together with) the deploy that ships the code depending on it.
 
@@ -209,6 +209,11 @@ before (or together with) the deploy that ships the code depending on it.
    check the Build Command is exactly
    `pip install -r requirements.txt && python3 create_tables.py` and the
    build log shows its `seeded N foods` line.
+
+2. **`recipes.meal_type` / `users.diet_tags`** are added automatically by
+   `create_tables.py` on every deploy (idempotent). `create_tables.py`
+   also runs a one-time keyword backfill of `recipes.meal_type` for rows
+   where it is null.
 
 ## 6. Verify
 

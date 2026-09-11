@@ -125,6 +125,7 @@ export interface RecipeResponse {
   source_url?:   string | null;
   instructions?: string | null;
   diet_tags?:    string[];
+  meal_type?:    string | null;
   is_shared?:    boolean;
   ingredients: SavedIngredient[];
 }
@@ -197,6 +198,7 @@ export interface RecipeFormValues {
   sourceUrl: string;
   instructions: string;
   dietTags: string[];
+  mealType: string;
   isShared: boolean;
   ingredients: IngredientRow[];
 }
@@ -205,7 +207,7 @@ export function blankFormValues(): RecipeFormValues {
   return {
     name: "", description: "", servings: "1",
     imageUrl: "", sourceUrl: "", instructions: "",
-    dietTags: [], isShared: false,
+    dietTags: [], mealType: "any", isShared: false,
     ingredients: [blankRow()],
   };
 }
@@ -243,6 +245,7 @@ export function formValuesFromRecipe(recipe: RecipeResponse): RecipeFormValues {
     sourceUrl: recipe.source_url ?? "",
     instructions: recipe.instructions ?? "",
     dietTags: recipe.diet_tags ?? [],
+    mealType: recipe.meal_type ?? "any",
     isShared: recipe.is_shared ?? false,
     ingredients: rows.length > 0 ? rows : [blankRow()],
   };
@@ -257,6 +260,7 @@ export function formValuesFromDraft(draft: RecipeImportDraft): RecipeFormValues 
     sourceUrl: draft.source_url ?? "",
     instructions: draft.instructions ?? "",
     dietTags: [],
+    mealType: "any",
     isShared: false,
     ingredients:
       draft.ingredients.length > 0
@@ -273,6 +277,7 @@ export interface RecipeSavePayload {
   source_url: string;
   instructions: string;
   diet_tags: string[];
+  meal_type: string;
   is_shared: boolean;
   ingredients: Array<{
     food_id?: string;
@@ -308,6 +313,7 @@ export function payloadFromFormValues(
     source_url:   values.sourceUrl.trim(),
     instructions: values.instructions.trim(),
     diet_tags:    values.dietTags,
+    meal_type:    values.mealType,
     is_shared:    values.isShared,
     ingredients: valid.map(r => {
       const amount_g = toGrams(r.amount, r.unit, r.portionsMap);
@@ -352,6 +358,7 @@ export default function RecipeEditForm({
   const [sourceUrl, setSourceUrl]       = useState(initialValues.sourceUrl);
   const [instructions, setInstructions] = useState(initialValues.instructions);
   const [dietTags, setDietTags]         = useState<string[]>(initialValues.dietTags);
+  const [mealType, setMealType]         = useState(initialValues.mealType);
   const [isShared, setIsShared]         = useState(initialValues.isShared);
   const [ingredients, setIngredients]   = useState<IngredientRow[]>(initialValues.ingredients);
   const [validationError, setValidationError] = useState("");
@@ -373,7 +380,7 @@ export default function RecipeEditForm({
 
     const result = payloadFromFormValues({
       name, description, servings, imageUrl, sourceUrl, instructions,
-      dietTags, isShared, ingredients,
+      dietTags, mealType, isShared, ingredients,
     });
     if ("error" in result) {
       setValidationError(result.error);
@@ -401,6 +408,16 @@ export default function RecipeEditForm({
         <span>Servings</span>
         <input type="number" min="1" step="0.5" value={servings}
           onChange={e => setServings(e.target.value)} />
+      </label>
+      <label className="recipe-field recipe-field-inline">
+        <span>Meal type</span>
+        <select value={mealType} onChange={e => setMealType(e.target.value)}>
+          <option value="any">Any</option>
+          <option value="breakfast">Breakfast</option>
+          <option value="lunch">Lunch</option>
+          <option value="dinner">Dinner</option>
+          <option value="snack">Snack</option>
+        </select>
       </label>
       <label className="recipe-field">
         <span>Image URL</span>

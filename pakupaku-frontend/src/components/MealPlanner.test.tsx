@@ -1,0 +1,154 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import MealPlanner from "./MealPlanner";
+
+const planResponse = {
+  id: "11111111-1111-1111-1111-111111111111",
+  days: 1,
+  meals_per_day: 3,
+  created_at: "2026-09-10T00:00:00Z",
+  targets: { kcal: 2000, protein_g: 120, fat_g: 65, carbs_g: 220 },
+  diet_tags: [],
+  plan_days: [
+    {
+      day_index: 0,
+      logged_at: null,
+      structurally_unfilled_slots: [],
+      totals: { calories: 1950, protein_g: 118, fat_g: 62, carbs_g: 210, fiber_g: 30 },
+      entries: [
+        { id: "e1", slot: "breakfast", servings: 1.1, unfilled: false,
+          recipe: { id: "r1", name: "Overnight Oats", image_url: null, servings: 1,
+                    meal_type: "breakfast", total_calories: 450, total_protein_g: 20,
+                    total_fat_g: 10, total_carbs_g: 70, total_fiber_g: 8 },
+          calories: 495, protein_g: 22, fat_g: 11, carbs_g: 77, fiber_g: 9 },
+        { id: "e2", slot: "lunch", servings: 1, unfilled: false,
+          recipe: { id: "r2", name: "Chickpea Salad", image_url: null, servings: 1,
+                    meal_type: "lunch", total_calories: 650, total_protein_g: 40,
+                    total_fat_g: 25, total_carbs_g: 60, total_fiber_g: 12 },
+          calories: 650, protein_g: 40, fat_g: 25, carbs_g: 60, fiber_g: 12 },
+        { id: "e3", slot: "dinner", servings: 1.2, unfilled: false,
+          recipe: { id: "r3", name: "Lentil Curry", image_url: null, servings: 1,
+                    meal_type: "dinner", total_calories: 700, total_protein_g: 45,
+                    total_fat_g: 22, total_carbs_g: 78, total_fiber_g: 14 },
+          calories: 805, protein_g: 56, fat_g: 26, carbs_g: 73, fiber_g: 9 },
+      ],
+    },
+  ],
+};
+
+beforeEach(() => {
+  localStorage.setItem("token", "t");
+  global.fetch = jest.fn((url: RequestInfo | URL, init?: RequestInit) => {
+    const u = String(url);
+    if (u.endsWith("/meal-plan") && (!init || !init.method || init.method === "GET")) {
+      return Promise.resolve({ ok: true, json: async () => null } as Response);
+    }
+    if (u.endsWith("/meal-plan/generate")) {
+      return Promise.resolve({ ok: true, json: async () => planResponse } as Response);
+    }
+    return Promise.reject(new Error("unexpected " + u));
+  }) as jest.Mock;
+});
+afterEach(() => { jest.restoreAllMocks(); localStorage.clear(); });
+
+test("shows the generate form, then renders the plan with day totals", async () => {
+  render(<MealPlanner onBack={() => {}} userProfile={{ diet_tags: [], safe_mode: false }} />);
+  await waitFor(() => expect(screen.getByText("Generate plan")).toBeInTheDocument());
+
+  fireEvent.click(screen.getByText("Generate plan"));
+
+  await waitFor(() => expect(screen.getByText("Overnight Oats")).toBeInTheDocument());
+  expect(screen.getByText("Chickpea Salad")).toBeInTheDocument();
+  expect(screen.getByText("Lentil Curry")).toBeInTheDocument();
+  // per-day totals vs target visible (calories number rendered somewhere)
+  expect(screen.getByText(/1950/)).toBeInTheDocument();
+});
+
+test("pre-checks diet tags from the user profile", async () => {
+  render(<MealPlanner onBack={() => {}} userProfile={{ diet_tags: ["vegan"], safe_mode: false }} />);
+  await waitFor(() => expect(screen.getByText("Generate plan")).toBeInTheDocument());
+  const vegan = screen.getByLabelText("vegan") as HTMLInputElement;
+  expect(vegan.checked).toBe(true);
+});
+
+test("Regenerate prefills the form from the loaded plan", async () => {
+  (global.fetch as jest.Mock).mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+    const u = String(url);
+    if (u.endsWith("/meal-plan") && (!init || !init.method || init.method === "GET"))
+      return Promise.resolve({ ok: true, json: async () => ({ ...planResponse, diet_tags: ["vegan"] }) } as Response);
+    return Promise.reject(new Error("unexpected " + u));
+  });
+  render(<MealPlanner onBack={() => {}} userProfile={{ diet_tags: [], safe_mode: false }} />);
+  await waitFor(() => expect(screen.getByText("Overnight Oats")).toBeInTheDocument());
+
+  fireEvent.click(screen.getByText("Regenerate"));
+
+  const daysInput = screen.getByLabelText("Days") as HTMLInputElement;
+  expect(daysInput.value).toBe("1");                       // plan.days, not the default 3
+  const mealsSelect = screen.getByLabelText("Meals per day") as HTMLSelectElement;
+  expect(mealsSelect.value).toBe("3");                     // plan.meals_per_day
+  expect((screen.getByLabelText("vegan") as HTMLInputElement).checked).toBe(true);  // plan.diet_tags
+  expect(screen.getByText("Back to plan")).toBeInTheDocument();
+});
+
+test("generate error is shown inline", async () => {
+  (global.fetch as jest.Mock).mockImplementation((url: RequestInfo | URL) => {
+    const u = String(url);
+    if (u.endsWith("/meal-plan/generate")) {
+      return Promise.resolve({ ok: false, json: async () => ({ detail: "Finish onboarding to set your calorie target before planning meals." }) } as Response);
+    }
+    return Promise.resolve({ ok: true, json: async () => null } as Response);
+  });
+  render(<MealPlanner onBack={() => {}} userProfile={{ diet_tags: [], safe_mode: false }} />);
+  await waitFor(() => expect(screen.getByText("Generate plan")).toBeInTheDocument());
+  fireEvent.click(screen.getByText("Generate plan"));
+  await waitFor(() => expect(screen.getByText(/Finish onboarding/)).toBeInTheDocument());
+});
+
+test("Swap replaces one entry in place and updates day totals", async () => {
+  const swapResp = {
+    entry: { id: "e2", slot: "lunch", servings: 1, unfilled: false,
+      recipe: { id: "r9", name: "Tofu Poke Bowl", image_url: null, servings: 1,
+                meal_type: "lunch", total_calories: 640, total_protein_g: 42,
+                total_fat_g: 20, total_carbs_g: 62, total_fiber_g: 10 },
+      calories: 640, protein_g: 42, fat_g: 20, carbs_g: 62, fiber_g: 10 },
+    day_totals: { calories: 1940, protein_g: 120, fat_g: 57, carbs_g: 212, fiber_g: 28 },
+  };
+  (global.fetch as jest.Mock).mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+    const u = String(url);
+    if (u.endsWith("/meal-plan") && (!init || !init.method || init.method === "GET"))
+      return Promise.resolve({ ok: true, json: async () => planResponse } as Response);
+    if (u.includes("/entries/e2/swap"))
+      return Promise.resolve({ ok: true, json: async () => swapResp } as Response);
+    return Promise.reject(new Error("unexpected " + u));
+  });
+  render(<MealPlanner onBack={() => {}} userProfile={{ diet_tags: [], safe_mode: false }} />);
+  await waitFor(() => expect(screen.getByText("Chickpea Salad")).toBeInTheDocument());
+  const lunchCard = screen.getByText("Chickpea Salad").closest(".meal-planner-entry") as HTMLElement;
+  fireEvent.click(lunchCard.querySelector("button")!);   // the Swap button
+  await waitFor(() => expect(screen.getByText("Tofu Poke Bowl")).toBeInTheDocument());
+  expect(screen.queryByText("Chickpea Salad")).not.toBeInTheDocument();
+});
+
+test("Log this day posts, then shows a logged state; 409 prompts a force retry", async () => {
+  let logCalls = 0;
+  (global.fetch as jest.Mock).mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+    const u = String(url);
+    if (u.endsWith("/meal-plan") && (!init || !init.method || init.method === "GET"))
+      return Promise.resolve({ ok: true, json: async () => planResponse } as Response);
+    if (u.includes("/days/0/log")) {
+      logCalls += 1;
+      const body = init && init.body ? JSON.parse(String(init.body)) : {};
+      if (logCalls === 1)
+        return Promise.resolve({ ok: false, status: 409,
+          json: async () => ({ detail: "Day already logged. Send force to log it again." }) } as Response);
+      return Promise.resolve({ ok: true, json: async () => ({ created: 3, logged_at: "2026-09-10T10:00:00Z" }) } as Response);
+    }
+    return Promise.reject(new Error("unexpected " + u));
+  });
+  window.confirm = jest.fn(() => true) as any;
+  render(<MealPlanner onBack={() => {}} userProfile={{ diet_tags: [], safe_mode: false }} />);
+  await waitFor(() => expect(screen.getByText("Log this day")).toBeInTheDocument());
+  fireEvent.click(screen.getByText("Log this day"));
+  await waitFor(() => expect(logCalls).toBe(2));
+  await waitFor(() => expect(screen.getByText(/Logged/)).toBeInTheDocument());
+});

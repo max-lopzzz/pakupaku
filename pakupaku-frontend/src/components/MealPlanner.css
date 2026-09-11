@@ -1,0 +1,37 @@
+.meal-planner-root { min-height: 100vh; padding: 2rem clamp(1rem, 3vw, 2.5rem); font-family: "MorningBreeze"; }
+.meal-planner-container { max-width: 1200px; margin: 0 auto; }
+.meal-planner-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; }
+.meal-planner-title { font-size: 2rem; margin: 0; color: #3a2a2a; }
+.meal-planner-regen { margin-left: auto; padding: 0.45rem 0.9rem; border: 2px solid #badfdb;
+  border-radius: 999px; background: #fff; color: #3a6b66; font-weight: 600; cursor: pointer; }
+.meal-planner-error { color: #c0607a; margin: 0 0 1rem; }
+.meal-planner-form { display: flex; flex-direction: column; gap: 1rem; max-width: 560px; }
+.meal-planner-field { display: flex; flex-direction: column; gap: 0.25rem; }
+.meal-planner-field input, .meal-planner-field select { border: 2px solid #badfdb; border-radius: 10px;
+  padding: 0.5rem 0.75rem; font-family: inherit; }
+.meal-planner-tags { border: 2px solid #badfdb; border-radius: 12px; display: flex; flex-wrap: wrap;
+  gap: 0.4rem 1rem; padding: 0.75rem; }
+.meal-planner-tags label { font-size: 0.85rem; display: flex; gap: 0.3rem; align-items: center; }
+.meal-planner-generate { border: none; background: #badfdb; color: #3a2a2a; border-radius: 10px;
+  padding: 0.7rem 1rem; font-weight: 700; cursor: pointer; }
+.meal-planner-days { display: flex; flex-direction: column; gap: 1.5rem; }
+.meal-planner-day { border: 2px solid #badfdb; border-radius: 16px; padding: 1rem; }
+.meal-planner-day h2 { margin: 0 0 0.75rem; color: #3a2a2a; }
+.meal-planner-entries { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 0.75rem; }
+.meal-planner-entry { border: 1px solid #d8ede9; border-radius: 12px; overflow: hidden; background: #fff; }
+.meal-planner-entry-img { width: 100%; height: 110px; object-fit: cover; display: block; }
+.meal-planner-entry-body { display: flex; flex-direction: column; gap: 0.2rem; padding: 0.6rem 0.75rem; }
+.meal-planner-slot { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: #8a6060; }
+.meal-planner-recipe-name { font-weight: 600; color: #3a2a2a; }
+.meal-planner-servings, .meal-planner-entry-macros { font-size: 0.8rem; color: #6a4f4f; }
+.meal-planner-entry-empty { padding: 0.75rem; font-size: 0.85rem; color: #8a6060; }
+.meal-planner-totals { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.9rem; }
+.meal-planner-total { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; color: #6a4f4f; }
+.meal-planner-total-bar { width: 90px; height: 8px; background: #eaf5f3; border-radius: 999px; overflow: hidden; }
+.meal-planner-total-fill { height: 100%; background: #7cc0b8; }
+@media (max-width: 640px) { .meal-planner-root { padding: 1rem 0.75rem; } }
+.meal-planner-swap { align-self: flex-start; margin-top: 0.3rem; border: 1px solid #badfdb;
+  background: transparent; border-radius: 8px; padding: 0.25rem 0.6rem; font-size: 0.78rem; cursor: pointer; }
+.meal-planner-logday { margin-top: 0.9rem; border: none; background: #badfdb; color: #3a2a2a;
+  border-radius: 10px; padding: 0.55rem 1rem; font-weight: 700; cursor: pointer; }
+.meal-planner-logday:disabled { opacity: 0.6; cursor: default; }

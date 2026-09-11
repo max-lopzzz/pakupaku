@@ -153,5 +153,31 @@ async def test_create_tables_gives_up_on_a_non_disconnect_error(tmp_path, monkey
         os.remove(db_path)
 
 
+async def test_create_tables_adds_meal_planner_columns_and_tables(tmp_path):
+    fd, db_path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    eng = create_async_engine("sqlite+aiosqlite:///%s" % db_path)
+    Session = async_sessionmaker(eng, expire_on_commit=False)
+    try:
+        # OLD-shape recipes/users tables without the new columns
+        async with eng.begin() as conn:
+            await conn.execute(text("CREATE TABLE recipes (id TEXT PRIMARY KEY, name TEXT, total_calories REAL)"))
+            await conn.execute(text("CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT)"))
+            await conn.execute(text("CREATE TABLE food_logs (id TEXT, fdc_id INTEGER)"))
+            await conn.execute(text("CREATE TABLE recipe_ingredients (id TEXT, fdc_id INTEGER)"))
+        await create_tables_mod.create_tables(db_engine=eng, session_factory=Session, artifact_path=None)
+        async with eng.begin() as conn:
+            rcols = {r[1] for r in (await conn.execute(text("PRAGMA table_info(recipes)"))).fetchall()}
+            ucols = {r[1] for r in (await conn.execute(text("PRAGMA table_info(users)"))).fetchall()}
+            tables = {r[0] for r in (await conn.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table'"))).fetchall()}
+        assert "meal_type" in rcols
+        assert "diet_tags" in ucols
+        assert {"meal_plans", "meal_plan_entries"}.issubset(tables)
+    finally:
+        await eng.dispose()
+        os.remove(db_path)
+
+
 async def _no_sleep(*_a, **_kw):
     return None

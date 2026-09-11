@@ -15,8 +15,20 @@ Schema families:
 
 import uuid
 from datetime import datetime, date
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, FrozenSet
 from pydantic import BaseModel, EmailStr, Field, validator
+
+
+# The full diet-tag allow-list, shared by every validator that accepts diet
+# tags (user profile, recipe create/update, meal-plan generate). Keep this in
+# sync with the frontend's DIET_TAGS in RecipeEditForm.tsx.
+_DIET_TAGS: FrozenSet[str] = frozenset({
+    "vegan", "vegetarian", "pescatarian", "flexitarian",
+    "gluten_free", "dairy_free", "nut_free", "soy_free", "egg_free", "shellfish_free",
+    "keto", "low_carb", "paleo", "whole30", "low_fodmap",
+    "diabetic_friendly", "low_sodium", "low_fat", "high_protein",
+    "halal", "kosher", "mediterranean", "dash",
+})
 
 
 def _validate_username(value: str) -> str:
@@ -191,6 +203,16 @@ class UserResponse(BaseModel):
     uses_custom_goals: bool
     is_admin: bool
 
+    diet_tags: List[str]
+
+    @validator("diet_tags", pre=True)
+    def _split_user_diet_tags(cls, v):
+        if v is None:
+            return []
+        if isinstance(v, str):
+            return [t for t in v.split(",") if t]
+        return v
+
     class Config:
         from_attributes = True
 
@@ -199,12 +221,22 @@ class UserUpdateRequest(BaseModel):
     """Partial update — all fields optional."""
     username:  Optional[str]  = Field(None, min_length=3, max_length=50)
     safe_mode: Optional[bool] = None
+    diet_tags: Optional[List[str]] = None
 
     @validator("username")
     def username_alphanumeric(cls, v):
         if v is None:
             return v
         return _validate_username(v)
+
+    @validator("diet_tags")
+    def _validate_user_diet_tags(cls, v):
+        if v is None:
+            return v
+        bad = set(v) - _DIET_TAGS
+        if bad:
+            raise ValueError("Unknown diet tag(s): %s" % sorted(bad))
+        return v
 
 
 class ChangePasswordRequest(BaseModel):
@@ -329,20 +361,21 @@ class RecipeCreateRequest(BaseModel):
     instructions: Optional[str]       = None
     diet_tags:    Optional[List[str]] = None
     is_shared:    Optional[bool]      = None
+    meal_type:    Optional[str] = None
+
+    @validator("meal_type")
+    def _validate_meal_type(cls, v):
+        if v is None:
+            return v
+        if v not in {"breakfast", "lunch", "dinner", "snack", "any"}:
+            raise ValueError("meal_type must be one of breakfast, lunch, dinner, snack, any")
+        return v
 
     @validator("diet_tags")
     def validate_diet_tags(cls, v):
         if v is None:
             return v
-        valid = {
-            "vegan", "vegetarian", "pescatarian", "flexitarian",
-            "gluten_free", "dairy_free", "nut_free", "soy_free",
-            "egg_free", "shellfish_free",
-            "keto", "low_carb", "paleo", "whole30", "low_fodmap",
-            "diabetic_friendly", "low_sodium", "low_fat", "high_protein",
-            "halal", "kosher",
-            "mediterranean", "dash",
-        }
+        valid = _DIET_TAGS
         invalid = set(v) - valid
         if invalid:
             raise ValueError(f"Unknown diet tag(s): {sorted(invalid)}. Must be one of {sorted(valid)}")
@@ -360,20 +393,21 @@ class RecipeUpdateRequest(BaseModel):
     instructions: Optional[str]       = None
     diet_tags:    Optional[List[str]] = None
     is_shared:    Optional[bool]      = None
+    meal_type:    Optional[str] = None
+
+    @validator("meal_type")
+    def _validate_meal_type(cls, v):
+        if v is None:
+            return v
+        if v not in {"breakfast", "lunch", "dinner", "snack", "any"}:
+            raise ValueError("meal_type must be one of breakfast, lunch, dinner, snack, any")
+        return v
 
     @validator("diet_tags")
     def validate_diet_tags(cls, v):
         if v is None:
             return v
-        valid = {
-            "vegan", "vegetarian", "pescatarian", "flexitarian",
-            "gluten_free", "dairy_free", "nut_free", "soy_free",
-            "egg_free", "shellfish_free",
-            "keto", "low_carb", "paleo", "whole30", "low_fodmap",
-            "diabetic_friendly", "low_sodium", "low_fat", "high_protein",
-            "halal", "kosher",
-            "mediterranean", "dash",
-        }
+        valid = _DIET_TAGS
         invalid = set(v) - valid
         if invalid:
             raise ValueError(f"Unknown diet tag(s): {sorted(invalid)}. Must be one of {sorted(valid)}")
@@ -403,6 +437,7 @@ class RecipeResponse(BaseModel):
     instructions: Optional[str]
     diet_tags:    List[str]
     is_shared:    bool
+    meal_type:    Optional[str]
 
     @validator("diet_tags", pre=True)
     def _split_diet_tags(cls, v):
@@ -520,3 +555,100 @@ class BackfillImagesResponse(BaseModel):
     checked: int
     updated: int
     remaining: int
+
+
+# ─────────────────────────────────────────────
+#  MEAL PLANNER
+# ─────────────────────────────────────────────
+
+class MealPlanGenerateRequest(BaseModel):
+    days:          int = Field(..., ge=1, le=7)
+    meals_per_day: int = Field(..., ge=2, le=4)
+    diet_tags:     List[str] = Field(default_factory=list)
+
+    @validator("diet_tags")
+    def _validate(cls, v):
+        bad = set(v) - _DIET_TAGS
+        if bad:
+            raise ValueError("Unknown diet tag(s): %s" % sorted(bad))
+        return v
+
+
+class MealPlanRecipeMini(BaseModel):
+    id:              uuid.UUID
+    name:            str
+    image_url:       Optional[str]
+    servings:        float
+    meal_type:       Optional[str]
+    total_calories:  Optional[float]
+    total_protein_g: Optional[float]
+    total_fat_g:     Optional[float]
+    total_carbs_g:   Optional[float]
+    total_fiber_g:   Optional[float]
+
+    class Config:
+        from_attributes = True
+
+
+class MealPlanEntryResponse(BaseModel):
+    id:        uuid.UUID
+    slot:      str
+    servings:  float
+    unfilled:  bool
+    recipe:    Optional[MealPlanRecipeMini]
+    calories:  Optional[float]
+    protein_g: Optional[float]
+    fat_g:     Optional[float]
+    carbs_g:   Optional[float]
+    fiber_g:   Optional[float]
+
+    class Config:
+        from_attributes = True
+
+
+class MealPlanDayResponse(BaseModel):
+    day_index:  int
+    logged_at:  Optional[datetime]
+    entries:    List[MealPlanEntryResponse]
+    totals:     Dict[str, float]
+    structurally_unfilled_slots: List[str]
+
+    class Config:
+        from_attributes = True
+
+
+class MealPlanTargets(BaseModel):
+    kcal:      Optional[float]
+    protein_g: Optional[float]
+    fat_g:     Optional[float]
+    carbs_g:   Optional[float]
+
+    class Config:
+        from_attributes = True
+
+
+class MealPlanResponse(BaseModel):
+    id:            uuid.UUID
+    days:          int
+    meals_per_day: int
+    created_at:    datetime
+    targets:       MealPlanTargets
+    diet_tags:     List[str]
+    plan_days:     List[MealPlanDayResponse]
+
+    class Config:
+        from_attributes = True
+
+
+class MealPlanSwapResponse(BaseModel):
+    entry:      MealPlanEntryResponse
+    day_totals: Dict[str, float]
+
+
+class MealPlanDayLogRequest(BaseModel):
+    force: bool = False
+
+
+class MealPlanDayLogResponse(BaseModel):
+    created:   int
+    logged_at: datetime
