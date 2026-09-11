@@ -43,6 +43,21 @@ def test_infer_meal_type_ambiguous_keywords_match_whole_words_only():
     assert infer_meal_type("Protein Bar", 210) == "snack"
 
 
+def test_infer_meal_type_desserts_and_drinks_are_snacks_not_any():
+    # These aren't full meals, so they must not fall through to "any" —
+    # the planning engine treats "any" as eligible for breakfast/lunch/
+    # dinner, which is how a plan ended up serving hot chocolate for
+    # breakfast and an ice cream sandwich for dinner.
+    assert infer_meal_type("Pink Hot Chocolate", 380) == "snack"
+    assert infer_meal_type("Cotton Candy Ice Cream Sandwiches", 420) == "snack"
+    assert infer_meal_type("Salted Caramel Milkshake", 550) == "snack"
+    assert infer_meal_type("Double Chocolate Fudge Brownies", 340) == "snack"
+    assert infer_meal_type("Classic Chocolate Chip Cookies", 210) == "snack"
+    assert infer_meal_type("Vanilla Bean Cupcakes", 300) == "snack"
+    assert infer_meal_type("Strawberry Lemonade", 120) == "snack"
+    assert infer_meal_type("Rainbow Sherbet Popsicles", 150) == "snack"
+
+
 async def test_backfill_only_touches_null_rows(db_session):
     u = User(id=uuid.uuid4(), email=f"{uuid.uuid4()}@e.com", username=uuid.uuid4().hex[:8],
              hashed_password=hash_password("x"), email_verified=True, safe_mode=False,
@@ -67,6 +82,40 @@ async def test_backfill_only_touches_null_rows(db_session):
     assert rows["Already Set"] == "dinner"
 
     assert await backfill_meal_types(db_session) == 0   # idempotent
+
+
+async def test_reclassify_any_meal_types_only_touches_any_rows(db_session):
+    from meal_planner import reclassify_any_meal_types
+
+    u = User(id=uuid.uuid4(), email=f"{uuid.uuid4()}@e.com", username=uuid.uuid4().hex[:8],
+             hashed_password=hash_password("x"), email_verified=True, safe_mode=False,
+             uses_custom_goals=False, is_admin=False)
+    db_session.add(u)
+    await db_session.flush()
+    # classified "any" by an older heuristic that didn't know "hot chocolate"
+    stale = Recipe(id=uuid.uuid4(), user_id=u.id, name="Pink Hot Chocolate", servings=1.0,
+                    total_calories=380, meal_type="any")
+    # still correctly "any" under the improved heuristic
+    still_any = Recipe(id=uuid.uuid4(), user_id=u.id, name="Lentil Ragu Pasta", servings=1.0,
+                        total_calories=620, meal_type="any")
+    # a human's deliberate choice — must not be touched even though the
+    # name would otherwise reclassify
+    deliberate = Recipe(id=uuid.uuid4(), user_id=u.id, name="Ice Cream Float", servings=1.0,
+                         total_calories=300, meal_type="dinner")
+    db_session.add_all([stale, still_any, deliberate])
+    await db_session.commit()
+
+    result = await reclassify_any_meal_types(db_session)
+    await db_session.commit()
+    assert result == {"scanned": 2, "reclassified": 1}
+
+    rows = {r.name: r.meal_type for r in (await db_session.execute(
+        Recipe.__table__.select())).fetchall()}
+    assert rows["Pink Hot Chocolate"] == "snack"
+    assert rows["Lentil Ragu Pasta"] == "any"
+    assert rows["Ice Cream Float"] == "dinner"
+
+    assert await reclassify_any_meal_types(db_session) == {"scanned": 1, "reclassified": 0}  # idempotent
 
 
 import random as _random
