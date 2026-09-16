@@ -108,21 +108,35 @@ Legend for `included`:
 
 ---
 
-## Built artifact (2026-09-04)
+## Built artifact (2026-09-15)
 
-`data/foods.sqlite`: **2,481 generic foods**, zero branded data, every food
-backed by ≥2 independent national sources agreeing on at least one nutrient.
-Per-source contribution counts (a food counts once per source that fed at
-least one of its nutrient values):
+`data/foods.sqlite`: **5,349 generic foods**, zero branded data. A food is
+kept when either ≥2 independent national sources agree on at least one
+nutrient, **or** it comes from USDA FoodData Central alone (its curated,
+lab-analyzed Foundation Food / SR Legacy records — never `branded_food` or
+`survey_fndds_food`) — see `scripts/build_food_db/aggregate.py`'s
+`aggregate_group()`. Before this exception, common US/Mexican foods that
+only USDA documents (tortillas among them) were silently dropped for
+lacking a corroborating second source. Per-source contribution counts (a
+food counts once per source that fed at least one of its nutrient values):
 
 | source | foods contributed to |
 |---|---|
-| `usda` | 2,076 |
+| `usda` | 4,944 |
 | `cnf` | 2,099 |
 | `cofid` | 508 |
-| `afcd` | 368 |
 | `frida` | 457 |
+| `afcd` | 368 |
 | `ciqual` | 28 |
+
+Of the 5,349 foods, **2,868 are USDA-only** (trusted standalone under the
+exception above) — the entire growth over the prior 2,481-food build.
+**186 foods (~3.5%) have no calorie value at all** — some USDA Foundation
+Food records report only micronutrients — up from 0 in the prior,
+always-≥2-sources build. `food_index.py`'s search re-rank now demotes a
+calorie-less record behind an equally-relevant populated one within its
+tier (it can still win outright if it's the *only* candidate at its
+relevance tier — a known residual gap, not fixed here).
 
 **Coverage is far below the ~15k+ hoped for in the design spec, and heavily
 skewed toward English-language sources.** The matcher groups foods by
@@ -131,8 +145,9 @@ fuzzy-matching their (English) names — it does no translation — so USDA/CNF
 English) and Frida (Danish source, but with an English `FoodName` column)
 cluster together reasonably well, while CIQUAL (French names only) almost
 never textually matches anything from the other five sources and so almost
-never clears the ≥2-source bar — hence only 28 of 2,481 foods have any
-CIQUAL contribution at all, out of CIQUAL's own 3,484-row table. This is a
+never clears the ≥2-source bar (CIQUAL is not USDA, so it gets no standalone
+exception) — hence only 28 of 5,349 foods have any CIQUAL contribution at
+all, out of CIQUAL's own 3,484-row table. This is a
 direct, measured consequence of the build's design (recorded as a known
 limitation, not fixed here — see
 `docs/superpowers/plans/2026-09-03-food-db-runtime-cutover.md`'s Known
@@ -141,11 +156,12 @@ surfaced, one fixed and one deferred). A real fix needs either per-language
 name translation before matching, or per-language canonical-key normalisation
 tables — both are build-methodology changes, not a bug fix.
 
-Sanity check (`scripts/build_food_db` Task 9 Step 5): `impossible-kcal: 0`,
-`single-source: 0`, `no-portions: 153` (~6%, plausible for a build without
-translated/matched portion names for the non-USDA sources). Rebuild
-determinism (Task 9 Step 6) verified: an immediate re-run from the same
-`raw/` + `review/decisions.csv` produces a byte-identical artifact.
+Sanity check: `impossible-kcal: 0`, `single-source: 2,868` (all USDA-only,
+per the exception above — was `0` before it existed), `no-portions: 254`
+(~4.7%, plausible for a build without translated/matched portion names for
+the non-USDA sources). Rebuild determinism (Task 9 Step 6, still holds):
+an immediate re-run from the same `raw/` + `review/decisions.csv` produces
+a byte-identical artifact.
 
 ---
 

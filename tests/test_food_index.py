@@ -70,6 +70,38 @@ async def test_butter_beans_does_not_collapse_to_butter(db_session, tmp_path):
     assert m.description == "Butter beans, canned"
 
 
+async def test_tortilla_does_not_surface_vanilla_extract(db_session, tmp_path):
+    # Every real tortilla candidate ("Snacks, tortilla chips, nacho cheese")
+    # is a long branded name that blows the extra-token cap and falls to the
+    # `partial` bucket, ranked there by raw token_sort_ratio — a purely
+    # character-level score. "Vanilla extract" shares zero tokens with
+    # "tortilla" but is short and happens to share the "-illa" substring,
+    # so on that length-sensitive metric alone it used to out-rank the
+    # actually-related (if imperfect) tortilla-chips candidate entirely.
+    await _load(db_session, tmp_path)
+    results = food_index.search("tortilla", 10)
+    ids = [f.id for f in results]
+    assert "gen:00007" in ids   # the tortilla-chips candidate is findable
+    assert ids.index("gen:00007") < ids.index("gen:00008")   # and ranks above vanilla extract
+    assert food_index.best_match("tortilla").id != "gen:00008"
+
+
+async def test_calorie_less_record_ranks_behind_a_populated_one(db_session, tmp_path):
+    # Some USDA "Foundation Food" records report only micronutrients, with
+    # every macro field (incl. calories) null — nearly useless to log. Both
+    # "Tortilla, corn" (blank) and "Tortilla, wheat" (populated) tie in the
+    # `covers_all` bucket at the same extra-token count for the one-word
+    # query "tortilla"; the populated record must win the tie.
+    await _load(db_session, tmp_path)
+    m = food_index.best_match("tortilla")
+    assert m.id == "gen:00010"
+    assert m.calories_per_100g is not None
+
+    results = food_index.search("tortilla", 10)
+    ids = [f.id for f in results]
+    assert ids.index("gen:00010") < ids.index("gen:00009")
+
+
 async def test_search_result_shape(db_session, tmp_path):
     await _load(db_session, tmp_path)
     r = food_index.search("broccoli", 5)[0].as_search_result()

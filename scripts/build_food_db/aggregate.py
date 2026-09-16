@@ -56,7 +56,19 @@ def aggregate_group(group: MergeGroup) -> Optional[AggregatedFood]:
     the spec. Within a source the surviving values are averaged first, so each
     source contributes exactly one value; across sources it is the median from
     three sources up, the mean at exactly two.
+
+    Exception: a group whose rows come from USDA FoodData Central alone
+    (its curated, lab-analyzed Foundation/SR Legacy records — never
+    ``branded_food``/``survey_fndds_food``, see ``sources/usda.py``) is
+    trusted standalone, at ``min_sources=1``. Many foods common in the US
+    (tortillas, ...) exist only in USDA among these 6 national sources and
+    were otherwise dropped outright for lacking a corroborating second
+    source. Every other source still needs 2+ independent sources to
+    agree before a nutrient is emitted at all.
     """
+    usda_only = {r.source_id for r in group.rows} == {"usda"}
+    min_sources = 1 if usda_only else MIN_SOURCES_PER_NUTRIENT
+
     out = AggregatedFood(
         canonical_name=group.canonical_name,
         prep_state=group.rows[0].prep_state,
@@ -71,7 +83,7 @@ def aggregate_group(group: MergeGroup) -> Optional[AggregatedFood]:
             v = getattr(r, f)
             if v is not None and sanity_ok(f, v, r.nutrients()):
                 by_source.setdefault(r.source_id, []).append(v)
-        if len(by_source) < MIN_SOURCES_PER_NUTRIENT:
+        if len(by_source) < min_sources:
             continue
         # one value per source, in a deterministic order
         vals = [mean(by_source[sid]) for sid in sorted(by_source)]

@@ -129,8 +129,11 @@ def _ranked(query: str, limit: int) -> List[Food]:
     #    mismatches in both directions instead of token_set_ratio's blind
     #    spot for short-candidate / long-candidate inflation.
     EXTRA_TOKEN_CAP = 2
-    covers_all: List = []  # (cand_key, extra_count, sort_score)
-    partial: List = []     # (cand_key, sort_score)
+    covers_all: List = []  # (cand_key, extra_count, no_data, sort_score)
+    partial: List = []     # (cand_key, shares_a_query_token, no_data, sort_score)
+
+    def _has_data(cand: str) -> bool:
+        return any(f.calories_per_100g is not None for f in _by_key.get(cand, []))
     # A real multi-thousand-food index routinely has dozens of candidates
     # tied at the ceiling set_score for a short query ("water", "milk", ...)
     # — retrieve a wide-enough pool that the re-rank below actually sees all
@@ -145,16 +148,30 @@ def _ranked(query: str, limit: int) -> List[Food]:
         cand_tokens = set(cand.split())
         sort_score = fuzz.token_sort_ratio(key, cand)
         extra = len(cand_tokens - query_tokens)
+        no_data = not _has_data(cand)
         if query_tokens <= cand_tokens and extra <= EXTRA_TOKEN_CAP:
-            covers_all.append((cand, extra, sort_score))
+            covers_all.append((cand, extra, no_data, sort_score))
         else:
-            partial.append((cand, sort_score))
-    covers_all.sort(key=lambda t: (t[1], -t[2]))
-    partial.sort(key=lambda t: -t[1])
+            # token_sort_ratio is a character-level score with no notion of
+            # "do these share a real word" — a short, wholly-unrelated
+            # candidate ("vanilla extract") can out-score a long candidate
+            # that genuinely contains the query word ("tortilla chips...")
+            # just because it's closer in length to a short query. Rank
+            # anything that shares an actual token with the query ahead of
+            # anything that doesn't, before falling back to the raw score.
+            shares_token = bool(cand_tokens & query_tokens)
+            partial.append((cand, shares_token, no_data, sort_score))
+    # Within either bucket, a candidate with no calorie data at all (some
+    # USDA Foundation Food records report only micronutrients) is nearly
+    # useless to log — demote it behind an equally-relevant candidate that
+    # actually has nutrition data, without letting it jump buckets ahead
+    # of a genuinely better textual match.
+    covers_all.sort(key=lambda t: (t[1], t[2], -t[3]))
+    partial.sort(key=lambda t: (not t[1], t[2], -t[3]))
 
-    for cand, _, _ in covers_all:
+    for cand, *_ in covers_all:
         _add(_by_key.get(cand, []))
-    for cand, _ in partial:
+    for cand, *_ in partial:
         _add(_by_key.get(cand, []))
     return out[:limit]
 
