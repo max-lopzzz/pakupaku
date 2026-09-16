@@ -14,7 +14,7 @@ Schema families:
 """
 
 import uuid
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from typing import Optional, List, Dict, FrozenSet
 from pydantic import BaseModel, EmailStr, Field, validator
 
@@ -29,6 +29,20 @@ _DIET_TAGS: FrozenSet[str] = frozenset({
     "diabetic_friendly", "low_sodium", "low_fat", "high_protein",
     "halal", "kosher", "mediterranean", "dash",
 })
+
+
+def _utc(v: datetime) -> datetime:
+    """Stamp a naive datetime as explicitly UTC before it leaves the API.
+    Every "instant" column (``created_at``, ``logged_at``, ...) is written
+    with ``datetime.utcnow()``, but a plain SQLAlchemy ``DateTime`` column
+    round-trips as naive on both SQLite and Postgres regardless of what
+    was stored — so without this, Pydantic serializes e.g.
+    "2026-09-15T00:00:00" with no "Z"/offset, and JavaScript's
+    ``new Date(...)`` then treats those digits as *local* time instead of
+    converting from UTC. That turned an 18:00 food log (in a timezone
+    behind UTC) into a displayed "00:00". Apply via a per-field validator
+    on every response schema that exposes one of these columns."""
+    return v if v.tzinfo is not None else v.replace(tzinfo=timezone.utc)
 
 
 def _validate_username(value: str) -> str:
@@ -213,6 +227,10 @@ class UserResponse(BaseModel):
             return [t for t in v.split(",") if t]
         return v
 
+    @validator("created_at")
+    def _created_at_utc(cls, v):
+        return _utc(v)
+
     class Config:
         from_attributes = True
 
@@ -292,6 +310,10 @@ class FoodLogResponse(BaseModel):
     sugar_g:    Optional[float]
     sodium_mg:  Optional[float]
     meal:       Optional[str]
+
+    @validator("logged_at")
+    def _logged_at_utc(cls, v):
+        return _utc(v)
 
     class Config:
         from_attributes = True
@@ -446,6 +468,10 @@ class RecipeResponse(BaseModel):
         if isinstance(v, str):
             return [t for t in v.split(",") if t]
         return v
+
+    @validator("created_at", "updated_at")
+    def _timestamps_utc(cls, v):
+        return _utc(v)
 
     class Config:
         from_attributes = True
@@ -618,6 +644,10 @@ class MealPlanDayResponse(BaseModel):
     totals:     Dict[str, float]
     structurally_unfilled_slots: List[str]
 
+    @validator("logged_at")
+    def _logged_at_utc(cls, v):
+        return v if v is None else _utc(v)
+
     class Config:
         from_attributes = True
 
@@ -641,6 +671,10 @@ class MealPlanResponse(BaseModel):
     diet_tags:     List[str]
     plan_days:     List[MealPlanDayResponse]
 
+    @validator("created_at")
+    def _created_at_utc(cls, v):
+        return _utc(v)
+
     class Config:
         from_attributes = True
 
@@ -657,6 +691,10 @@ class MealPlanDayLogRequest(BaseModel):
 class MealPlanDayLogResponse(BaseModel):
     created:   int
     logged_at: datetime
+
+    @validator("logged_at")
+    def _logged_at_utc(cls, v):
+        return _utc(v)
 
 
 class GroceryItemResponse(BaseModel):
