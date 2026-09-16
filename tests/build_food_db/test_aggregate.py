@@ -35,6 +35,43 @@ def test_group_with_no_nutrient_reaching_two_sources_returns_none():
     assert aggregate_group(g) is None
 
 
+def test_usda_only_group_is_trusted_standalone():
+    # USDA FoodData Central's Foundation/SR Legacy records are curated and
+    # lab-analyzed — a food that exists only in USDA among the 6 sources
+    # (tortillas, ...) must not be dropped for lacking a 2nd corroborating
+    # source the way a same-situation non-USDA source still is.
+    g = MergeGroup("x__raw", "X", [
+        _r("usda", calories_per_100g=222.0, protein_per_100g=5.7, fiber_per_100g=6.3),
+    ])
+    out = aggregate_group(g)
+    assert out is not None
+    assert out.calories_per_100g == 222.0
+    assert out.protein_per_100g == 5.7
+    assert out.fiber_per_100g == 6.3
+    assert out.source_ids == ["usda"]
+    assert out.source_count == 1
+
+
+def test_a_single_non_usda_source_still_requires_corroboration():
+    # The USDA exception must not loosen the rule for anyone else.
+    g = MergeGroup("x__raw", "X", [_r("cofid", calories_per_100g=222.0)])
+    assert aggregate_group(g) is None
+
+
+def test_usda_plus_another_source_still_uses_the_normal_two_source_floor():
+    # A group is only "USDA alone" when USDA is its ONLY source — mixing
+    # in even one more source falls back to the standard rule, so a
+    # nutrient only USDA has still needs a 2nd source to be emitted.
+    g = MergeGroup("x__raw", "X", [
+        _r("usda", calories_per_100g=222.0, iron_mg_per_100g=1.5),
+        _r("cofid", calories_per_100g=210.0),
+    ])
+    out = aggregate_group(g)
+    assert out.calories_per_100g == 216.0     # mean(222, 210) -- 2 sources
+    assert out.iron_mg_per_100g is None       # usda-only -- dropped
+    assert out.source_ids == ["cofid", "usda"]
+
+
 def test_two_rows_from_the_same_source_are_one_source_and_drop_the_food():
     """A fuzzy merge that pulled two rows out of the same national table is
     still a single source — the spec requires source_count >= 2."""

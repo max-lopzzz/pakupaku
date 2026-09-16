@@ -21,6 +21,26 @@ perfect 100 ``token_set_ratio`` against the query "water" even though
 "water" is one ingredient mention in an otherwise unrelated 8-token
 product name — a one-word query must not resolve to it just because
 ``process.extract``'s tie order happens to favour it.
+
+``gen:00007``/``gen:00008`` (tortilla chips, vanilla extract) exist to
+exercise the real bug found in the built artifact: for the one-word
+query "tortilla", every real tortilla candidate is a long branded name
+("Snacks, tortilla chips, nacho cheese") that blows the extra-token cap
+and falls to the ``partial`` bucket, ranked there by raw
+``token_sort_ratio`` — a purely character-level score with no notion of
+"do these share a real word". "Vanilla extract" shares zero tokens with
+"tortilla" but happens to share the "-illa" substring, and being much
+shorter than the branded chip names, out-scored them on that
+length-sensitive metric and surfaced near the top of the results for a
+completely unrelated product.
+
+``gen:00009``/``gen:00010`` (a calorie-less "Tortilla, corn" vs. a
+populated "Tortilla, wheat") exist to exercise a second real bug found in
+the rebuilt artifact: some USDA "Foundation Food" records report only
+micronutrients, with every macro field (incl. calories) null. Nothing in
+the original re-rank considered that, so a blank record could rank ahead
+of an equally-relevant one a user could actually log — the tiebreak must
+prefer the populated record within a tied bucket.
 """
 
 import json
@@ -54,6 +74,19 @@ def build(path):
          json.dumps(["Coconut milk (liquid from grated meat and water), canned"]),
          None, "unspecified", 230.0, 2.3, 23.8, 5.5, 2.2, 3.3, 15.0, 16.0, 3.9, 2.8, None, None,
          json.dumps([]), json.dumps(["cnf", "usda"]), 2),
+        ("gen:00007", "Snacks, tortilla chips, nacho cheese",
+         json.dumps(["Snacks, tortilla chips, nacho cheese"]),
+         None, "unspecified", 472.0, 7.0, 22.7, 63.0, 4.4, 0.5, 476.0, 165.0, 1.4, 0.0, None, None,
+         json.dumps([]), json.dumps(["usda"]), 1),
+        ("gen:00008", "Vanilla extract", json.dumps(["Vanilla extract"]),
+         None, "unspecified", 288.0, 0.06, 0.06, 12.7, 0.0, 12.7, 9.0, 11.0, 0.12, 0.0, None, None,
+         json.dumps([]), json.dumps(["usda"]), 1),
+        ("gen:00009", "Tortilla, corn", json.dumps(["Tortilla, corn"]),
+         None, "unspecified", None, None, None, None, None, None, 35.0, 35.0, 0.79, None, None, None,
+         json.dumps([]), json.dumps(["usda"]), 1),
+        ("gen:00010", "Tortilla, wheat", json.dumps(["Tortilla, wheat"]),
+         None, "unspecified", 300.0, 8.0, 6.0, 50.0, 3.0, 1.0, 480.0, 100.0, 2.0, 0.0, None, None,
+         json.dumps([]), json.dumps(["usda"]), 1),
     ]
     ph = ",".join(["?"] * (8 + len(NUTRIENT_FIELDS)))
     con.executemany("INSERT INTO foods VALUES (%s)" % ph, rows)

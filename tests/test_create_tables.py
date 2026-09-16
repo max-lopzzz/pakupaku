@@ -60,8 +60,8 @@ async def test_create_tables_migrates_fdc_id_and_seeds_foods(tmp_path):
 
     assert "food_id" in fl_cols
     assert fl_rows == [("a", "173944"), ("b", None)]
-    assert foods_n == 6          # the mini artifact's row count
-    assert n == 6
+    assert foods_n == 10          # the mini artifact's row count
+    assert n == 10
 
 
 async def test_create_tables_is_idempotent(tmp_path):
@@ -80,8 +80,8 @@ async def test_create_tables_is_idempotent(tmp_path):
         n2 = await create_tables_mod.create_tables(db_engine=eng, session_factory=Session, artifact_path=str(art))
         async with eng.begin() as conn:
             foods_n = (await conn.execute(text("SELECT count(*) FROM foods"))).scalar()
-        assert n2 == 6
-        assert foods_n == 6
+        assert n2 == 10
+        assert foods_n == 10
     finally:
         await eng.dispose()
         os.remove(db_path)
@@ -122,10 +122,10 @@ async def test_create_tables_retries_the_seed_after_a_dropped_connection(tmp_pat
         n = await create_tables_mod.create_tables(
             db_engine=eng, session_factory=Session, artifact_path=str(art))
         assert calls["n"] == 2
-        assert n == 6
+        assert n == 10
         async with eng.begin() as conn:
             foods_n = (await conn.execute(text("SELECT count(*) FROM foods"))).scalar()
-        assert foods_n == 6
+        assert foods_n == 10
     finally:
         await eng.dispose()
         os.remove(db_path)
