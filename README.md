@@ -1,5 +1,7 @@
 # PakuPaku
 
+Live app: [pakupakuapp.com](https://pakupakuapp.com/)
+
 PakuPaku is an inclusive nutrition-tracking app with two main parts:
 
 - A FastAPI backend for auth, user profiles, recipes, logs, measurements, and an offline multi-country food database.
