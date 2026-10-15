@@ -485,6 +485,18 @@ async def _safe_match_ingredient(parsed: ParsedIngredient) -> ImportedIngredient
 
 _MAX_REDIRECTS = 5
 
+# httpx's bare default header set (UA + "Accept: */*" + encoding) is enough
+# for some blog hosts' firewalls to answer 403 outright — verified against
+# aflavorfulbite.com, which returns 200 to the identical request the moment
+# a browser-style Accept or Accept-Language header is present. Send the
+# ordinary pair a browser would; we still identify ourselves honestly in
+# User-Agent.
+_FETCH_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (compatible; PakuPakuBot/1.0)",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
 
 async def _resolve_and_validate_host(url: str) -> None:
     """Raises HTTPException(422) if url's host resolves to a private,
@@ -548,10 +560,7 @@ async def fetch_page(url: str) -> str:
         for _ in range(_MAX_REDIRECTS + 1):
             await _resolve_and_validate_host(current_url)
             try:
-                response = await client.get(
-                    current_url,
-                    headers={"User-Agent": "Mozilla/5.0 (compatible; PakuPakuBot/1.0)"},
-                )
+                response = await client.get(current_url, headers=_FETCH_HEADERS)
             except httpx.TimeoutException:
                 raise HTTPException(status_code=422, detail="Timed out fetching that URL.")
             except httpx.RequestError:

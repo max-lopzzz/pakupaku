@@ -250,6 +250,7 @@ class _FakeFetchClient:
 
     responses = []
     calls = []
+    headers_seen = []
 
     def __init__(self, *args, **kwargs):
         pass
@@ -262,6 +263,7 @@ class _FakeFetchClient:
 
     async def get(self, url, headers=None):
         _FakeFetchClient.calls.append(url)
+        _FakeFetchClient.headers_seen.append(headers)
         return _FakeFetchClient.responses.pop(0)
 
 
@@ -279,6 +281,25 @@ def test_fetch_page_returns_html_on_success(monkeypatch):
     result = asyncio.run(fetch_page("http://1.1.1.1/recipe"))
 
     assert result == "<html>hello</html>"
+
+
+def test_fetch_page_sends_browser_style_accept_headers(monkeypatch):
+    # Some blog hosts' firewalls 403 httpx's bare default header set but
+    # answer 200 once an Accept / Accept-Language header is present
+    # (aflavorfulbite.com — the reason bulk import's discover step 422'd).
+    _FakeFetchClient.responses = [
+        _FakeFetchResponse(status_code=200, headers={"content-type": "text/html"}, text="<html></html>")
+    ]
+    _FakeFetchClient.calls = []
+    _FakeFetchClient.headers_seen = []
+    monkeypatch.setattr(recipe_import.httpx, "AsyncClient", _FakeFetchClient)
+
+    asyncio.run(fetch_page("http://1.1.1.1/recipe"))
+
+    sent = _FakeFetchClient.headers_seen[0]
+    assert "PakuPakuBot" in sent["User-Agent"]          # still honest about who we are
+    assert "text/html" in sent["Accept"]
+    assert sent["Accept-Language"].startswith("en")
 
 
 def test_fetch_page_follows_redirect_to_public_host(monkeypatch):
