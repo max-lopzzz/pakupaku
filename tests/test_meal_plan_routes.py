@@ -339,3 +339,26 @@ def test_grocery_list_survives_a_regenerate_with_a_fresh_checklist(client, db_se
     c.post("/meal-plan/generate", json={"days": 1, "meals_per_day": 2, "diet_tags": []})
     refreshed = c.get("/meal-plan/groceries").json()
     assert refreshed["items"][0]["checked"] is False
+
+
+def test_swap_does_not_introduce_a_repeat_from_elsewhere_in_the_plan(client, db_session):
+    loop = asyncio.get_event_loop()
+    u = loop.run_until_complete(_user(db_session))
+    # exactly 3 lunch recipes for a 2-day plan: day 0 and day 1 use two of
+    # them, so the only fresh recipe left for a swap is the third.
+    for name in ("Lunch A", "Lunch B", "Lunch C"):
+        loop.run_until_complete(_recipe(db_session, u, name=name, kcal=650, mt="lunch"))
+    loop.run_until_complete(_recipe(db_session, u, name="Oats", kcal=450, mt="breakfast"))
+    loop.run_until_complete(_recipe(db_session, u, name="Oats 2", kcal=450, mt="breakfast"))
+    loop.run_until_complete(db_session.commit())
+
+    c = _as(client, u)
+    body = c.post("/meal-plan/generate", json={"days": 2, "meals_per_day": 2, "diet_tags": []}).json()
+    lunches = [[e for e in d["entries"] if e["slot"] == "lunch"][0] for d in body["plan_days"]]
+    used = {l["recipe"]["name"] for l in lunches}
+    assert len(used) == 2                      # no repeat to begin with
+    (fresh,) = {"Lunch A", "Lunch B", "Lunch C"} - used
+
+    # the swap search is randomised, but with one fresh candidate the answer isn't
+    swapped = c.post("/meal-plan/entries/%s/swap" % lunches[0]["id"]).json()
+    assert swapped["entry"]["recipe"]["name"] == fresh

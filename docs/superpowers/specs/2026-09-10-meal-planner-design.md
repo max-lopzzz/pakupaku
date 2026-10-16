@@ -149,8 +149,14 @@ Given `RecipeOption`s and the active diet-tag set `D`:
    - `snack` bucket: options with `meal_type == "snack"`, plus options
      with `meal_type == "any"` **and** `kcal <= 250` (a low-cal "any"
      recipe is a plausible snack).
-   - `breakfast` / `lunch` / `dinner` buckets: options with that exact
-     `meal_type`, plus every option with `meal_type == "any"`.
+   - `lunch` / `dinner` buckets: options with that exact `meal_type`, plus
+     every option with `meal_type == "any"`.
+   - `breakfast` bucket: options with `meal_type == "breakfast"` **only** —
+     *amended after real use*: `"any"` is not accepted here. Most recipes are
+     `"any"` merely because their name has no breakfast word, so admitting
+     them filled breakfast with stir fries and soups (94% of breakfasts in a
+     simulated 300-recipe library). A library with no breakfast-tagged
+     recipes leaves breakfast unfilled and says so, rather than inventing one.
    - Options with `meal_type == "snack"` never appear in a non-snack
      bucket.
 
@@ -192,7 +198,19 @@ build buckets once, then for `day_index` in `range(days)` call
 `day_index-1` (empty for day 0). Deterministic given `seed` (used in
 tests).
 
+*Amended after real use — no repeats within a plan.* The soft
+`recent_recipe_ids` penalty only looked at the previous day, so the same
+recipe could return two days later. Each slot's bucket is now narrowed, per
+day, to its **least-used** recipes so far (all never-used ones first), so
+nothing repeats anywhere in the plan while the pool allows it; once a slot
+has used everything, it rotates through its recipes evenly rather than
+repeating at random.
+
 ### Swap
+
+*Amended:* the swap also avoids every recipe already used anywhere in the
+plan (`avoid_recipe_ids`), falling back to a repeat only when nothing else is
+left, so a swap can't introduce a repeat.
 
 `swap_entry(buckets, day, slot, slot_budget, day_target, exclude_recipe_id,
 n=400, rng)`: hold the other slots of `day` fixed, draw `n` replacement
