@@ -325,3 +325,136 @@ test("zero new recipe links shows a message instead of an empty confirm screen",
     ).toBeInTheDocument();
   });
 });
+
+// ── resilience: transient backend failures are retried, not fatal ─────────────
+
+type Handler = (url: string, opts?: RequestInit) => Promise<Response> | null;
+
+/** discover returns `urls`; extract/save behaviour is supplied per test. */
+function mockApi(urls: string[], extract: Handler, save?: Handler) {
+  (global.fetch as jest.Mock).mockImplementation((url: RequestInfo | URL, opts?: RequestInit) => {
+    const u = String(url);
+    if (u === "/recipes/bulk-import/discover") {
+      return Promise.resolve({ ok: true, json: async () => ({ urls }) } as Response);
+    }
+    if (u === "/recipes/bulk-import/extract") {
+      return extract(u, opts)!;
+    }
+    if (u === "/recipes" && opts?.method === "POST") {
+      return (save && save(u, opts)) || recipePostResponse(opts);
+    }
+    return Promise.reject(new Error(`Unexpected fetch: ${u}`));
+  });
+}
+
+const okExtract = (opts?: RequestInit) => {
+  const body = JSON.parse(String(opts!.body)) as { urls: string[] };
+  return Promise.resolve({
+    ok: true, status: 200, json: async () => ({ drafts: body.urls.map(draftForUrl) }),
+  } as Response);
+};
+
+async function runImport(count: number, retryDelaysMs: number[] = [0, 0]) {
+  render(
+    <BulkRecipeImport
+      onBack={() => {}} userProfile={{ is_admin: true }} retryDelaysMs={retryDelaysMs}
+    />,
+  );
+  fireEvent.change(screen.getByPlaceholderText("https://example.com/recipes/"), {
+    target: { value: "https://example.com/recipes/" },
+  });
+  fireEvent.click(screen.getByText("Find Recipes"));
+  await waitFor(() => {
+    expect(screen.getByText(`Found ${count} new recipe links on this page.`)).toBeInTheDocument();
+  });
+  fireEvent.click(screen.getByText(`Extract ${count} Recipes`));
+}
+
+test("an extract chunk that hits a dropped connection is retried and the run completes", async () => {
+  let calls = 0;
+  mockApi(makeUrls(30), (_u, opts) => {
+    calls += 1;
+    // 2nd request = the 2nd chunk's first attempt: the connection dies (a
+    // gateway 520 reaches the browser as a bare, CORS-masked network error)
+    if (calls === 2) return Promise.reject(new TypeError("Failed to fetch"));
+    return okExtract(opts);
+  });
+
+  await runImport(30);
+
+  await waitFor(() => {
+    expect(screen.getByText("Saved 30 of 30.")).toBeInTheDocument();
+  });
+  expect(calls).toBe(3);                       // chunk 1, chunk 2 (dropped), chunk 2 again
+  expect(screen.queryByText(/stopped early/i)).not.toBeInTheDocument();
+});
+
+test("a real 5xx from extract is retried too", async () => {
+  let calls = 0;
+  mockApi(makeUrls(15), (_u, opts) => {
+    calls += 1;
+    if (calls === 1) {
+      return Promise.resolve({ ok: false, status: 520, json: async () => ({}) } as Response);
+    }
+    return okExtract(opts);
+  });
+
+  await runImport(15);
+
+  await waitFor(() => {
+    expect(screen.getByText("Saved 15 of 15.")).toBeInTheDocument();
+  });
+  expect(calls).toBe(2);
+});
+
+test("a save that hits a dropped connection is retried instead of counted as failed", async () => {
+  let saveCalls = 0;
+  mockApi(
+    makeUrls(15), (_u, opts) => okExtract(opts),
+    (_u, opts) => {
+      saveCalls += 1;
+      if (saveCalls === 3) return Promise.reject(new TypeError("Failed to fetch"));
+      return null;                              // default: succeed
+    },
+  );
+
+  await runImport(15);
+
+  await waitFor(() => {
+    expect(screen.getByText("Saved 15 of 15.")).toBeInTheDocument();
+  });
+  expect(saveCalls).toBe(16);                   // 15 recipes + 1 retried attempt
+});
+
+test("a 4xx is never retried — it would fail identically every time", async () => {
+  let calls = 0;
+  mockApi(makeUrls(30), (_u, opts) => {
+    calls += 1;
+    if (calls === 1) return okExtract(opts);
+    return Promise.resolve({ ok: false, status: 422, json: async () => ({ detail: "bad" }) } as Response);
+  });
+
+  await runImport(30);
+
+  await waitFor(() => {
+    expect(screen.getByText(/stopped early/i)).toBeInTheDocument();
+  });
+  expect(calls).toBe(2);                        // chunk 1 + a single, unretried attempt at chunk 2
+});
+
+test("after the retries are exhausted, earlier drafts are still kept and offered for saving", async () => {
+  let calls = 0;
+  mockApi(makeUrls(30), (_u, opts) => {
+    calls += 1;
+    if (calls === 1) return okExtract(opts);
+    return Promise.reject(new TypeError("Failed to fetch"));   // backend stays down
+  });
+
+  await runImport(30, [0, 0]);
+
+  await waitFor(() => {
+    expect(screen.getByText(/stopped early/i)).toBeInTheDocument();
+  });
+  expect(calls).toBe(1 + 3);                    // chunk 1, then 1 try + 2 retries
+  expect(screen.getByText("Save 15 recipes")).toBeInTheDocument();
+});
