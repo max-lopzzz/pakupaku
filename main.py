@@ -1304,6 +1304,9 @@ async def swap_meal_plan_entry(
     replacement = swap_entry(
         options, day_entries, entry.slot, budgets, day_target, diet,
         exclude_recipe_id=(str(entry.recipe_id) if entry.recipe_id else None),
+        # every recipe already used anywhere in the plan, so a swap doesn't
+        # introduce a repeat (it still falls back to one if nothing else fits)
+        avoid_recipe_ids=frozenset(str(e.recipe_id) for e in plan.entries if e.recipe_id is not None),
     )
     if replacement is None:
         raise HTTPException(status_code=409, detail="No alternative recipe available for that slot.")

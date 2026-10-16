@@ -2,6 +2,7 @@
 
 import random
 import re
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import Dict, FrozenSet, List, Optional, Tuple
 
@@ -14,6 +15,8 @@ from models import Recipe
 _BREAKFAST_KEYWORDS = (
     "overnight", "pancake", "waffle", "smoothie", "granola",
     "porridge", "cereal", "chia pudding", "french toast", "breakfast",
+    "omelet", "frittata", "shakshuka", "oatmeal", "parfait", "bagel",
+    "crepe", "muesli", "brunch", "scramble",
 )
 _SNACK_KEYWORDS = (
     "bites", "bliss ball", "energy ball", "crackers", "snack",
@@ -25,6 +28,12 @@ _SNACK_KEYWORDS = (
     "ice cream", "hot chocolate", "cotton candy", "milkshake", "cupcake",
     "brownie", "popsicle", "sorbet", "gelato", "fudge", "marshmallow",
     "gummies", "cocktail", "mocktail", "lemonade", "candy",
+    # Baked sweets and sweet snacks. A recipe with none of these in its name
+    # and a main-dish-sized calorie count used to fall through to "any" and
+    # could be planned as dinner (vegan scones, rice krispies treats).
+    "scone", "muffin", "krispies", "rice treat", "donut", "doughnut",
+    "biscotti", "cheesecake", "chocolate truffle", "tiramisu", "macaron",
+    "chocolate mousse", "trail mix", "jerky",
 )
 # Short, ambiguous keys: whole-word match only, so "oat" doesn't fire on
 # "Goat Cheese Salad", "toast" on "Toasted Sesame Noodles", or "dip" on
@@ -131,6 +140,14 @@ def slot_budgets(day_target_kcal: float, slots: List[str]) -> Dict[str, float]:
 
 
 def build_buckets(options, diet_tags: FrozenSet[str], slots: List[str]) -> Dict[str, List[RecipeOption]]:
+    """Which recipes may fill each slot.
+
+    ``"any"`` is deliberately NOT accepted for breakfast: most recipes are
+    ``"any"`` simply because their name has no breakfast word, so letting
+    them in fills breakfast with stir fries and soups. Lunch and dinner stay
+    interchangeable for ``"any"`` mains. A library with no breakfast-tagged
+    recipes therefore leaves breakfast unfilled (the UI says so) rather than
+    inventing one."""
     eligible = [o for o in options
                if diet_tags <= o.diet_tags and isinstance(o.kcal, (int, float)) and o.kcal > 0]
     buckets: Dict[str, List[RecipeOption]] = {s: [] for s in slots}
@@ -138,6 +155,9 @@ def build_buckets(options, diet_tags: FrozenSet[str], slots: List[str]) -> Dict[
         for s in slots:
             if s == "snack":
                 if o.meal_type == "snack" or (o.meal_type == "any" and o.kcal <= _SNACK_ANY_KCAL_CEILING):
+                    buckets[s].append(o)
+            elif s == "breakfast":
+                if o.meal_type == "breakfast":
                     buckets[s].append(o)
             else:
                 if o.meal_type == s or o.meal_type == "any":
@@ -214,20 +234,41 @@ def generate_plan(options, days: int, meals_per_day: int, targets, diet_tags: Fr
                   "fat_g": targets.get("fat_g"), "carbs_g": targets.get("carbs_g")}
     plan: List[PlannedDay] = []
     recent: FrozenSet[str] = frozenset()
+    uses: Dict[str, int] = defaultdict(int)
     for _ in range(days):
-        day = plan_day(buckets, day_target, budgets, recent, rng, n=n)
+        # Each slot may only draw on the least-used recipes in its bucket: all
+        # the never-used ones first, so nothing repeats anywhere in the plan
+        # while the pool allows it; once a slot has used everything, it
+        # rotates through them evenly rather than repeating at random.
+        fresh = {slot: _least_used(bucket, uses) for slot, bucket in buckets.items()}
+        day = plan_day(fresh, day_target, budgets, recent, rng, n=n)
         plan.append(day)
         recent = frozenset(e.option.id for e in day.entries if e.option is not None)
+        for rid in recent:
+            uses[rid] += 1
     return plan
+
+
+def _least_used(bucket: List[RecipeOption], uses: Dict[str, int]) -> List[RecipeOption]:
+    if not bucket:
+        return bucket
+    fewest = min(uses[o.id] for o in bucket)
+    return [o for o in bucket if uses[o.id] == fewest]
 
 
 def swap_entry(options, day_entries, slot: str, budgets, day_target, diet_tags: FrozenSet[str],
                exclude_recipe_id: Optional[str], seed: Optional[int] = None,
-               n: int = 400) -> Optional[PlannedEntry]:
+               n: int = 400,
+               avoid_recipe_ids: FrozenSet[str] = frozenset()) -> Optional[PlannedEntry]:
+    """Best replacement for ``slot``. ``avoid_recipe_ids`` (every recipe already
+    in the plan) is honoured when anything else is left, so a swap doesn't
+    introduce a repeat — but a thin library still gets a swap rather than a
+    dead button."""
     rng = random.Random(seed)
     slots = list(budgets.keys())
-    bucket = [o for o in build_buckets(options, diet_tags, slots).get(slot, [])
-              if o.id != exclude_recipe_id]
+    candidates = [o for o in build_buckets(options, diet_tags, slots).get(slot, [])
+                  if o.id != exclude_recipe_id]
+    bucket = [o for o in candidates if o.id not in avoid_recipe_ids] or candidates
     if not bucket:
         return None
     others = [e for e in day_entries if e.slot != slot]

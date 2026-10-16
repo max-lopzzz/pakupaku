@@ -154,7 +154,7 @@ def test_build_buckets_meal_type_and_diet_filter():
         _opt("v1", "Vegan Bowl", "any", 480, tags=("vegan",)),
     ]
     buckets = build_buckets(opts, frozenset(), ["breakfast", "lunch", "dinner", "snack"])
-    assert {o.id for o in buckets["breakfast"]} == {"b1", "a1", "a2", "v1"}
+    assert {o.id for o in buckets["breakfast"]} == {"b1"}   # strict: "any" is not a breakfast
     assert {o.id for o in buckets["dinner"]} == {"d1", "a1", "a2", "v1"}
     assert {o.id for o in buckets["snack"]} == {"s1", "a2"}   # snack + low-cal any
     assert "s1" not in {o.id for o in buckets["dinner"]}
@@ -187,7 +187,8 @@ def test_plan_day_picks_the_closest_combination():
 def test_plan_day_servings_clamped_when_pool_is_far_from_budget():
     rng = _random.Random(1)
     budgets = slot_budgets(2000.0, ["breakfast", "lunch"])
-    opts = [_opt("huge", "Huge", "any", 4000)]   # 1 recipe, way over every budget
+    opts = [_opt("huge_b", "Huge B", "breakfast", 4000),   # way over every budget
+            _opt("huge_l", "Huge L", "lunch", 4000)]
     buckets = build_buckets(opts, frozenset(), ["breakfast", "lunch"])
     day = plan_day(buckets, {"kcal": 2000.0, "protein_g": None, "fat_g": None, "carbs_g": None},
                    budgets, frozenset(), rng, n=50)
@@ -298,3 +299,132 @@ def test_aggregate_groceries_rounds_amounts():
 def test_aggregate_groceries_empty_input():
     from meal_planner import aggregate_groceries
     assert aggregate_groceries([]) == []
+
+
+# ── slot fit & variety ───────────────────────────────────────────────────────
+
+def test_breakfast_bucket_only_takes_recipes_tagged_breakfast():
+    # Most imported recipes are "any" (no breakfast word in the name). "any"
+    # is fine for lunch/dinner but must never fill a breakfast slot — that is
+    # how Sushi Wraps and lentil soup ended up as breakfast.
+    opts = [
+        _opt("b1", "Overnight Oats", "breakfast", 350),
+        _opt("m1", "Veggie Noodle Stir Fry", "any", 600),
+        _opt("m2", "Lentil Soup", "any", 500),
+    ]
+    buckets = build_buckets(opts, frozenset(), ["breakfast", "lunch", "dinner"])
+    assert [o.id for o in buckets["breakfast"]] == ["b1"]
+    assert {o.id for o in buckets["lunch"]} == {"m1", "m2"}     # "any" still fits lunch/dinner
+    assert {o.id for o in buckets["dinner"]} == {"m1", "m2"}
+
+
+def test_a_library_with_no_breakfast_recipes_leaves_breakfast_unfilled():
+    opts = [_opt("m1", "Stir Fry", "any", 600), _opt("m2", "Soup", "any", 500)]
+    plan = generate_plan(opts, days=2, meals_per_day=3,
+                         targets={"kcal": 2000.0, "protein_g": None, "fat_g": None, "carbs_g": None},
+                         diet_tags=frozenset(), seed=1)
+    for day in plan:
+        breakfast = [e for e in day.entries if e.slot == "breakfast"][0]
+        assert breakfast.unfilled        # honest gap, not a stir fry for breakfast
+
+
+def _realistic(id, name, mt, kcal):
+    # macros proportional to calories, like a real recipe — a pool where every
+    # recipe has the same macros per serving quietly favours low-calorie ones
+    # (scaled to more servings) and can mask a slot-fit bug.
+    return _opt(id, name, mt, kcal, p=kcal * 0.05, f=kcal * 0.035, c=kcal * 0.10, fib=kcal * 0.01)
+
+
+def _big_pool():
+    pool = []
+    for i in range(10):
+        pool.append(_realistic("b%d" % i, "Breakfast %d" % i, "breakfast", 350 + i * 10))
+    for i in range(40):
+        pool.append(_realistic("m%d" % i, "Main %d" % i, "any", 550 + i * 5))
+    return pool
+
+
+TARGETS = {"kcal": 2000.0, "protein_g": 120.0, "fat_g": 65.0, "carbs_g": 220.0}
+
+
+def test_generated_breakfasts_are_always_breakfast_recipes():
+    for seed in range(15):
+        plan = generate_plan(_big_pool(), days=7, meals_per_day=3, targets=TARGETS,
+                             diet_tags=frozenset(), seed=seed)
+        for day in plan:
+            for e in day.entries:
+                if e.slot == "breakfast":
+                    assert e.option.id.startswith("b"), e.option.name
+
+
+def test_no_recipe_repeats_within_a_plan_when_the_pool_has_enough():
+    # 10 breakfasts for 7 days, 40 mains for 14 lunch/dinner slots: nothing
+    # forces a repeat, so there must not be one — not on adjacent days, and
+    # not on days further apart either.
+    for seed in range(40):
+        plan = generate_plan(_big_pool(), days=7, meals_per_day=3, targets=TARGETS,
+                             diet_tags=frozenset(), seed=seed)
+        ids = [e.option.id for d in plan for e in d.entries if e.option]
+        assert len(ids) == 21
+        assert len(set(ids)) == len(ids), "seed %d repeated a recipe" % seed
+
+
+def test_repeats_only_start_once_a_slot_has_run_out_of_fresh_recipes():
+    # Only 2 breakfast recipes for 5 days: both are used before either repeats,
+    # and the plan still fills every breakfast rather than leaving gaps.
+    opts = [_opt("b0", "B0", "breakfast", 400), _opt("b1", "B1", "breakfast", 420)]
+    opts += [_opt("m%d" % i, "Main %d" % i, "any", 600) for i in range(30)]
+    plan = generate_plan(opts, days=5, meals_per_day=3, targets=TARGETS,
+                         diet_tags=frozenset(), seed=3)
+    breakfasts = [[e for e in d.entries if e.slot == "breakfast"][0] for d in plan]
+    assert all(not b.unfilled for b in breakfasts)
+    assert {b.option.id for b in breakfasts[:2]} == {"b0", "b1"}
+    # the mains still never repeat
+    mains = [e.option.id for d in plan for e in d.entries if e.slot != "breakfast"]
+    assert len(set(mains)) == len(mains)
+
+
+def test_swap_entry_avoids_recipes_already_elsewhere_in_the_plan():
+    from meal_planner import _scaled_entry
+    opts = [_opt("l_cur", "Cur", "lunch", 650), _opt("l_used", "Used", "lunch", 650),
+            _opt("l_fresh", "Fresh", "lunch", 650)]
+    budgets = slot_budgets(1900.0, ["breakfast", "lunch"])
+    day_target = {"kcal": 1900.0, "protein_g": None, "fat_g": None, "carbs_g": None}
+    day_entries = [_scaled_entry("breakfast", None, budgets["breakfast"]),
+                   _scaled_entry("lunch", opts[0], budgets["lunch"])]
+    for seed in range(10):
+        repl = swap_entry(opts, day_entries, "lunch", budgets, day_target, frozenset(),
+                          exclude_recipe_id="l_cur", seed=seed,
+                          avoid_recipe_ids=frozenset({"l_used"}))
+        assert repl.option.id == "l_fresh"
+
+
+def test_swap_entry_falls_back_to_a_repeat_when_nothing_fresh_is_left():
+    from meal_planner import _scaled_entry
+    opts = [_opt("l_cur", "Cur", "lunch", 650), _opt("l_used", "Used", "lunch", 650)]
+    budgets = slot_budgets(1900.0, ["breakfast", "lunch"])
+    day_target = {"kcal": 1900.0, "protein_g": None, "fat_g": None, "carbs_g": None}
+    day_entries = [_scaled_entry("breakfast", None, budgets["breakfast"]),
+                   _scaled_entry("lunch", opts[0], budgets["lunch"])]
+    repl = swap_entry(opts, day_entries, "lunch", budgets, day_target, frozenset(),
+                      exclude_recipe_id="l_cur", seed=1, avoid_recipe_ids=frozenset({"l_used"}))
+    assert repl is not None and repl.option.id == "l_used"      # better a repeat than a dead button
+
+
+def test_infer_meal_type_recognises_more_breakfast_dishes():
+    for name in ["Spinach Feta Omelette", "Sweet Potato Hash Breakfast Bowl", "Easy Frittata",
+                 "Shakshuka", "Banana Oatmeal", "Chia Parfait", "Everything Bagel", "Dutch Baby Crepes",
+                 "Homemade Muesli"]:
+        assert infer_meal_type(name, 450) == "breakfast", name
+
+
+def test_infer_meal_type_recognises_baked_sweets_as_snacks():
+    for name in ["Vegan Scones", "Blueberry Muffins", "Korean Rice Krispies with Dried Jeju Mandarins",
+                 "Crispy Rice Treats", "Glazed Donuts", "Almond Biscotti", "Cheesecake Bars"]:
+        assert infer_meal_type(name, 380) == "snack", name
+    # ...without catching ordinary mains
+    for name in ["Chicken Parmesan", "Veggie Noodle Stir Fry with Peanut Lime Sauce",
+                 "Creamy Red Lentil and Sweet Potato Soup", "Greek-Style Potato Nachos",
+                 "Roasted Sweet Potato Tabbouleh Bowl", "Sushi Wraps",
+                 "Popcorn Chicken", "Truffle Mushroom Pasta", "Pretzel-Crusted Chicken"]:
+        assert infer_meal_type(name, 520) == "any", name
