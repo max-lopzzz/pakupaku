@@ -9,6 +9,8 @@ import {
 interface BulkRecipeImportProps {
   onBack: () => void;
   userProfile: any;
+  /** Pauses between retries of a transiently-failed request; tests pass short ones. */
+  retryDelaysMs?: number[];
 }
 
 type Step = "input" | "confirm" | "extracting" | "saving" | "summary";
@@ -20,7 +22,40 @@ type Step = "input" | "confirm" | "extracting" | "saving" | "summary";
 // and that request would otherwise look frozen for minutes.
 const EXTRACT_CHUNK_SIZE = 15;
 
-export default function BulkRecipeImport({ onBack, userProfile }: BulkRecipeImportProps) {
+// The hosted API can drop out for a minute at a time (instance restart, a
+// CPU-starved health check) — and a drop shows up in the browser as a bare
+// network error, since the gateway's error page carries no CORS headers. A
+// run with hundreds of requests shouldn't die to one blip, so transient
+// failures are retried after a growing pause. Only *transient* ones: a
+// thrown network error or a real 5xx — never a 4xx, which will fail
+// identically every time.
+const DEFAULT_RETRY_DELAYS_MS = [5000, 15000, 30000, 60000];
+
+const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+
+async function fetchWithRetry(
+  path: string,
+  init: RequestInit,
+  delaysMs: number[],
+  onRetry: (attempt: number, of: number) => void,
+): Promise<Response | null> {
+  let res: Response | null = null;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      res = await apiFetch(path, init);
+      if (!(res.status >= 500)) return res;
+    } catch {
+      res = null;
+    }
+    if (attempt >= delaysMs.length) return res;
+    onRetry(attempt + 1, delaysMs.length);
+    await sleep(delaysMs[attempt]);
+  }
+}
+
+export default function BulkRecipeImport({
+  onBack, userProfile, retryDelaysMs = DEFAULT_RETRY_DELAYS_MS,
+}: BulkRecipeImportProps) {
   const [step, setStep] = useState<Step>("input");
   const [indexUrl, setIndexUrl] = useState("");
   const [discovering, setDiscovering] = useState(false);
@@ -34,6 +69,7 @@ export default function BulkRecipeImport({ onBack, userProfile }: BulkRecipeImpo
   const [processedCount, setProcessedCount] = useState(0);
   const [foundCount, setFoundCount] = useState(0);
   const [extractNotice, setExtractNotice] = useState("");
+  const [retryNotice, setRetryNotice] = useState("");
 
   const runDiscover = async () => {
     if (!indexUrl.trim()) {
@@ -67,6 +103,9 @@ export default function BulkRecipeImport({ onBack, userProfile }: BulkRecipeImpo
     }
   };
 
+  const noteRetry = (attempt: number, of: number) =>
+    setRetryNotice(`Server not responding — retrying (${attempt} of ${of})…`);
+
   const runExtract = async () => {
     setError("");
     setExtractNotice("");
@@ -84,19 +123,19 @@ export default function BulkRecipeImport({ onBack, userProfile }: BulkRecipeImpo
     let processed = 0;
 
     for (const chunk of chunks) {
-      let res: Response | null = null;
-      try {
-        res = await apiFetch("/recipes/bulk-import/extract", {
+      const res = await fetchWithRetry(
+        "/recipes/bulk-import/extract",
+        {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: token ? `Bearer ${token}` : "",
           },
           body: JSON.stringify({ urls: chunk }),
-        });
-      } catch {
-        res = null;
-      }
+        },
+        retryDelaysMs, noteRetry,
+      );
+      setRetryNotice("");
 
       if (!res || !res.ok) {
         if (collected.length > 0) {
@@ -157,23 +196,23 @@ export default function BulkRecipeImport({ onBack, userProfile }: BulkRecipeImpo
         setFailedCount(failed);
         continue;
       }
-      try {
-        const res = await apiFetch("/recipes", {
+      const res = await fetchWithRetry(
+        "/recipes",
+        {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: token ? `Bearer ${token}` : "",
           },
           body: JSON.stringify(result.payload),
-        });
-        if (res.ok) {
-          saved += 1;
-          setSavedCount(saved);
-        } else {
-          failed += 1;
-          setFailedCount(failed);
-        }
-      } catch {
+        },
+        retryDelaysMs, noteRetry,
+      );
+      setRetryNotice("");
+      if (res && res.ok) {
+        saved += 1;
+        setSavedCount(saved);
+      } else {
         failed += 1;
         setFailedCount(failed);
       }
@@ -281,6 +320,7 @@ export default function BulkRecipeImport({ onBack, userProfile }: BulkRecipeImpo
               </>
             ) : (
               <>
+                {retryNotice && <p className="recipe-error">{retryNotice}</p>}
                 <p className="bulk-import-count">
                   Processing {processedCount} of {candidateUrls.length} link
                   {candidateUrls.length !== 1 ? "s" : ""}…
@@ -307,6 +347,7 @@ export default function BulkRecipeImport({ onBack, userProfile }: BulkRecipeImpo
 
         {step === "saving" && (
           <div className="bulk-import-card">
+            {retryNotice && <p className="recipe-error">{retryNotice}</p>}
             <p className="bulk-import-count">
               Saving {savingIndex} of {drafts.length} recipe{drafts.length !== 1 ? "s" : ""}…
             </p>

@@ -102,6 +102,48 @@ async def test_calorie_less_record_ranks_behind_a_populated_one(db_session, tmp_
     assert ids.index("gen:00010") < ids.index("gen:00009")
 
 
+async def test_repeat_searches_are_served_from_the_memo_not_rescanned(db_session, tmp_path, monkeypatch):
+    # The fuzzy scan dominates a bulk recipe import's CPU, and the same
+    # ingredient strings recur across recipes — a repeat must not rescan.
+    await _load(db_session, tmp_path)
+    scans = {"n": 0}
+    real_ranked = food_index._ranked
+
+    def counting_ranked(query, limit):
+        scans["n"] += 1
+        return real_ranked(query, limit)
+
+    monkeypatch.setattr(food_index, "_ranked", counting_ranked)
+
+    first = food_index.search("butter beans", 5)
+    again = food_index.search("butter beans", 5)
+    assert scans["n"] == 1
+    assert [f.id for f in again] == [f.id for f in first]
+
+    # same canonical key (token order / case are normalised away) -> still a hit
+    food_index.search("Beans, Butter", 5)
+    assert scans["n"] == 1
+    # a different limit is a different question
+    food_index.search("butter beans", 1)
+    assert scans["n"] == 2
+
+
+async def test_memoised_search_hands_back_an_independent_list(db_session, tmp_path):
+    await _load(db_session, tmp_path)
+    first = food_index.search("butter beans", 5)
+    first.clear()                                  # a caller mutating its result...
+    assert food_index.search("butter beans", 5)    # ...must not poison the memo
+
+
+async def test_reloading_the_index_drops_the_memo(db_session, tmp_path):
+    await _load(db_session, tmp_path)
+    assert food_index.best_match("vanilla extract").id == "gen:00008"
+    food_index.reset()
+    assert food_index.best_match("vanilla extract") is None   # not a stale memo hit
+    await food_index.load(db_session)                          # table is still seeded
+    assert food_index.best_match("vanilla extract").id == "gen:00008"
+
+
 async def test_search_result_shape(db_session, tmp_path):
     await _load(db_session, tmp_path)
     r = food_index.search("broccoli", 5)[0].as_search_result()
